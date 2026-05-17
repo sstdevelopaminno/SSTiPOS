@@ -88,9 +88,9 @@ on conflict (id) do nothing;
 
 insert into users_profiles (id, email, full_name, platform_role, pin_hash, is_active)
 values
-  ('00000000-0000-0000-0000-000000000101', 'owner@noodle.local', 'เจ้าของร้าน', 'tenant_user', '.rLARdgqwdCevHf.H5lCFdkyEWgBuMp14bFXpT6rdPa', true),
-  ('00000000-0000-0000-0000-000000000102', 'manager@noodle.local', 'ผู้จัดการร้าน', 'tenant_user', '/Hqw7ZWQ6xeO.', true),
-  ('00000000-0000-0000-0000-000000000103', 'staff@noodle.local', 'พนักงาน', 'tenant_user', '', true),
+  ('00000000-0000-0000-0000-000000000101', 'owner@noodle.local', 'เจ้าของร้าน', 'tenant_user', '$2b$10$hlUTBQXtPd.rLARdgqwdCevHf.H5lCFdkyEWgBuMp14bFXpT6rdPa', true),
+  ('00000000-0000-0000-0000-000000000102', 'manager@noodle.local', 'ผู้จัดการร้าน', 'tenant_user', '$2b$10$xQcyWHhdQv9np9kafFlupedqZlEQQXVzOmXhSJxd/Hqw7ZWQ6xeO.', true),
+  ('00000000-0000-0000-0000-000000000103', 'staff@noodle.local', 'พนักงาน', 'tenant_user', '$2b$10$KKtFBMTXToXbAoykqHz6uOyMTVchHrBwVUt4CUEJF6WkVQffUM482', true),
   ('00000000-0000-0000-0000-000000000901', 'itadmin@platform.local', 'IT Admin', 'it_admin', null, true)
 on conflict (id) do update
 set
