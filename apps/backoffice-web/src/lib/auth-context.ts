@@ -1,4 +1,5 @@
 import type { BranchRole, PlatformRole } from "@pos/shared-types";
+import { headers } from "next/headers";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 type AuthContextInput = {
@@ -53,7 +54,10 @@ function assertBranchScope(context: AuthContext) {
 export async function getAuthContext(input: AuthContextInput = {}): Promise<AuthContext> {
   const { requireBranchScope = true } = input;
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.auth.getUser();
+  const headerStore = await headers();
+  const authHeader = headerStore.get("authorization") ?? headerStore.get("Authorization");
+  const bearerToken = authHeader?.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : null;
+  const { data, error } = bearerToken ? await supabase.auth.getUser(bearerToken) : await supabase.auth.getUser();
 
   if (error || !data.user) {
     const fallback = getFallbackContext();
