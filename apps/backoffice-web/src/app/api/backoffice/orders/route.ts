@@ -1,6 +1,7 @@
 import type { CreateManualDeliveryOrderInput } from "@pos/shared-types";
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
+import { executeCreateManualDeliveryOrderTransaction } from "@/lib/services/stock-transaction-service";
 import { ok, fail } from "@/lib/http";
 
 export async function POST(req: Request) {
@@ -16,31 +17,20 @@ export async function POST(req: Request) {
       return fail("invalid_channel", "Manual delivery channel is invalid.", 422);
     }
 
-    const orderId = crypto.randomUUID();
+    const idempotencyKey = req.headers.get("x-idempotency-key")?.trim() || undefined;
 
-    await appendAuditLog({
-      tenantId: auth.tenantId!,
-      branchId: auth.branchId!,
-      actorUserId: auth.userId,
-      actorRole: auth.branchRole!,
-      action: "manual_delivery_order_created",
-      targetTable: "orders",
-      targetId: orderId,
-      metadata: {
-        channel: payload.channel,
-        external_order_code: payload.external_order_code,
-        app_total_amount: payload.app_total_amount
-      }
+    const result = await executeCreateManualDeliveryOrderTransaction({
+      auth,
+      input: payload,
+      idempotencyKey,
+      appendAuditLog
     });
 
-    return ok(
-      {
-        id: orderId,
-        status: "queued",
-        created_at: new Date().toISOString()
-      },
-      201
-    );
+    if (!result.ok) {
+      return fail(result.code, result.message, result.status);
+    }
+
+    return ok(result.data, result.data.duplicate_request ? 200 : 201);
   } catch (error) {
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }

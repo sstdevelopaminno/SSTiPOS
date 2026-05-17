@@ -1,6 +1,7 @@
 import { requiresPinApproval } from "@pos/pos-domain";
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
+import { executeStockAdjustmentTransaction } from "@/lib/services/stock-transaction-service";
 import { ok, fail } from "@/lib/http";
 
 export async function POST(req: Request) {
@@ -17,26 +18,25 @@ export async function POST(req: Request) {
       return fail("approval_required", "Stock adjustment requires manager/owner PIN approval.", 403);
     }
 
-    await appendAuditLog({
-      tenantId: auth.tenantId!,
-      branchId: auth.branchId!,
-      actorUserId: auth.userId,
-      actorRole: auth.branchRole!,
-      action: "stock_adjustment_created",
-      targetTable: "stock_movements",
-      metadata: {
+    const requestId = req.headers.get("x-idempotency-key")?.trim() || undefined;
+
+    const result = await executeStockAdjustmentTransaction({
+      auth,
+      input: {
         ingredient_id: body.ingredient_id,
         quantity_delta: body.quantity_delta,
         reason: body.reason,
-        approval_id: body.approval_id ?? null
-      }
+        approval_id: body.approval_id!,
+        request_id: requestId
+      },
+      appendAuditLog
     });
 
-    return ok({
-      id: crypto.randomUUID(),
-      status: "recorded",
-      movement_type: "manual_adjustment"
-    });
+    if (!result.ok) {
+      return fail(result.code, result.message, result.status);
+    }
+
+    return ok(result.data, result.data.duplicate_request ? 200 : 201);
   } catch (error) {
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }

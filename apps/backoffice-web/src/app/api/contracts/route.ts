@@ -1,12 +1,15 @@
 import { ok } from "@/lib/http";
 
 const contracts = {
-  version: "2026-05-17",
+  version: "2026-05-18",
   endpoints: [
     {
       method: "POST",
       path: "/api/backoffice/orders",
-      description: "Create order (including manual delivery channels)",
+      description: "Create order (including manual delivery channels) with atomic stock deduction",
+      headers: {
+        "x-idempotency-key": "string? (recommended)"
+      },
       request: {
         tenant_id: "uuid",
         branch_id: "uuid",
@@ -28,7 +31,10 @@ const contracts = {
     {
       method: "POST",
       path: "/api/backoffice/stock/adjust",
-      description: "Adjust ingredient stock with required approval_id"
+      description: "Adjust ingredient stock with required approval_id and rollback-safe transaction",
+      headers: {
+        "x-idempotency-key": "string? (recommended)"
+      }
     },
     {
       method: "POST",
