@@ -4,6 +4,11 @@ const contracts = {
   version: "2026-05-18",
   endpoints: [
     {
+      method: "GET",
+      path: "/api/backoffice/orders",
+      description: "List orders with pagination/filter/search (tenant/branch scoped)"
+    },
+    {
       method: "POST",
       path: "/api/backoffice/orders",
       description: "Create order (including manual delivery channels) with atomic stock deduction",
@@ -29,6 +34,11 @@ const contracts = {
       description: "Escalation approval for cancel bill, stock adjustment, employee delete, shift override"
     },
     {
+      method: "GET",
+      path: "/api/backoffice/stock",
+      description: "List ingredients or stock movements with pagination/filter/search"
+    },
+    {
       method: "POST",
       path: "/api/backoffice/stock/adjust",
       description: "Adjust ingredient stock with required approval_id and rollback-safe transaction",
@@ -37,9 +47,34 @@ const contracts = {
       }
     },
     {
+      method: "GET",
+      path: "/api/backoffice/shifts",
+      description: "List shifts with pagination and status filtering"
+    },
+    {
+      method: "POST",
+      path: "/api/backoffice/shifts",
+      description: "Open new shift for current branch"
+    },
+    {
       method: "POST",
       path: "/api/backoffice/shifts/close",
       description: "Close shift with rules for unpaid dine-in bills and cash mismatch"
+    },
+    {
+      method: "GET",
+      path: "/api/backoffice/audit-logs",
+      description: "List audit logs with pagination/filter/search (manager/owner only)"
+    },
+    {
+      method: "GET",
+      path: "/api/backoffice/staff",
+      description: "List branch staff with pagination/filter/search (manager/owner only)"
+    },
+    {
+      method: "PATCH",
+      path: "/api/backoffice/staff",
+      description: "Update staff role or active status (manager/owner only)"
     },
     {
       method: "POST",
