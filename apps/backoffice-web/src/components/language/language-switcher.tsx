@@ -8,9 +8,10 @@ type Props = {
   label: string;
   thaiLabel: string;
   englishLabel: string;
+  compact?: boolean;
 };
 
-export function LanguageSwitcher({ currentLanguage, label, thaiLabel, englishLabel }: Props) {
+export function LanguageSwitcher({ currentLanguage, label, thaiLabel, englishLabel, compact = false }: Props) {
   const [lang, setLang] = useState<Language>(currentLanguage);
 
   const options = useMemo(
@@ -22,8 +23,8 @@ export function LanguageSwitcher({ currentLanguage, label, thaiLabel, englishLab
   );
 
   return (
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-      <span style={{ fontSize: 14, color: "var(--muted)" }}>{label}</span>
+    <label style={{ display: "inline-flex", alignItems: "center", gap: compact ? 6 : 8 }}>
+      <span style={{ fontSize: compact ? 11 : 14, color: "var(--muted)" }}>{label}</span>
       <select
         value={lang}
         onChange={(event) => {
@@ -34,11 +35,12 @@ export function LanguageSwitcher({ currentLanguage, label, thaiLabel, englishLab
           window.location.reload();
         }}
         style={{
-          borderRadius: 10,
+          borderRadius: compact ? 9 : 10,
           border: "1px solid var(--border)",
-          padding: "10px 12px",
+          padding: compact ? "4px 9px" : "10px 12px",
           background: "#fff",
-          minHeight: 44
+          minHeight: compact ? 30 : 44,
+          fontSize: compact ? 12 : 14
         }}
       >
         {options.map((option) => (

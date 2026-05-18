@@ -1,206 +1,358 @@
 ﻿"use client";
 
-import { useState } from "react";
+import Image from "next/image";
+import { useMemo, useState } from "react";
+
 type Language = "th" | "en";
 
-const channelsByLanguage = {
-  th: ["หน้าร้าน", "กลับบ้าน", "Grab", "LINE MAN", "Shopee", "Merchant App", "อื่นๆ"],
-  en: ["Storefront", "Takeaway", "Grab", "LINE MAN", "Shopee", "Merchant App", "Other"]
-} as const;
+type Product = {
+  id: string;
+  name: { th: string; en: string };
+  price: number;
+  unit: { th: string; en: string };
+  image: string;
+  category: "all" | "noodle" | "snack" | "drink" | "dessert" | "promo";
+};
 
-const productsByLanguage = {
-  th: ["ก๋วยเตี๋ยวน้ำใส", "ก๋วยเตี๋ยวต้มยำ", "บะหมี่แห้งลูกชิ้น", "ชุดคอมโบเส้น+เกี๊ยว", "น้ำเก๊กฮวย"],
-  en: ["Clear Soup Noodle", "Tom Yum Noodle", "Dry Egg Noodle + Meatball", "Noodle Combo Set", "Chrysanthemum Drink"]
-} as const;
+type OrderRow = {
+  id: string;
+  qty: number;
+};
 
-const categoryLabels = {
-  th: ["เส้น", "ทานเล่น", "เครื่องดื่ม", "คอมโบ"],
-  en: ["Noodles", "Snacks", "Drinks", "Combo"]
-} as const;
+const categories: Record<Language, Array<{ key: Product["category"]; label: string }>> = {
+  th: [
+    { key: "all", label: "ทั้งหมด" },
+    { key: "noodle", label: "ก๋วยเตี๋ยว" },
+    { key: "snack", label: "ของทานเล่น" },
+    { key: "drink", label: "เครื่องดื่ม" },
+    { key: "dessert", label: "ขนมหวาน" },
+    { key: "promo", label: "โปรโมชั่น" }
+  ],
+  en: [
+    { key: "all", label: "All" },
+    { key: "noodle", label: "Noodles" },
+    { key: "snack", label: "Snacks" },
+    { key: "drink", label: "Drinks" },
+    { key: "dessert", label: "Desserts" },
+    { key: "promo", label: "Promotion" }
+  ]
+};
 
-const statusLabels = {
-  th: ["รอทำ", "กำลังทำ", "เสร็จแล้ว", "ยกเลิก"],
-  en: ["Waiting", "Preparing", "Done", "Cancelled"]
-} as const;
+const products: Product[] = [
+  {
+    id: "p1",
+    name: { th: "ช็อกโกแลตเค้ก", en: "Chocolate Cake" },
+    price: 95,
+    unit: { th: "ชิ้น", en: "piece" },
+    image: "https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=500",
+    category: "dessert"
+  },
+  {
+    id: "p2",
+    name: { th: "แพนเค้ก", en: "Pancake" },
+    price: 99,
+    unit: { th: "จาน", en: "plate" },
+    image: "https://images.unsplash.com/photo-1528207776546-365bb710ee93?w=500",
+    category: "dessert"
+  },
+  {
+    id: "p3",
+    name: { th: "ไอศกรีมวานิลลา", en: "Vanilla Ice Cream" },
+    price: 69,
+    unit: { th: "ถ้วย", en: "cup" },
+    image: "https://images.unsplash.com/photo-1488900128323-21503983a07e?w=500",
+    category: "dessert"
+  },
+  {
+    id: "p4",
+    name: { th: "ซุปไก่ส้มหมู", en: "Pork Noodle Soup" },
+    price: 89,
+    unit: { th: "ชาม", en: "bowl" },
+    image: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=500",
+    category: "noodle"
+  },
+  {
+    id: "p5",
+    name: { th: "กาแฟลาเต้", en: "Latte" },
+    price: 65,
+    unit: { th: "แก้ว", en: "cup" },
+    image: "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=500",
+    category: "drink"
+  },
+  {
+    id: "p6",
+    name: { th: "ชาไทย", en: "Thai Tea" },
+    price: 55,
+    unit: { th: "แก้ว", en: "cup" },
+    image: "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=500",
+    category: "drink"
+  },
+  {
+    id: "p7",
+    name: { th: "ขนมปังไส้แยม", en: "Jam Toast" },
+    price: 75,
+    unit: { th: "ชิ้น", en: "piece" },
+    image: "https://images.unsplash.com/photo-1528736235302-52922df5c122?w=500",
+    category: "snack"
+  },
+  {
+    id: "p8",
+    name: { th: "น้ำส้มมะนาว", en: "Lime Orange" },
+    price: 60,
+    unit: { th: "แก้ว", en: "cup" },
+    image: "https://images.unsplash.com/photo-1544145945-f90425340c7e?w=500",
+    category: "drink"
+  }
+];
+
+const initialOrderRows: OrderRow[] = [
+  { id: "p4", qty: 2 },
+  { id: "p5", qty: 1 },
+  { id: "p1", qty: 1 }
+];
+
+function currency(value: number) {
+  return `฿${value.toFixed(2)}`;
+}
 
 export function PosPreviewBoard({ lang }: { lang: Language }) {
-  const channels = channelsByLanguage[lang];
-  const products = productsByLanguage[lang];
-  const categories = categoryLabels[lang];
-  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [activeCategory, setActiveCategory] = useState(0);
+  const [orderRows, setOrderRows] = useState<OrderRow[]>(initialOrderRows);
+
+  const selectedCategory = categories[lang][activeCategory]?.key ?? "all";
+  const visibleProducts = useMemo(() => {
+    if (selectedCategory === "all") return products;
+    return products.filter((product) => product.category === selectedCategory || selectedCategory === "promo");
+  }, [selectedCategory]);
+
+  const subtotal = useMemo(
+    () =>
+      orderRows.reduce((sum, row) => {
+        const product = products.find((item) => item.id === row.id);
+        if (!product) return sum;
+        return sum + product.price * row.qty;
+      }, 0),
+    [orderRows]
+  );
+
+  const tax = subtotal * 0.07;
+  const total = subtotal + tax;
+
+  const increaseQty = (id: string) => {
+    setOrderRows((currentRows) =>
+      currentRows.map((row) => (row.id === id ? { ...row, qty: row.qty + 1 } : row))
+    );
+  };
+
+  const decreaseQty = (id: string) => {
+    setOrderRows((currentRows) =>
+      currentRows.flatMap((row) => {
+        if (row.id !== id) return [row];
+        if (row.qty <= 1) return [];
+        return [{ ...row, qty: row.qty - 1 }];
+      })
+    );
+  };
+
+  const removeRow = (id: string) => {
+    setOrderRows((currentRows) => currentRows.filter((row) => row.id !== id));
+  };
 
   return (
-    <div className="surface" style={{ padding: 0, overflow: "hidden" }}>
-      <div className="pos-preview-layout">
-        <section style={{ padding: 16, borderRight: "1px solid var(--border)" }}>
-          <h3>{lang === "th" ? "หมวดหมู่ / สินค้า" : "Category / Products"}</h3>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-            {categories.map((category) => (
-              <button
-                key={category}
-                className="tap-target"
-                style={{
-                  borderRadius: 10,
-                  border: "1px solid var(--border)",
-                  background: "#fff",
-                  padding: "10px 14px",
-                  fontWeight: 600
-                }}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-          <div className="grid cols-3">
-            {products.map((name) => (
-              <button
-                key={name}
-                className="tap-target"
-                style={{
-                  borderRadius: 12,
-                  border: "1px solid var(--border)",
-                  background: "#fff",
-                  minHeight: 84,
-                  fontWeight: 700,
-                  padding: "10px 8px"
-                }}
-              >
-                {name}
-              </button>
-            ))}
-          </div>
-        </section>
+    <div className="pos-board pos-board--pixel grid min-h-[calc(100vh-1rem)] gap-2 rounded-xl border border-slate-300 bg-slate-100 p-0 xl:grid-cols-[minmax(0,1fr)_355px]">
+      <section className="pos-board-main flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-300 bg-slate-50">
+        <div className="pos-topbar-blank shrink-0 border-b border-slate-300" />
 
-        <section data-cart-sidebar style={{ padding: 16, background: "#fffcf8" }}>
-          <h3>{lang === "th" ? "ตะกร้า / ชำระเงิน" : "Cart / Payment"}</h3>
-          <p style={{ color: "var(--muted)" }}>Shift: OPEN-20260517-01 | Table A01</p>
-          <div style={{ border: "1px dashed var(--border)", borderRadius: 12, padding: 12, marginBottom: 12 }}>
-            <p>{lang === "th" ? "1 x ก๋วยเตี๋ยวน้ำใส = THB 65" : "1 x Clear Soup Noodle = THB 65"}</p>
-            <p>{lang === "th" ? "1 x น้ำเก๊กฮวย = THB 25" : "1 x Chrysanthemum Drink = THB 25"}</p>
-            <p>{lang === "th" ? "ส่วนลด: THB 10" : "Discount: THB 10"}</p>
-            <p style={{ fontWeight: 700 }}>{lang === "th" ? "รวมสุทธิ: THB 80" : "Net Total: THB 80"}</p>
-          </div>
-
-          <h4>{lang === "th" ? "ช่องทางขาย (Manual Delivery)" : "Sales Channel (Manual Delivery)"}</h4>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-            {channels.map((channel) => (
-              <button
-                key={channel}
-                className="tap-target"
-                style={{
-                  borderRadius: 999,
-                  border: "1px solid var(--border)",
-                  padding: "10px 12px",
-                  background: channel === "Grab" ? "#ffe8db" : "#fff"
-                }}
-              >
-                {channel}
-              </button>
-            ))}
-          </div>
-
-          <div className="pos-preview-stack">
-            <input
-              className="tap-target"
-              placeholder={lang === "th" ? "Order Code จากแอป" : "External Order Code"}
-              style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)" }}
-            />
-            <input
-              className="tap-target"
-              placeholder={lang === "th" ? "ชื่อลูกค้า / หมายเหตุ" : "Customer Name / Notes"}
-              style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)" }}
-            />
-            <input
-              className="tap-target"
-              placeholder={lang === "th" ? "ยอดขายตามแอป" : "App Total Amount"}
-              style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)" }}
-            />
-            <input
-              className="tap-target"
-              placeholder={lang === "th" ? "ส่วนลด / GP" : "Discount / GP"}
-              style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)" }}
-            />
-            <select className="tap-target" style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)" }}>
-              {statusLabels[lang].map((status) => (
-                <option key={status}>{status}</option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <button className="tap-target" style={{ borderRadius: 10, padding: 12, border: "none", background: "#363633", color: "#fff", fontWeight: 700 }}>
-              {lang === "th" ? "ชำระเงินสด" : "Cash Payment"}
+        <div className="pos-board-content flex min-h-0 flex-1 flex-col p-2">
+          <div className="pos-tabs-row mb-2 flex items-center gap-1.5 overflow-x-auto pb-1">
+            {categories[lang].map((category, index) => {
+              const isActive = index === activeCategory;
+              return (
+                <button
+                  key={category.label}
+                  type="button"
+                  onClick={() => setActiveCategory(index)}
+                  className={`whitespace-nowrap rounded-lg border px-3 py-1.5 text-[12px] font-bold leading-none md:px-3.5 md:py-2 ${
+                    isActive
+                      ? "border-orange-500 bg-gradient-to-b from-orange-400 to-orange-500 text-white"
+                      : "border-slate-300 bg-white text-slate-800"
+                  }`}
+                >
+                  {category.label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              className="ml-auto whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 text-[12px] font-bold leading-none text-slate-800 md:py-2"
+            >
+              ☷ {lang === "th" ? "จัดการเมนู" : "Manage Menu"}
             </button>
-            <button className="tap-target" style={{ borderRadius: 10, padding: 12, border: "none", background: "var(--accent)", color: "#fff", fontWeight: 700 }}>
-              {lang === "th" ? "เงินโอน" : "Bank Transfer"}
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="pos-products-grid grid grid-cols-2 gap-2 md:grid-cols-3 lg:gap-2.5 xl:grid-cols-4">
+              {visibleProducts.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  className="pos-product-card overflow-hidden rounded-lg border border-slate-300 bg-white text-left"
+                >
+                  <div className="relative h-[102px] w-full md:h-[108px]">
+                    <Image
+                      src={product.image}
+                      alt={product.name[lang]}
+                      fill
+                      sizes="(max-width: 1024px) 50vw, 25vw"
+                      className="object-cover"
+                    />
+                  </div>
+                  <div className="p-2.5">
+                    <p className="pos-product-title text-[13px] font-bold leading-[1.34] text-slate-900 md:text-[14px]">
+                      {product.name[lang]}
+                    </p>
+                    <p className="pos-product-price mt-2 text-[18px] font-extrabold leading-none text-orange-600 md:text-[20px]">฿{product.price}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="pos-pagination-row mt-2 flex justify-center gap-1.5">
+            {["‹", "1", "2", "3", "›"].map((page) => (
+              <button
+                key={page}
+                type="button"
+                className={`grid h-7 w-7 place-items-center rounded-md border text-[12px] font-bold ${
+                  page === "1"
+                    ? "border-orange-500 bg-orange-500 text-white"
+                    : "border-slate-300 bg-white text-slate-700"
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <aside className="pos-board-cart flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-300 bg-slate-50">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-300 px-3 py-2.5">
+          <h3 className="text-[20px] font-extrabold leading-tight text-slate-900 md:text-[21px]">
+            {lang === "th" ? `รายการสินค้า (${orderRows.length})` : `Order Items (${orderRows.length})`}
+          </h3>
+          <button type="button" className="text-[13px] font-bold leading-none text-red-500">
+            {lang === "th" ? "ล้างรายการ" : "Clear"}
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          <div className="space-y-2.5">
+            {orderRows.map((row) => {
+              const product = products.find((item) => item.id === row.id);
+              if (!product) return null;
+
+              return (
+                <div
+                  key={row.id}
+                  className="grid grid-cols-[44px_minmax(0,1fr)_62px_16px] items-center gap-2 rounded-lg border border-slate-300 bg-white p-2"
+                >
+                  <Image
+                    src={product.image}
+                    alt={product.name[lang]}
+                    width={44}
+                    height={44}
+                    className="h-11 w-11 rounded-full object-cover"
+                  />
+                  <div>
+                    <p className="text-[13px] font-bold leading-[1.3] text-slate-900 md:text-[14px]">{product.name[lang]}</p>
+                    <p className="text-[11px] text-slate-500">
+                      ฿{product.price} / {product.unit[lang]}
+                    </p>
+                    <div className="mt-1 inline-flex overflow-hidden rounded-md border border-slate-300 bg-slate-50">
+                      <button
+                        type="button"
+                        className="h-6 min-w-6 text-[14px] font-bold leading-none text-slate-700"
+                        onClick={() => decreaseQty(row.id)}
+                        aria-label={lang === "th" ? "ลดจำนวน" : "Decrease quantity"}
+                      >
+                        -
+                      </button>
+                      <span className="grid min-w-7 place-items-center text-[13px] font-bold text-slate-800">{row.qty}</span>
+                      <button
+                        type="button"
+                        className="h-6 min-w-6 text-[14px] font-bold leading-none text-slate-700"
+                        onClick={() => increaseQty(row.id)}
+                        aria-label={lang === "th" ? "เพิ่มจำนวน" : "Increase quantity"}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                  <div className="text-right text-[20px] font-extrabold leading-none text-slate-900 md:text-[22px]">
+                    ฿{(product.price * row.qty).toFixed(0)}
+                  </div>
+                  <button
+                    type="button"
+                    className="text-[19px] leading-none text-slate-500"
+                    onClick={() => removeRow(row.id)}
+                    aria-label={lang === "th" ? "ลบรายการ" : "Delete item"}
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="shrink-0 border-t border-slate-300 bg-slate-50 px-2 pb-2 pt-2">
+          <div className="rounded-lg border border-slate-300 bg-white p-2.5">
+            <div className="mb-1.5 flex items-center justify-between text-[13px] leading-[1.28] text-slate-700">
+              <span>{lang === "th" ? "ส่วนลด" : "Discount"}</span>
+              <span className="min-w-[84px] rounded-md border border-slate-300 bg-slate-50 px-2 py-0.5 text-right">
+                ฿ 0.00
+              </span>
+            </div>
+            <div className="mb-1.5 flex items-center justify-between text-[13px] leading-[1.28] text-slate-700">
+              <span>{lang === "th" ? "ภาษี (7%)" : "Tax (7%)"}</span>
+              <span>{currency(tax)}</span>
+            </div>
+            <div className="mt-2 flex items-center justify-between border-t-2 border-dashed border-slate-400 pt-2 text-[16px] font-extrabold leading-[1.05] text-slate-900">
+              <span className="pos-total-label">{lang === "th" ? "ยอดรวม" : "Total"}</span>
+              <span className="pos-total-value text-[24px] text-orange-600 md:text-[25px]">{currency(total)}</span>
+            </div>
+          </div>
+
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[13px] font-bold text-slate-700"
+            >
+              {lang === "th" ? "ยกเลิกบิล" : "Cancel"}
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[13px] font-bold text-slate-700"
+            >
+              {lang === "th" ? "พักบิล" : "Hold"}
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-orange-200 bg-orange-50 px-2 py-1.5 text-[13px] font-bold text-orange-600"
+            >
+              {lang === "th" ? "โปรโมชั่น" : "Promotion"}
             </button>
           </div>
 
           <button
             type="button"
-            data-pin-open
-            className="tap-target"
-            onClick={() => setIsPinModalOpen(true)}
-            style={{
-              marginTop: 10,
-              borderRadius: 10,
-              padding: "10px 12px",
-              border: "1px solid var(--border)",
-              background: "#fff"
-            }}
+            className="pos-pay-btn mt-2 w-full rounded-lg border border-orange-500 bg-gradient-to-b from-orange-400 to-orange-500 py-2 text-[20px] font-extrabold leading-none text-white md:text-[22px]"
           >
-            {lang === "th" ? "ตัวอย่าง PIN อนุมัติผู้จัดการ" : "Preview Manager PIN Approval"}
+            {lang === "th" ? "ชำระเงิน" : "Pay"}
           </button>
-
-          <p style={{ marginTop: 10, color: "#a05e42" }}>
-            {lang === "th" ? "Offline Queue: พร้อมใช้งานเมื่ออินเทอร์เน็ตหลุด" : "Offline Queue: ready when internet drops"}
-          </p>
-        </section>
-      </div>
-
-      {isPinModalOpen ? (
-        <div className="dialog-overlay" role="dialog" data-pin-approval-modal aria-label="PIN Approval">
-          <div className="dialog-card">
-            <h4 style={{ marginTop: 0 }}>{lang === "th" ? "อนุมัติด้วย PIN ผู้จัดการ" : "Manager PIN Approval"}</h4>
-            <p style={{ color: "var(--muted)" }}>
-              {lang === "th"
-                ? "ใช้สำหรับยกเลิกบิล ปรับสต๊อก หรือปิดกะยอดไม่ตรง"
-                : "Required for bill cancellation, stock adjustment, or mismatch shift close."}
-            </p>
-            <div className="pos-preview-stack">
-              <input
-                className="tap-target"
-                placeholder={lang === "th" ? "รหัสพนักงานผู้อนุมัติ" : "Approver Staff ID"}
-                style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)" }}
-              />
-              <input
-                className="tap-target"
-                placeholder="PIN"
-                type="password"
-                style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)" }}
-              />
-            </div>
-            <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <button
-                type="button"
-                className="tap-target"
-                onClick={() => setIsPinModalOpen(false)}
-                style={{ borderRadius: 10, border: "1px solid var(--border)", background: "#fff" }}
-              >
-                {lang === "th" ? "ยกเลิก" : "Cancel"}
-              </button>
-              <button
-                type="button"
-                className="tap-target"
-                onClick={() => setIsPinModalOpen(false)}
-                style={{ borderRadius: 10, border: "none", background: "var(--accent)", color: "#fff", fontWeight: 700 }}
-              >
-                {lang === "th" ? "อนุมัติ" : "Approve"}
-              </button>
-            </div>
-          </div>
         </div>
-      ) : null}
+      </aside>
     </div>
   );
 }
