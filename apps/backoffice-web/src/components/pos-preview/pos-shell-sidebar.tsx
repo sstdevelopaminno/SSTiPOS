@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { LanguageSwitcher } from "@/components/language/language-switcher";
 import { PosStaffMenu } from "@/components/pos-preview/pos-staff-menu";
@@ -17,6 +18,8 @@ type Props = {
 
 export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel, englishLabel }: Props) {
   const [collapsed, setCollapsed] = useState(false);
+  const pathname = usePathname();
+  const isSettingsActive = pathname === "/preview/pos/settings";
 
   return (
     <aside
@@ -64,12 +67,31 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
 
       <Link
         href="/preview/pos/settings"
-        className={`mt-0.5 inline-flex min-h-9 w-full items-center px-2 text-sm font-semibold text-slate-100/90 transition hover:text-white ${
-          collapsed ? "justify-center" : "justify-center"
+        className={`group relative mt-0.5 inline-flex min-h-10 w-full items-center px-2 text-sm font-semibold leading-tight transition ${
+          collapsed ? "justify-center" : "justify-start gap-2"
+        } ${
+          isSettingsActive
+            ? "rounded-md bg-white/10 text-white before:absolute before:left-0 before:top-1/2 before:h-5 before:w-1 before:-translate-y-1/2 before:rounded-r-full before:bg-blue-400"
+            : "text-slate-100/90 hover:text-white"
         }`}
         title={collapsed ? settingsLabel : undefined}
       >
-        {collapsed ? "⚙" : settingsLabel}
+        <span className="inline-flex w-4 justify-center" aria-hidden>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.7 1.7 0 0 0 .33 1.82l.03.03a2 2 0 1 1-2.83 2.83l-.03-.03A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.04A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.82.33l-.03.03a2 2 0 1 1-2.83-2.83l.03-.03A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.96a2 2 0 1 1 0-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.33-1.82l-.03-.03a2 2 0 1 1 2.83-2.83l.03.03A1.7 1.7 0 0 0 9 4.6c.36 0 .7-.13 1-.38.27-.25.43-.6.4-.96V3a2 2 0 1 1 4 0v.04c-.03.37.12.72.4.96.3.25.64.38 1 .38a1.7 1.7 0 0 0 1.82-.33l.03-.03a2 2 0 1 1 2.83 2.83l-.03.03a1.7 1.7 0 0 0-.33 1.82c.1.38.35.73.72.95.29.18.62.27.95.25H21a2 2 0 1 1 0 4h-.04c-.37-.03-.72.12-.96.4-.24.3-.37.64-.36 1z" />
+          </svg>
+        </span>
+        {!collapsed ? <span className="truncate text-[14px]">{settingsLabel}</span> : null}
       </Link>
 
       <div className="mt-auto pt-3">

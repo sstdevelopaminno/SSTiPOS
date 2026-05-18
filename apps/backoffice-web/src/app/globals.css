@@ -801,8 +801,9 @@ a {
 }
 
 .pos-board--pixel .pos-total-label {
-  font-size: 20px;
+  font-size: inherit;
   line-height: 1.06;
+  letter-spacing: -0.01em;
 }
 
 .pos-board--pixel .pos-total-value {
@@ -846,9 +847,6 @@ a {
   .pos-board--pixel .pos-pagination-row {
     margin-top: 6px;
   }
-  .pos-board--pixel .pos-total-label {
-    font-size: 19px;
-  }
   .pos-board--pixel .pos-total-value {
     font-size: 24px;
   }
@@ -882,9 +880,6 @@ a {
   .pos-board--pixel .pos-product-price {
     font-size: 27px;
   }
-  .pos-board--pixel .pos-total-label {
-    font-size: 20px;
-  }
   .pos-board--pixel .pos-total-value {
     font-size: 25px;
   }
@@ -914,9 +909,6 @@ a {
   }
   .pos-board--pixel .pos-product-price {
     font-size: 24px;
-  }
-  .pos-board--pixel .pos-total-label {
-    font-size: 18px;
   }
   .pos-board--pixel .pos-total-value {
     font-size: 23px;
@@ -951,9 +943,6 @@ a {
   }
   .pos-board--pixel .pos-product-price {
     font-size: 25px;
-  }
-  .pos-board--pixel .pos-total-label {
-    font-size: 19px;
   }
   .pos-board--pixel .pos-total-value {
     font-size: 24px;

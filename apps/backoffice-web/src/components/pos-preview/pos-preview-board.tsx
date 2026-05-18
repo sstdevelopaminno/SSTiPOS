@@ -319,7 +319,7 @@ export function PosPreviewBoard({ lang }: { lang: Language }) {
               <span>{currency(tax)}</span>
             </div>
             <div className="mt-2 flex items-center justify-between border-t-2 border-dashed border-slate-400 pt-2 text-[16px] font-extrabold leading-[1.05] text-slate-900">
-              <span className="pos-total-label">{lang === "th" ? "ยอดรวม" : "Total"}</span>
+              <span className="pos-total-label text-[24px] md:text-[25px]">{lang === "th" ? "ยอดรวม" : "Total"}</span>
               <span className="pos-total-value text-[24px] text-orange-600 md:text-[25px]">{currency(total)}</span>
             </div>
           </div>
