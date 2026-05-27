@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "corepack pnpm -C ../.. install --frozen-lockfile",
-  "buildCommand": "pnpm build",
+  "buildCommand": "corepack pnpm -C ../.. --filter backoffice-web build",
   "outputDirectory": ".next"
 }

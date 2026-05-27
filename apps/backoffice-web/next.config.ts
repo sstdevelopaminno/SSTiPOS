@@ -11,6 +11,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  turbopack: {
+    root: process.cwd()
+  },
   transpilePackages: ["@pos/shared-types", "@pos/pos-domain", "@pos/ui"],
   images: {
     remotePatterns: [
