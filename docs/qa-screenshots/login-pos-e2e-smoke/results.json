@@ -1,0 +1,168 @@
+{
+  "generatedAt": "2026-05-27T15:11:21.885Z",
+  "config": {
+    "loginBaseUrl": "https://sstipos-ten.vercel.app/login/store",
+    "posPreviewUrl": "https://sstipos-ten.vercel.app/pos/orders",
+    "storeCode": "NDL-TH-001",
+    "employeeCode": "EMP-000101",
+    "preferredBranch": "",
+    "preferredDevice": "",
+    "headless": true
+  },
+  "scenarios": [
+    {
+      "name": "happy_path",
+      "result": "passed",
+      "steps": [
+        {
+          "at": "2026-05-27T15:11:22.708Z",
+          "name": "open_login_store",
+          "ok": true,
+          "url": "https://sstipos-ten.vercel.app/login/store"
+        },
+        {
+          "at": "2026-05-27T15:11:23.459Z",
+          "name": "screenshot",
+          "ok": true,
+          "file": "01-login-store.png"
+        },
+        {
+          "at": "2026-05-27T15:11:27.229Z",
+          "name": "api_store_verify",
+          "ok": true,
+          "status": 200
+        },
+        {
+          "at": "2026-05-27T15:11:27.229Z",
+          "name": "submit_store_code",
+          "ok": true,
+          "storeCode": "NDL-TH-001"
+        },
+        {
+          "at": "2026-05-27T15:11:27.944Z",
+          "name": "branch_step_detected",
+          "ok": true
+        },
+        {
+          "at": "2026-05-27T15:11:31.159Z",
+          "name": "confirm_branch_selection",
+          "ok": true
+        },
+        {
+          "at": "2026-05-27T15:11:31.568Z",
+          "name": "screenshot",
+          "ok": true,
+          "file": "02-login-branches.png"
+        },
+        {
+          "at": "2026-05-27T15:11:35.033Z",
+          "name": "api_employee_verify",
+          "ok": true,
+          "status": 200
+        },
+        {
+          "at": "2026-05-27T15:11:35.338Z",
+          "name": "employee_verified",
+          "ok": true,
+          "employeeCode": "EMP-000101"
+        },
+        {
+          "at": "2026-05-27T15:11:35.729Z",
+          "name": "screenshot",
+          "ok": true,
+          "file": "03-login-employee.png"
+        },
+        {
+          "at": "2026-05-27T15:11:40.770Z",
+          "name": "redirect_to_pos_preview",
+          "ok": true,
+          "url": "https://sstipos-ten.vercel.app/pos/orders"
+        },
+        {
+          "at": "2026-05-27T15:11:41.739Z",
+          "name": "screenshot",
+          "ok": true,
+          "file": "04-pos-preview-gate.png"
+        },
+        {
+          "at": "2026-05-27T15:11:44.054Z",
+          "name": "api_session_current",
+          "ok": true,
+          "status": 200
+        },
+        {
+          "at": "2026-05-27T15:11:45.280Z",
+          "name": "api_shift_current_initial",
+          "ok": true,
+          "status": 200
+        },
+        {
+          "at": "2026-05-27T15:11:47.298Z",
+          "name": "screenshot",
+          "ok": true,
+          "file": "05-pos-sales-ready.png"
+        },
+        {
+          "at": "2026-05-27T15:11:50.574Z",
+          "name": "api_shift_open_on_products_guard",
+          "ok": true,
+          "status": 201
+        },
+        {
+          "at": "2026-05-27T15:11:53.402Z",
+          "name": "api_products",
+          "ok": true,
+          "status": 200,
+          "productCount": 0
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "session_expired_path",
+      "result": "passed",
+      "steps": [
+        {
+          "at": "2026-05-27T15:11:53.412Z",
+          "name": "clear_cookies",
+          "ok": true
+        },
+        {
+          "at": "2026-05-27T15:11:54.801Z",
+          "name": "open_pos_after_cookie_clear",
+          "ok": true,
+          "url": "https://sstipos-ten.vercel.app/pos/orders"
+        },
+        {
+          "at": "2026-05-27T15:11:55.144Z",
+          "name": "api_session_current_after_expire",
+          "ok": true,
+          "status": 401,
+          "code": "missing_pos_session"
+        },
+        {
+          "at": "2026-05-27T15:11:55.546Z",
+          "name": "api_products_after_expire",
+          "ok": true,
+          "status": 401,
+          "code": "missing_pos_session"
+        },
+        {
+          "at": "2026-05-27T15:11:55.574Z",
+          "name": "ui_gate_blocks_access",
+          "ok": true,
+          "productsVisibleCount": 0
+        },
+        {
+          "at": "2026-05-27T15:11:55.804Z",
+          "name": "screenshot",
+          "ok": true,
+          "file": "06-session-expired-gate.png"
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "result": "passed",
+  "errors": []
+}

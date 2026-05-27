@@ -9,6 +9,8 @@ const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }
 ];
 
+const idAppOrigin = (process.env.SSTIPOS_ID_APP_ORIGIN ?? "https://sstipos-id.vercel.app").replace(/\/+$/, "");
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   turbopack: {
@@ -22,6 +24,47 @@ const nextConfig: NextConfig = {
         hostname: "images.unsplash.com"
       }
     ]
+  },
+  async rewrites() {
+    const loginReferrerPattern = ".*\\/(login|scan)(\\/|\\?|$).*";
+    return {
+      beforeFiles: [
+        {
+          source: "/login/:path*",
+          destination: `${idAppOrigin}/login/:path*`
+        },
+        {
+          source: "/scan/:path*",
+          destination: `${idAppOrigin}/scan/:path*`
+        },
+        {
+          source: "/api/auth/:path*",
+          destination: `${idAppOrigin}/api/auth/:path*`
+        },
+        {
+          source: "/api/store/:path*",
+          destination: `${idAppOrigin}/api/store/:path*`
+        },
+        {
+          source: "/api/mobile/:path*",
+          destination: `${idAppOrigin}/api/mobile/:path*`
+        },
+        {
+          source: "/api/verify",
+          destination: `${idAppOrigin}/api/verify`
+        },
+        {
+          source: "/_next/:path*",
+          has: [{ type: "header", key: "referer", value: loginReferrerPattern }],
+          destination: `${idAppOrigin}/_next/:path*`
+        },
+        {
+          source: "/brand/:path*",
+          has: [{ type: "header", key: "referer", value: loginReferrerPattern }],
+          destination: `${idAppOrigin}/brand/:path*`
+        }
+      ]
+    };
   },
   async headers() {
     return [
