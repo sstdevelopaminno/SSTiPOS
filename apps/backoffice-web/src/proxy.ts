@@ -8,7 +8,7 @@ function resolvePosSessionCookieNames() {
   return { handoffName, sessionIdName };
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { handoffName, sessionIdName } = resolvePosSessionCookieNames();
   const hasPosSession = Boolean(request.cookies.get(sessionIdName)?.value || request.cookies.get(handoffName)?.value);
 
