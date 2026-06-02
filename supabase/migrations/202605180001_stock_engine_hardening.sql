@@ -1,4 +1,4 @@
-﻿-- Stock Engine Hardening v0.1.1
+-- Stock Engine Hardening v0.1.1
 -- Goals: prevent negative stock, support concurrent order creation,
 -- ensure atomic recipe deduction, and provide rollback-safe transactions.
 

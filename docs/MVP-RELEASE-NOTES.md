@@ -1,3 +1,7 @@
+﻿> [!WARNING]
+> ARCHIVED (2026-05-31): This document references legacy QR login flow and is kept for historical/audit context only.
+> Active runtime flow: apps/backoffice-web `/login/store -> /login/branches|employee -> /login/devices`.
+> See: `docs/ARCHIVE-QR-DECOMMISSION-2026-05-31.md`.
 # MVP Release Notes - POS Preview
 
 Release date: 2026-05-17  

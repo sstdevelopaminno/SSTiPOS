@@ -1,0 +1,33 @@
+{
+  "generatedAt": "2026-05-31T05:12:20.892Z",
+  "loginBaseUrl": "http://localhost:3000/login/store",
+  "posBaseUrl": "http://localhost:3000/preview/pos",
+  "storeCode": "NDL-TH-001",
+  "preferredBranch": "Noodle BKK 01",
+  "preferredDevice": "BKK-01-POS-01",
+  "steps": [
+    {
+      "at": "2026-05-31T05:12:40.707Z",
+      "name": "open_login_store",
+      "ok": true
+    },
+    {
+      "at": "2026-05-31T05:12:49.351Z",
+      "name": "submit_store_code",
+      "ok": true
+    },
+    {
+      "at": "2026-05-31T05:12:49.351Z",
+      "name": "branch_step_skipped",
+      "ok": true,
+      "url": "http://localhost:3000/login/store"
+    }
+  ],
+  "result": "failed",
+  "errors": [
+    {
+      "step": "runtime",
+      "message": "page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation to \"**/login/employee**\" until \"load\"\n============================================================"
+    }
+  ]
+}

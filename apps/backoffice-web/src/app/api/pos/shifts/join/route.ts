@@ -37,22 +37,22 @@ export async function POST(request: Request) {
     const supabase = getSupabaseServiceClient();
     const shiftQuery = await supabase
       .from("shifts")
-      .select("id,tenant_id,branch_id,status,device_code,opened_at")
+      .select("id,tenant_id,branch_id,status,device_code,opened_at,opened_by")
       .eq("id", shiftId)
       .eq("tenant_id", sessionScope.tenantId)
       .eq("branch_id", sessionScope.branchId)
-      .maybeSingle<{ id: string; tenant_id: string; branch_id: string; status: string; device_code: string | null; opened_at: string }>();
+      .maybeSingle<{ id: string; tenant_id: string; branch_id: string; status: string; device_code: string | null; opened_at: string; opened_by: string }>();
     let shiftRow = shiftQuery.data;
     let shiftError = shiftQuery.error;
 
     if (isMissingShiftDeviceCodeColumnError(shiftQuery.error)) {
       const legacyShiftQuery = await supabase
         .from("shifts")
-        .select("id,tenant_id,branch_id,status,opened_at")
+        .select("id,tenant_id,branch_id,status,opened_at,opened_by")
         .eq("id", shiftId)
         .eq("tenant_id", sessionScope.tenantId)
         .eq("branch_id", sessionScope.branchId)
-        .maybeSingle<{ id: string; tenant_id: string; branch_id: string; status: string; opened_at: string }>();
+        .maybeSingle<{ id: string; tenant_id: string; branch_id: string; status: string; opened_at: string; opened_by: string }>();
       shiftRow = legacyShiftQuery.data ? { ...legacyShiftQuery.data, device_code: null } : null;
       shiftError = legacyShiftQuery.error;
     }
@@ -65,6 +65,13 @@ export async function POST(request: Request) {
     }
     if (shiftRow.status !== "open") {
       return NextResponse.json({ data: null, error: { code: "shift_not_open", message: "Shift is not open." } }, { status: 409 });
+    }
+    const isStaffRole = scope.session.role !== "owner" && scope.session.role !== "manager" && scope.session.role !== "accountant";
+    if (isStaffRole && shiftRow.opened_by !== sessionScope.userId) {
+      return NextResponse.json(
+        { data: null, error: { code: "shift_join_forbidden", message: "Staff can join only their own shift." } },
+        { status: 403 }
+      );
     }
     if (sessionScope.deviceCode && shiftRow.device_code && sessionScope.deviceCode !== shiftRow.device_code) {
       return NextResponse.json(
@@ -85,7 +92,7 @@ export async function POST(request: Request) {
       tenantId: sessionScope.tenantId,
       branchId: sessionScope.branchId,
       actorUserId: sessionScope.userId,
-      actorRole: sessionScope.role as "owner" | "manager" | "staff",
+      actorRole: sessionScope.role as "owner" | "manager" | "staff" | "accountant",
       action: "pos_shift_joined",
       targetTable: "shifts",
       targetId: shiftRow.id,

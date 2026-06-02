@@ -1,7 +1,10 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
-import { buildPaginationMeta, parseBool, parsePagination } from "@/lib/query-params";
+import { buildPaginationMeta, parseBool, parsePagination, sanitizeSearchTerm } from "@/lib/query-params";
 import { fail, ok } from "@/lib/http";
+
+const ARCHIVED_INGREDIENT_PREFIX = "__archived__:";
+const FALLBACK_INGREDIENT_PREFIX = "STOCK:";
 
 export async function GET(req: Request) {
   try {
@@ -12,7 +15,7 @@ export async function GET(req: Request) {
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
     const view = searchParams.get("view")?.trim() || "ingredients";
-    const search = searchParams.get("search")?.trim();
+    const search = sanitizeSearchTerm(searchParams.get("search"));
     const movementType = searchParams.get("movement_type")?.trim();
     const lowStock = parseBool(searchParams.get("low_stock"));
     const branchId = searchParams.get("branch_id")?.trim();
@@ -58,6 +61,8 @@ export async function GET(req: Request) {
       .select("id,tenant_id,branch_id,name,base_unit,quantity_on_hand,reorder_level,updated_at", { count: "exact" })
       .eq("tenant_id", auth.tenantId!)
       .eq("branch_id", auth.branchId!)
+      .not("name", "ilike", `${ARCHIVED_INGREDIENT_PREFIX}%`)
+      .not("name", "ilike", `${FALLBACK_INGREDIENT_PREFIX}%`)
       .order("updated_at", { ascending: false })
       .range(from, to);
 

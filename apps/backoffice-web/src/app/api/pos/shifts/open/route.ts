@@ -55,7 +55,7 @@ export async function POST(request: Request) {
 
     let existingQuery = supabase
       .from("shifts")
-      .select("id")
+      .select("id,status,opened_at,opening_cash,device_code")
       .eq("tenant_id", sessionScope.tenantId)
       .eq("branch_id", sessionScope.branchId)
       .eq("status", "open")
@@ -63,17 +63,23 @@ export async function POST(request: Request) {
     if (sessionScope.deviceCode) {
       existingQuery = existingQuery.eq("device_code", sessionScope.deviceCode);
     }
-    let { data: existingOpenShift, error: existingOpenShiftError } = await existingQuery.maybeSingle<{ id: string }>();
+    let { data: existingOpenShift, error: existingOpenShiftError } = await existingQuery.maybeSingle<{
+      id: string;
+      status: string;
+      opened_at: string;
+      opening_cash: number | null;
+      device_code: string | null;
+    }>();
     if (isMissingShiftDeviceCodeColumnError(existingOpenShiftError)) {
       const fallbackExisting = await supabase
         .from("shifts")
-        .select("id")
+        .select("id,status,opened_at,opening_cash")
         .eq("tenant_id", sessionScope.tenantId)
         .eq("branch_id", sessionScope.branchId)
         .eq("status", "open")
         .limit(1)
-        .maybeSingle<{ id: string }>();
-      existingOpenShift = fallbackExisting.data;
+        .maybeSingle<{ id: string; status: string; opened_at: string; opening_cash: number | null }>();
+      existingOpenShift = fallbackExisting.data ? { ...fallbackExisting.data, device_code: null } : null;
       existingOpenShiftError = fallbackExisting.error;
     }
     if (existingOpenShiftError) {
@@ -83,10 +89,29 @@ export async function POST(request: Request) {
       );
     }
     if (existingOpenShift) {
-      return NextResponse.json(
-        { data: null, error: { code: "shift_already_open", message: "An open shift already exists for this scope." } },
-        { status: 409 }
+      const { error: existingSessionBindError } = await supabase
+        .from("pos_sessions")
+        .update({ shift_id: existingOpenShift.id })
+        .eq("id", scope.session.id);
+      if (existingSessionBindError && !isMissingSessionShiftColumnError(existingSessionBindError)) {
+        return NextResponse.json(
+          { data: null, error: { code: "session_update_failed", message: existingSessionBindError.message } },
+          { status: 500 }
+        );
+      }
+
+      const response = NextResponse.json(
+        {
+          data: {
+            shift: existingOpenShift,
+            session_shift_id: existingOpenShift.id,
+            reused_existing_shift: true
+          },
+          error: null
+        },
+        { status: 200 }
       );
+      return withPosSessionCookie(response, scope.session.id);
     }
 
     const createResult = await supabase
@@ -149,7 +174,7 @@ export async function POST(request: Request) {
       tenantId: sessionScope.tenantId,
       branchId: sessionScope.branchId,
       actorUserId: sessionScope.userId,
-      actorRole: sessionScope.role as "owner" | "manager" | "staff",
+      actorRole: sessionScope.role as "owner" | "manager" | "staff" | "accountant",
       action: "pos_shift_opened",
       targetTable: "shifts",
       targetId: createdShift.id,

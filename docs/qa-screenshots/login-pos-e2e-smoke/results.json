@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-05-27T15:44:58.514Z",
+  "generatedAt": "2026-05-28T05:46:09.077Z",
   "config": {
-    "loginBaseUrl": "https://sstipos-ten.vercel.app/login/store",
-    "posPreviewUrl": "https://sstipos-ten.vercel.app/preview/pos",
+    "loginBaseUrl": "http://localhost:3001/login/store",
+    "posPreviewUrl": "http://localhost:3000/preview/pos",
     "storeCode": "NDL-TH-001",
     "employeeCode": "EMP-000101",
     "preferredBranch": "",
@@ -11,99 +11,146 @@
   },
   "scenarios": [
     {
+      "name": "warmup",
+      "result": "passed",
+      "steps": [
+        {
+          "at": "2026-05-28T05:46:18.115Z",
+          "name": "api_store_verify_warmup",
+          "ok": true,
+          "status": 400
+        }
+      ],
+      "errors": []
+    },
+    {
       "name": "happy_path",
       "result": "passed",
       "steps": [
         {
-          "at": "2026-05-27T15:45:03.968Z",
+          "at": "2026-05-28T05:46:31.725Z",
           "name": "open_login_store",
           "ok": true,
-          "url": "https://sstipos-ten.vercel.app/login/store"
+          "url": "http://localhost:3001/login/store"
         },
         {
-          "at": "2026-05-27T15:45:05.372Z",
+          "at": "2026-05-28T05:46:35.572Z",
           "name": "screenshot",
           "ok": true,
           "file": "01-login-store.png"
         },
         {
-          "at": "2026-05-27T15:45:10.797Z",
+          "at": "2026-05-28T05:47:19.486Z",
           "name": "api_store_verify",
           "ok": true,
           "status": 200
         },
         {
-          "at": "2026-05-27T15:45:10.798Z",
+          "at": "2026-05-28T05:47:19.486Z",
           "name": "submit_store_code",
           "ok": true,
           "storeCode": "NDL-TH-001"
         },
         {
-          "at": "2026-05-27T15:45:12.200Z",
+          "at": "2026-05-28T05:47:31.838Z",
           "name": "branch_step_detected",
           "ok": true
         },
         {
-          "at": "2026-05-27T15:45:17.002Z",
+          "at": "2026-05-28T05:48:18.659Z",
           "name": "confirm_branch_selection",
           "ok": true
         },
         {
-          "at": "2026-05-27T15:45:17.434Z",
+          "at": "2026-05-28T05:48:20.405Z",
           "name": "screenshot",
           "ok": true,
           "file": "02-login-branches.png"
         },
         {
-          "at": "2026-05-27T15:45:21.449Z",
-          "name": "api_employee_verify",
+          "at": "2026-05-28T05:48:21.200Z",
+          "name": "api_branches_context",
+          "ok": true,
+          "status": 200,
+          "selectedBranchId": "00000000-0000-0000-0000-000000000012"
+        },
+        {
+          "at": "2026-05-28T05:48:31.437Z",
+          "name": "api_qr_create",
+          "ok": true,
+          "status": 200,
+          "tokenPrefix": "yso7-pQ5"
+        },
+        {
+          "at": "2026-05-28T05:48:32.510Z",
+          "name": "screenshot",
+          "ok": true,
+          "file": "03-login-qr-scan.png"
+        },
+        {
+          "at": "2026-05-28T05:48:40.204Z",
+          "name": "api_qr_approve",
           "ok": true,
           "status": 200
         },
         {
-          "at": "2026-05-27T15:45:22.894Z",
-          "name": "employee_verified",
+          "at": "2026-05-28T05:48:40.204Z",
+          "name": "employee_verified_via_qr_scan",
           "ok": true,
           "employeeCode": "EMP-000101"
         },
         {
-          "at": "2026-05-27T15:45:23.222Z",
-          "name": "screenshot",
+          "at": "2026-05-28T05:48:46.184Z",
+          "name": "qr_scan_redirected_to_devices",
           "ok": true,
-          "file": "03-login-employee.png"
+          "url": "http://localhost:3001/login/devices?flow=multi"
         },
         {
-          "at": "2026-05-27T15:45:30.579Z",
+          "at": "2026-05-28T05:48:53.067Z",
+          "name": "api_devices_after_qr_success",
+          "ok": true,
+          "status": 200,
+          "deviceCount": 1
+        },
+        {
+          "at": "2026-05-28T05:49:21.511Z",
+          "name": "api_device_select_after_qr_success",
+          "ok": true,
+          "status": 200,
+          "deviceCode": "POS-AR-001"
+        },
+        {
+          "at": "2026-05-28T05:49:32.330Z",
           "name": "redirect_to_pos_preview",
           "ok": true,
-          "url": "https://sstipos-ten.vercel.app/preview/pos"
+          "url": "http://localhost:3000/preview/pos"
         },
         {
-          "at": "2026-05-27T15:45:32.030Z",
+          "at": "2026-05-28T05:49:38.265Z",
           "name": "screenshot",
           "ok": true,
           "file": "04-pos-preview-gate.png"
         },
         {
-          "at": "2026-05-27T15:45:34.959Z",
+          "at": "2026-05-28T05:49:44.044Z",
           "name": "api_session_current",
           "ok": true,
           "status": 200
         },
         {
-          "at": "2026-05-27T15:45:37.249Z",
+          "at": "2026-05-28T05:49:45.566Z",
           "name": "api_shift_current_initial",
           "ok": true,
           "status": 200
         },
         {
-          "at": "2026-05-27T15:45:39.282Z",
+          "at": "2026-05-28T05:49:51.283Z",
           "name": "screenshot",
           "ok": true,
           "file": "05-pos-sales-ready.png"
         },
         {
-          "at": "2026-05-27T15:45:42.405Z",
+          "at": "2026-05-28T05:49:54.259Z",
           "name": "api_products",
           "ok": true,
           "status": 200,
@@ -117,38 +164,38 @@
       "result": "passed",
       "steps": [
         {
-          "at": "2026-05-27T15:45:42.410Z",
+          "at": "2026-05-28T05:49:54.273Z",
           "name": "clear_cookies",
           "ok": true
         },
         {
-          "at": "2026-05-27T15:45:43.759Z",
+          "at": "2026-05-28T05:49:56.034Z",
           "name": "open_pos_after_cookie_clear",
           "ok": true,
-          "url": "https://sstipos-ten.vercel.app/preview/pos"
+          "url": "http://localhost:3000/preview/pos"
         },
         {
-          "at": "2026-05-27T15:45:44.142Z",
+          "at": "2026-05-28T05:49:56.290Z",
           "name": "api_session_current_after_expire",
           "ok": true,
           "status": 401,
           "code": "missing_pos_session"
         },
         {
-          "at": "2026-05-27T15:45:44.454Z",
+          "at": "2026-05-28T05:49:56.325Z",
           "name": "api_products_after_expire",
           "ok": true,
           "status": 401,
           "code": "missing_pos_session"
         },
         {
-          "at": "2026-05-27T15:45:44.494Z",
+          "at": "2026-05-28T05:49:56.384Z",
           "name": "ui_gate_blocks_access",
           "ok": true,
           "productsVisibleCount": 0
         },
         {
-          "at": "2026-05-27T15:45:44.676Z",
+          "at": "2026-05-28T05:49:59.866Z",
           "name": "screenshot",
           "ok": true,
           "file": "06-session-expired-gate.png"

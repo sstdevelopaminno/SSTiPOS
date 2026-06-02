@@ -1,7 +1,7 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
-import { buildPaginationMeta, parseBool, parsePagination } from "@/lib/query-params";
+import { buildPaginationMeta, parseBool, parsePagination, sanitizeSearchTerm } from "@/lib/query-params";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 function guardStaffManagementRole(role: string | null) {
@@ -22,7 +22,7 @@ export async function GET(req: Request) {
     const to = from + pageSize - 1;
     const roleFilter = searchParams.get("role")?.trim();
     const isActiveFilter = parseBool(searchParams.get("is_active"));
-    const search = searchParams.get("search")?.trim();
+    const search = sanitizeSearchTerm(searchParams.get("search"));
     const branchId = searchParams.get("branch_id")?.trim();
 
     if (branchId && branchId !== auth.branchId) {

@@ -15,6 +15,7 @@ type AuditRow = {
   target_table: string;
   target_id: string | null;
   created_at: string;
+  metadata?: Record<string, unknown>;
 };
 
 export function AuditModule() {
@@ -82,6 +83,7 @@ export function AuditModule() {
                   <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: 8 }}>Role</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: 8 }}>Entity</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: 8 }}>Target</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: 8 }}>Metadata</th>
                 </tr>
               </thead>
               <tbody>
@@ -98,6 +100,9 @@ export function AuditModule() {
                     <td style={{ borderBottom: "1px solid var(--border)", padding: 8 }}>
                       {row.target_table}
                       {row.target_id ? `:${row.target_id}` : ""}
+                    </td>
+                    <td style={{ borderBottom: "1px solid var(--border)", padding: 8, maxWidth: 360, whiteSpace: "pre-wrap" }}>
+                      {row.metadata ? JSON.stringify(row.metadata).slice(0, 220) : "-"}
                     </td>
                   </tr>
                 ))}

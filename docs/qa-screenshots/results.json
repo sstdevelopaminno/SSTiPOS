@@ -8,70 +8,9 @@
       "hasOverflow": false,
       "overflowPx": 0,
       "touchTargets": {
-        "total": 25,
-        "smallCount": 17,
-        "samples": [
-          {
-            "tag": "select",
-            "text": "ไทยอังกฤษ",
-            "width": 82,
-            "height": 35
-          },
-          {
-            "tag": "a",
-            "text": "ตั้งค่า",
-            "width": 35,
-            "height": 21
-          },
-          {
-            "tag": "button",
-            "text": "เส้น",
-            "width": 52,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "ทานเล่น",
-            "width": 78,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "คอมโบ",
-            "width": 72,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "หน้าร้าน",
-            "width": 70,
-            "height": 34
-          },
-          {
-            "tag": "button",
-            "text": "กลับบ้าน",
-            "width": 74,
-            "height": 34
-          },
-          {
-            "tag": "button",
-            "text": "Grab",
-            "width": 56,
-            "height": 33
-          },
-          {
-            "tag": "button",
-            "text": "LINE MAN",
-            "width": 89,
-            "height": 33
-          },
-          {
-            "tag": "button",
-            "text": "Shopee",
-            "width": 72,
-            "height": 33
-          }
-        ]
+        "total": 26,
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -87,12 +26,16 @@
         "scrollIssues": 0
       },
       "cartSidebar": {
-        "found": false,
-        "horizontallyVisible": false,
-        "width": 0
+        "found": true,
+        "horizontallyVisible": true,
+        "width": 340
       },
       "pinModalPresent": false,
-      "pinModalFitsViewport": false
+      "pinModalFitsViewport": false,
+      "pinModalCheck": {
+        "opened": true,
+        "fitsViewport": true
+      }
     }
   },
   {
@@ -105,69 +48,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 11,
-        "smallCount": 11,
-        "samples": [
-          {
-            "tag": "select",
-            "text": "ไทยอังกฤษ",
-            "width": 82,
-            "height": 35
-          },
-          {
-            "tag": "a",
-            "text": "แดชบอร์ด",
-            "width": 92,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "บิลขาย",
-            "width": 73,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "สต๊อก",
-            "width": 65,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "พนักงาน",
-            "width": 82,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "รายงานยอดขาย",
-            "width": 131,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "รายงานสต๊อก",
-            "width": 114,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "รายงาน Audit",
-            "width": 118,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ช่องทางเดลิเวอรี",
-            "width": 135,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "กะการขาย",
-            "width": 94,
-            "height": 39
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -197,51 +79,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 7,
-        "smallCount": 7,
-        "samples": [
-          {
-            "tag": "select",
-            "text": "ไทยอังกฤษ",
-            "width": 82,
-            "height": 35
-          },
-          {
-            "tag": "a",
-            "text": "แดชบอร์ด",
-            "width": 92,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ร้านค้า",
-            "width": 68,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "แพ็กเกจ",
-            "width": 80,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ผู้ใช้ระบบกลาง",
-            "width": 122,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "สถานะฐานข้อมูล",
-            "width": 135,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ตั้งค่า",
-            "width": 61,
-            "height": 39
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -271,15 +110,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 1,
-        "smallCount": 1,
-        "samples": [
-          {
-            "tag": "a",
-            "text": "Open Scanner Preview",
-            "width": 158,
-            "height": 21
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -309,27 +141,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 3,
-        "smallCount": 3,
-        "samples": [
-          {
-            "tag": "input",
-            "text": "",
-            "width": 372,
-            "height": 39
-          },
-          {
-            "tag": "input",
-            "text": "",
-            "width": 372,
-            "height": 39
-          },
-          {
-            "tag": "button",
-            "text": "Verify Login",
-            "width": 102,
-            "height": 39
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -358,70 +171,9 @@
       "hasOverflow": false,
       "overflowPx": 0,
       "touchTargets": {
-        "total": 25,
-        "smallCount": 20,
-        "samples": [
-          {
-            "tag": "select",
-            "text": "ไทยอังกฤษ",
-            "width": 82,
-            "height": 35
-          },
-          {
-            "tag": "a",
-            "text": "ตั้งค่า",
-            "width": 35,
-            "height": 21
-          },
-          {
-            "tag": "button",
-            "text": "เส้น",
-            "width": 52,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "ทานเล่น",
-            "width": 78,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "เครื่องดื่ม",
-            "width": 85,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "คอมโบ",
-            "width": 72,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "หน้าร้าน",
-            "width": 70,
-            "height": 34
-          },
-          {
-            "tag": "button",
-            "text": "กลับบ้าน",
-            "width": 74,
-            "height": 34
-          },
-          {
-            "tag": "button",
-            "text": "Grab",
-            "width": 56,
-            "height": 34
-          },
-          {
-            "tag": "button",
-            "text": "LINE MAN",
-            "width": 89,
-            "height": 33
-          }
-        ]
+        "total": 26,
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -437,12 +189,16 @@
         "scrollIssues": 0
       },
       "cartSidebar": {
-        "found": false,
-        "horizontallyVisible": false,
-        "width": 0
+        "found": true,
+        "horizontallyVisible": true,
+        "width": 718
       },
       "pinModalPresent": false,
-      "pinModalFitsViewport": false
+      "pinModalFitsViewport": false,
+      "pinModalCheck": {
+        "opened": true,
+        "fitsViewport": true
+      }
     }
   },
   {
@@ -455,69 +211,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 11,
-        "smallCount": 11,
-        "samples": [
-          {
-            "tag": "select",
-            "text": "ไทยอังกฤษ",
-            "width": 82,
-            "height": 35
-          },
-          {
-            "tag": "a",
-            "text": "แดชบอร์ด",
-            "width": 92,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "บิลขาย",
-            "width": 73,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "สต๊อก",
-            "width": 65,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "พนักงาน",
-            "width": 82,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "รายงานยอดขาย",
-            "width": 131,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "รายงานสต๊อก",
-            "width": 114,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "รายงาน Audit",
-            "width": 118,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ช่องทางเดลิเวอรี",
-            "width": 135,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "กะการขาย",
-            "width": 94,
-            "height": 39
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -547,51 +242,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 7,
-        "smallCount": 7,
-        "samples": [
-          {
-            "tag": "select",
-            "text": "ไทยอังกฤษ",
-            "width": 82,
-            "height": 35
-          },
-          {
-            "tag": "a",
-            "text": "แดชบอร์ด",
-            "width": 92,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ร้านค้า",
-            "width": 68,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "แพ็กเกจ",
-            "width": 80,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ผู้ใช้ระบบกลาง",
-            "width": 122,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "สถานะฐานข้อมูล",
-            "width": 135,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ตั้งค่า",
-            "width": 61,
-            "height": 39
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -621,15 +273,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 1,
-        "smallCount": 1,
-        "samples": [
-          {
-            "tag": "a",
-            "text": "Open Scanner Preview",
-            "width": 158,
-            "height": 21
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -659,27 +304,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 3,
-        "smallCount": 3,
-        "samples": [
-          {
-            "tag": "input",
-            "text": "",
-            "width": 750,
-            "height": 39
-          },
-          {
-            "tag": "input",
-            "text": "",
-            "width": 750,
-            "height": 39
-          },
-          {
-            "tag": "button",
-            "text": "Verify Login",
-            "width": 102,
-            "height": 39
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -708,70 +334,9 @@
       "hasOverflow": false,
       "overflowPx": 0,
       "touchTargets": {
-        "total": 25,
-        "smallCount": 20,
-        "samples": [
-          {
-            "tag": "select",
-            "text": "ไทยอังกฤษ",
-            "width": 82,
-            "height": 35
-          },
-          {
-            "tag": "a",
-            "text": "ตั้งค่า",
-            "width": 35,
-            "height": 21
-          },
-          {
-            "tag": "button",
-            "text": "เส้น",
-            "width": 52,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "ทานเล่น",
-            "width": 78,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "เครื่องดื่ม",
-            "width": 85,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "คอมโบ",
-            "width": 72,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "หน้าร้าน",
-            "width": 70,
-            "height": 34
-          },
-          {
-            "tag": "button",
-            "text": "กลับบ้าน",
-            "width": 74,
-            "height": 34
-          },
-          {
-            "tag": "button",
-            "text": "Grab",
-            "width": 56,
-            "height": 34
-          },
-          {
-            "tag": "button",
-            "text": "LINE MAN",
-            "width": 89,
-            "height": 34
-          }
-        ]
+        "total": 26,
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -787,12 +352,16 @@
         "scrollIssues": 0
       },
       "cartSidebar": {
-        "found": false,
-        "horizontallyVisible": false,
-        "width": 0
+        "found": true,
+        "horizontallyVisible": true,
+        "width": 423
       },
       "pinModalPresent": false,
-      "pinModalFitsViewport": false
+      "pinModalFitsViewport": false,
+      "pinModalCheck": {
+        "opened": true,
+        "fitsViewport": true
+      }
     }
   },
   {
@@ -805,69 +374,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 11,
-        "smallCount": 11,
-        "samples": [
-          {
-            "tag": "select",
-            "text": "ไทยอังกฤษ",
-            "width": 82,
-            "height": 35
-          },
-          {
-            "tag": "a",
-            "text": "แดชบอร์ด",
-            "width": 92,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "บิลขาย",
-            "width": 73,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "สต๊อก",
-            "width": 65,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "พนักงาน",
-            "width": 82,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "รายงานยอดขาย",
-            "width": 131,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "รายงานสต๊อก",
-            "width": 114,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "รายงาน Audit",
-            "width": 118,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ช่องทางเดลิเวอรี",
-            "width": 135,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "กะการขาย",
-            "width": 94,
-            "height": 39
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -897,51 +405,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 7,
-        "smallCount": 7,
-        "samples": [
-          {
-            "tag": "select",
-            "text": "ไทยอังกฤษ",
-            "width": 82,
-            "height": 35
-          },
-          {
-            "tag": "a",
-            "text": "แดชบอร์ด",
-            "width": 92,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ร้านค้า",
-            "width": 68,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "แพ็กเกจ",
-            "width": 80,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ผู้ใช้ระบบกลาง",
-            "width": 122,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "สถานะฐานข้อมูล",
-            "width": 135,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ตั้งค่า",
-            "width": 61,
-            "height": 39
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -971,15 +436,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 1,
-        "smallCount": 1,
-        "samples": [
-          {
-            "tag": "a",
-            "text": "Open Scanner Preview",
-            "width": 158,
-            "height": 21
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -1009,27 +467,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 3,
-        "smallCount": 3,
-        "samples": [
-          {
-            "tag": "input",
-            "text": "",
-            "width": 784,
-            "height": 39
-          },
-          {
-            "tag": "input",
-            "text": "",
-            "width": 784,
-            "height": 39
-          },
-          {
-            "tag": "button",
-            "text": "Verify Login",
-            "width": 102,
-            "height": 39
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -1058,70 +497,9 @@
       "hasOverflow": false,
       "overflowPx": 0,
       "touchTargets": {
-        "total": 25,
-        "smallCount": 20,
-        "samples": [
-          {
-            "tag": "select",
-            "text": "ไทยอังกฤษ",
-            "width": 82,
-            "height": 35
-          },
-          {
-            "tag": "a",
-            "text": "ตั้งค่า",
-            "width": 35,
-            "height": 21
-          },
-          {
-            "tag": "button",
-            "text": "เส้น",
-            "width": 52,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "ทานเล่น",
-            "width": 78,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "เครื่องดื่ม",
-            "width": 85,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "คอมโบ",
-            "width": 72,
-            "height": 38
-          },
-          {
-            "tag": "button",
-            "text": "หน้าร้าน",
-            "width": 70,
-            "height": 34
-          },
-          {
-            "tag": "button",
-            "text": "กลับบ้าน",
-            "width": 74,
-            "height": 34
-          },
-          {
-            "tag": "button",
-            "text": "Grab",
-            "width": 56,
-            "height": 34
-          },
-          {
-            "tag": "button",
-            "text": "LINE MAN",
-            "width": 89,
-            "height": 34
-          }
-        ]
+        "total": 26,
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -1137,12 +515,16 @@
         "scrollIssues": 0
       },
       "cartSidebar": {
-        "found": false,
-        "horizontallyVisible": false,
-        "width": 0
+        "found": true,
+        "horizontallyVisible": true,
+        "width": 500
       },
       "pinModalPresent": false,
-      "pinModalFitsViewport": false
+      "pinModalFitsViewport": false,
+      "pinModalCheck": {
+        "opened": true,
+        "fitsViewport": true
+      }
     }
   },
   {
@@ -1155,69 +537,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 11,
-        "smallCount": 11,
-        "samples": [
-          {
-            "tag": "select",
-            "text": "ไทยอังกฤษ",
-            "width": 82,
-            "height": 35
-          },
-          {
-            "tag": "a",
-            "text": "แดชบอร์ด",
-            "width": 92,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "บิลขาย",
-            "width": 73,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "สต๊อก",
-            "width": 65,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "พนักงาน",
-            "width": 82,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "รายงานยอดขาย",
-            "width": 131,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "รายงานสต๊อก",
-            "width": 114,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "รายงาน Audit",
-            "width": 118,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ช่องทางเดลิเวอรี",
-            "width": 135,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "กะการขาย",
-            "width": 94,
-            "height": 39
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -1247,51 +568,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 7,
-        "smallCount": 7,
-        "samples": [
-          {
-            "tag": "select",
-            "text": "ไทยอังกฤษ",
-            "width": 82,
-            "height": 35
-          },
-          {
-            "tag": "a",
-            "text": "แดชบอร์ด",
-            "width": 92,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ร้านค้า",
-            "width": 68,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "แพ็กเกจ",
-            "width": 80,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ผู้ใช้ระบบกลาง",
-            "width": 122,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "สถานะฐานข้อมูล",
-            "width": 135,
-            "height": 39
-          },
-          {
-            "tag": "a",
-            "text": "ตั้งค่า",
-            "width": 61,
-            "height": 39
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -1321,15 +599,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 1,
-        "smallCount": 1,
-        "samples": [
-          {
-            "tag": "a",
-            "text": "Open Scanner Preview",
-            "width": 158,
-            "height": 21
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,
@@ -1359,27 +630,8 @@
       "overflowPx": 0,
       "touchTargets": {
         "total": 3,
-        "smallCount": 3,
-        "samples": [
-          {
-            "tag": "input",
-            "text": "",
-            "width": 784,
-            "height": 39
-          },
-          {
-            "tag": "input",
-            "text": "",
-            "width": 784,
-            "height": 39
-          },
-          {
-            "tag": "button",
-            "text": "Verify Login",
-            "width": 102,
-            "height": 39
-          }
-        ]
+        "smallCount": 0,
+        "samples": []
       },
       "modals": {
         "visibleCount": 0,

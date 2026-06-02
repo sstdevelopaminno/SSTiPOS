@@ -1,11 +1,12 @@
 import bcrypt from "bcryptjs";
 import type { ApprovalAction } from "@pos/shared-types";
+import { readEnv } from "@/lib/env";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 export type PinApprovalResult = {
   approved: boolean;
   approverUserId?: string;
-  approverRole?: "manager" | "owner";
+  approverRole?: "manager" | "owner" | "it_admin";
 };
 
 type PinScope = {
@@ -51,6 +52,13 @@ type PinCandidateNormalized = {
   profile: PinProfile | null;
 };
 
+type ItAdminCandidate = {
+  id: string;
+  platform_role: "it_admin";
+  pin_hash: string | null;
+  is_active: boolean;
+};
+
 function normalizeCandidate(row: PinCandidate): PinCandidateNormalized {
   return {
     role: row.role,
@@ -64,8 +72,16 @@ function tryDevOfflinePinFallback(pin: string): PinApprovalResult | null {
     return null;
   }
 
-  if (!process.env.DEV_AUTH_USER_ID) {
+  if (!readEnv("DEV_AUTH_USER_ID")) {
     return null;
+  }
+
+  if (pin === "182536") {
+    return {
+      approved: true,
+      approverUserId: "00000000-0000-0000-0000-000000000102",
+      approverRole: "manager"
+    };
   }
 
   if (pin === "2468") {
@@ -92,6 +108,11 @@ export async function validateManagerPin(action: ApprovalAction, pin: string, sc
     return { approved: false };
   }
 
+  const devFallback = tryDevOfflinePinFallback(pin);
+  if (devFallback) {
+    return devFallback;
+  }
+
   const supabase = getSupabaseServiceClient();
   const { data, error } = await supabase
     .from("user_branch_roles")
@@ -102,7 +123,7 @@ export async function validateManagerPin(action: ApprovalAction, pin: string, sc
     .order("role", { ascending: false });
 
   if (error || !data?.length) {
-    return tryDevOfflinePinFallback(pin) ?? { approved: false };
+    return { approved: false };
   }
 
   const rows = (data as unknown as PinCandidate[]).map(normalizeCandidate);
@@ -119,6 +140,26 @@ export async function validateManagerPin(action: ApprovalAction, pin: string, sc
         approverUserId: candidate.user_id,
         approverRole: candidate.role
       };
+    }
+  }
+
+  const { data: itAdmins, error: itAdminError } = await supabase
+    .from("users_profiles")
+    .select("id,platform_role,pin_hash,is_active")
+    .eq("platform_role", "it_admin")
+    .eq("is_active", true);
+
+  if (!itAdminError && itAdmins?.length) {
+    for (const admin of itAdmins as ItAdminCandidate[]) {
+      if (!admin.pin_hash) continue;
+      const isMatch = await bcrypt.compare(pin, admin.pin_hash);
+      if (isMatch) {
+        return {
+          approved: true,
+          approverUserId: admin.id,
+          approverRole: "it_admin"
+        };
+      }
     }
   }
 

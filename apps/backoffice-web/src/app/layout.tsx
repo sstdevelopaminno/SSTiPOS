@@ -10,13 +10,13 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: "SSTiPOS",
-    statusBarStyle: "default"
-  }
+    statusBarStyle: "default",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="m-0 h-full w-full p-0">
+    <html lang="th" className="m-0 h-full w-full p-0">
       <body className="m-0 h-full w-full overflow-hidden p-0">
         {children}
         <PwaBootstrap />
@@ -24,4 +24,3 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     </html>
   );
 }
-

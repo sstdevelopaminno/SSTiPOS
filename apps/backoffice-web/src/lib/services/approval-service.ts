@@ -20,7 +20,10 @@ export async function executePinApproval(args: {
   validatePin: () => Promise<PinApprovalResult>;
   appendAuditLog: AuditFn;
 }): Promise<
-  | { ok: true; data: { approved: true; approved_by: string; approver_role: "manager" | "owner"; action: string; approved_at: string } }
+  | {
+      ok: true;
+      data: { approved: true; approved_by: string; approver_role: "manager" | "owner" | "it_admin"; action: string; approved_at: string };
+    }
   | { ok: false; code: string; message: string; status: number }
 > {
   const { auth, input, validatePin, appendAuditLog } = args;

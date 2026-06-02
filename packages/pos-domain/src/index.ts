@@ -4,7 +4,11 @@ const escalationActions: ApprovalAction[] = [
   "cancel_bill",
   "stock_adjustment",
   "employee_delete",
-  "shift_close_override"
+  "shift_close_override",
+  "table_move_bill",
+  "transfer_payment_override",
+  "sales_record_edit",
+  "sales_record_delete"
 ];
 
 export function requiresPinApproval(action: ApprovalAction): boolean {
@@ -44,4 +48,6 @@ export function canCloseShift(
 
   return { allowed: true };
 }
+
+export * from "./subscription-pricing";
 

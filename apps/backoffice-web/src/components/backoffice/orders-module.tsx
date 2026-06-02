@@ -15,6 +15,16 @@ type OrderRow = {
   total_amount: number;
   status: string;
   created_at: string;
+  transfer_verification: {
+    verification_status: string;
+    parsed_amount: number | null;
+    parsed_payer_name: string | null;
+    parsed_payee_name: string | null;
+    parsed_reference_no: string | null;
+    parsed_transaction_id: string | null;
+    verified_at: string;
+    override_approval_id: string | null;
+  } | null;
 };
 
 export function OrdersModule() {
@@ -23,6 +33,10 @@ export function OrdersModule() {
   const [status, setStatus] = useState("");
   const [orderType, setOrderType] = useState("");
   const [channel, setChannel] = useState("");
+  const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [mutationSuccess, setMutationSuccess] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const { loading, error, items, pagination } = usePaginatedApi<OrderRow>("/api/backoffice/orders", {
     page,
@@ -30,8 +44,30 @@ export function OrdersModule() {
     search: search || undefined,
     status: status || undefined,
     order_type: orderType || undefined,
-    channel: channel || undefined
+    channel: channel || undefined,
+    reload: reloadKey
   });
+
+  async function handleReprint(orderId: string) {
+    setBusyOrderId(orderId);
+    setMutationError(null);
+    setMutationSuccess(null);
+    try {
+      const response = await fetch(`/api/backoffice/orders/${orderId}/reprint`, {
+        method: "POST"
+      });
+      const body = await response.json();
+      if (!response.ok || body.error) {
+        throw new Error(body.error?.message ?? "Reprint failed.");
+      }
+      setMutationSuccess(`Reprint requested for order ${orderId}`);
+      setReloadKey((key) => key + 1);
+    } catch (reprintError) {
+      setMutationError(reprintError instanceof Error ? reprintError.message : "Unknown error");
+    } finally {
+      setBusyOrderId(null);
+    }
+  }
 
   return (
     <section className="surface">
@@ -97,6 +133,9 @@ export function OrdersModule() {
         </select>
       </div>
 
+      {mutationError ? <ErrorState message={mutationError} /> : null}
+      {mutationSuccess ? <p style={{ color: "#067647" }}>{mutationSuccess}</p> : null}
+
       {loading ? <LoadingState label="Loading orders..." /> : null}
       {!loading && error ? <ErrorState message={error} /> : null}
       {!loading && !error && items.length === 0 ? <EmptyState label="No orders found for current filters." /> : null}
@@ -114,7 +153,10 @@ export function OrdersModule() {
                   <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: 8 }}>Customer</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid var(--border)", padding: 8 }}>Total</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: 8 }}>Status</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: 8 }}>Transfer Verify</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: 8 }}>Slip Ref</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: 8 }}>Created</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: 8 }}>Print</th>
                 </tr>
               </thead>
               <tbody>
@@ -130,7 +172,32 @@ export function OrdersModule() {
                     </td>
                     <td style={{ borderBottom: "1px solid var(--border)", padding: 8 }}>{order.status}</td>
                     <td style={{ borderBottom: "1px solid var(--border)", padding: 8 }}>
+                      {order.transfer_verification ? (
+                        <>
+                          <strong>{order.transfer_verification.verification_status}</strong>
+                          {order.transfer_verification.override_approval_id ? " (override)" : ""}
+                        </>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                    <td style={{ borderBottom: "1px solid var(--border)", padding: 8 }}>
+                      {order.transfer_verification?.parsed_reference_no ??
+                        order.transfer_verification?.parsed_transaction_id ??
+                        "-"}
+                    </td>
+                    <td style={{ borderBottom: "1px solid var(--border)", padding: 8 }}>
                       {new Date(order.created_at).toLocaleString()}
+                    </td>
+                    <td style={{ borderBottom: "1px solid var(--border)", padding: 8 }}>
+                      <button
+                        type="button"
+                        disabled={busyOrderId === order.id}
+                        onClick={() => handleReprint(order.id)}
+                        style={{ minHeight: 36 }}
+                      >
+                        {busyOrderId === order.id ? "Reprinting..." : "Reprint"}
+                      </button>
                     </td>
                   </tr>
                 ))}

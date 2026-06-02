@@ -12,14 +12,11 @@ const viewports = [
 ];
 
 const backofficeBaseUrl = process.env.BACKOFFICE_BASE_URL ?? "https://pos-preview-phi.vercel.app";
-const qrBaseUrl = process.env.QR_BASE_URL ?? "https://qr-pos-preview.vercel.app";
 
 const screens = [
   { key: "backoffice-preview-pos", url: `${backofficeBaseUrl}/preview/pos` },
   { key: "backoffice-dashboard", url: `${backofficeBaseUrl}/dashboard` },
-  { key: "backoffice-it-admin", url: `${backofficeBaseUrl}/it-admin` },
-  { key: "qr-home", url: `${qrBaseUrl}/` },
-  { key: "qr-scan", url: `${qrBaseUrl}/scan` }
+  { key: "backoffice-it-admin", url: `${backofficeBaseUrl}/it-admin` }
 ];
 
 async function ensureDir(dir) {

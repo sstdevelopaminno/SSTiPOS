@@ -1,22 +1,19 @@
-import { LanguageSwitcher } from "@/components/language/language-switcher";
-import { getCurrentLanguage, t } from "@/lib/i18n";
+import { PosPreviewSectionPage } from "@/components/pos-preview/pos-preview-section-page";
+import { getCurrentLanguage } from "@/lib/i18n";
+import { requirePosPagePermission } from "@/lib/pos-page-guard";
 
 export default async function PosLanguageSettingsPage() {
+  await requirePosPagePermission("settings:view");
   const lang = await getCurrentLanguage();
 
   return (
-    <main className="page">
-      <section className="surface">
-        <h2>{t(lang, "language_settings_title")}</h2>
-        <p>{t(lang, "language_settings_desc")}</p>
-        <LanguageSwitcher
-          currentLanguage={lang}
-          label={t(lang, "language")}
-          thaiLabel={t(lang, "thai")}
-          englishLabel={t(lang, "english")}
-        />
-      </section>
-    </main>
+    <PosPreviewSectionPage
+      lang={lang}
+      titleKey="pos_settings_title"
+      descKey="pos_settings_desc"
+      actionHref="/preview/pos"
+      actionKey="pos_settings_action"
+    />
   );
 }
 

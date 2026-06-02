@@ -114,6 +114,53 @@ values
   ('00000000-0000-0000-0000-000000007002', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000011', 'A02', 4, true)
 on conflict (tenant_id, branch_id, table_code) do nothing;
 
+insert into table_zones (id, tenant_id, branch_id, zone_name, color, display_order, is_active)
+values
+  ('00000000-0000-0000-0000-00000000a001', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000011', 'Main Hall', '#16a34a', 1, true),
+  ('00000000-0000-0000-0000-00000000a002', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000011', 'Terrace', '#2563eb', 2, true)
+on conflict (tenant_id, branch_id, zone_name) do nothing;
+
+insert into dining_tables (
+  id, tenant_id, branch_id, zone_id, table_code, table_name, capacity, status, shape,
+  position_x, position_y, width, height, rotation, is_active
+)
+values
+  (
+    '00000000-0000-0000-0000-000000007001',
+    '00000000-0000-0000-0000-000000000001',
+    '00000000-0000-0000-0000-000000000011',
+    '00000000-0000-0000-0000-00000000a001',
+    'A01',
+    'A01',
+    4,
+    'available',
+    'rectangle',
+    120,
+    120,
+    96,
+    72,
+    0,
+    true
+  ),
+  (
+    '00000000-0000-0000-0000-000000007002',
+    '00000000-0000-0000-0000-000000000001',
+    '00000000-0000-0000-0000-000000000011',
+    '00000000-0000-0000-0000-00000000a001',
+    'A02',
+    'A02',
+    4,
+    'available',
+    'rectangle',
+    260,
+    120,
+    96,
+    72,
+    0,
+    true
+  )
+on conflict (tenant_id, branch_id, table_code) do nothing;
+
 insert into merchant_channels (id, tenant_id, branch_id, channel_code, channel_name, is_manual, is_active)
 values
   ('30000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000011', 'storefront', 'หน้าร้าน', true, true),

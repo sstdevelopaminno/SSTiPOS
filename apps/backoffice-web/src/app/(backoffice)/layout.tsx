@@ -12,6 +12,14 @@ const nav = [
   { href: "/reports/audit", key: "audit_report" },
   { href: "/delivery", key: "manual_delivery" },
   { href: "/shifts", key: "shifts" },
+  { href: "/pos/sales", key: "pos_sales" },
+  { href: "/pos/orders", key: "pos_orders" },
+  { href: "/pos/shift", key: "pos_shift" },
+  { href: "/pos/payments", key: "pos_payments" },
+  { href: "/pos/monitor", key: "pos_monitor" },
+  { href: "/pos/customer-display", key: "pos_customer_display" },
+  { href: "/settings/tables", key: "tables" },
+  { href: "/backoffice/settings/printers", key: "printers_settings" },
   { href: "/settings/language", key: "common_settings" }
 ] as const;
 

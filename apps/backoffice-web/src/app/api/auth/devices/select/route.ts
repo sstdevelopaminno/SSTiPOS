@@ -1,0 +1,375 @@
+﻿import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { getSupabaseServiceClient } from "@/lib/supabase-admin";
+import { getRequestMeta, writeAuditLog, writeLoginAttempt } from "@/lib/server/audit-log";
+import { AuthTimeoutError, withAuthTimeout } from "@/lib/server/auth-timeout";
+import { hasBranchFeatureSafe } from "@/lib/server/feature-gate-safe";
+import { consumeLoginContext } from "@/lib/server/login-context";
+import { createPosSession, createSessionHandoffToken, resolvePosRedirectTarget, resolveSessionCookieConfig } from "@/lib/server/pos-session";
+import { hasPermission, resolveEmployeeByUserId } from "@/lib/server/pre-entry-auth";
+import { clearPreEntryFlowState, hasFlowStage, readPreEntryFlowState } from "@/lib/server/pre-entry-state";
+
+type RequestBody = {
+  device_code?: string;
+  force_override?: boolean;
+};
+
+type DeviceRow = {
+  id: string;
+  device_code: string;
+  device_name: string;
+  status: "active" | "inactive" | "maintenance";
+};
+
+type ActiveSessionRow = {
+  id: string;
+  user_id: string;
+};
+
+type UserDeviceScopeRow = {
+  scope_mode: "all_devices" | "single_device";
+  device_id: string | null;
+};
+
+function isMissingRelationError(error: { code?: string | null; message?: string | null } | null | undefined, relationName: string) {
+  if (!error) return false;
+  const code = String(error.code ?? "");
+  const message = String(error.message ?? "").toLowerCase();
+  return code === "42P01" || message.includes("does not exist") || message.includes(relationName.toLowerCase());
+}
+
+function jsonError(status: number, code: string, message: string) {
+  return NextResponse.json({ data: null, error: { code, message } }, { status });
+}
+
+function withTimingHeaders<T extends NextResponse>(response: T, startedAt: number): T {
+  const durationMs = Date.now() - startedAt;
+  response.headers.set("x-auth-api-ms", String(durationMs));
+  response.headers.set("server-timing", `total;dur=${durationMs}`);
+  return response;
+}
+
+function isSafeDeviceCode(value: string) {
+  return /^[A-Z0-9_-]{1,64}$/.test(value);
+}
+
+async function runBestEffort(label: string, action: () => PromiseLike<unknown> | unknown) {
+  try {
+    await action();
+  } catch (error) {
+    console.error(`[auth/devices/select] best-effort task failed: ${label}`, {
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+}
+
+export async function POST(request: Request) {
+  const startedAt = Date.now();
+  const timedJsonError = (status: number, code: string, message: string) =>
+    withTimingHeaders(jsonError(status, code, message), startedAt);
+  const body = (await request.json().catch(() => null)) as RequestBody | null;
+  const selectedDeviceCode = String(body?.device_code ?? "").trim().toUpperCase();
+  const forceOverride = Boolean(body?.force_override);
+
+  if (!selectedDeviceCode) {
+    return timedJsonError(400, "device_required", "กรุณาเลือกเครื่องแคชเชียร์");
+  }
+  if (!isSafeDeviceCode(selectedDeviceCode)) {
+    return timedJsonError(422, "device_required", "รูปแบบรหัสเครื่องไม่ถูกต้อง");
+  }
+
+  const cookieStore = await cookies();
+  const flow = readPreEntryFlowState(cookieStore);
+  if (!flow) {
+    return timedJsonError(401, "missing_employee_context", "กรุณายืนยันตัวตนพนักงานก่อนเลือกเครื่องแคชเชียร์");
+  }
+  if (!hasFlowStage(flow, ["employee_verified"]) || !flow.branchId || !flow.userId || !flow.userRole || !flow.permissions) {
+    return timedJsonError(401, "missing_employee_context", "กรุณายืนยันตัวตนพนักงานก่อนเลือกเครื่องแคชเชียร์");
+  }
+
+  const { ipAddress, userAgent } = getRequestMeta(request);
+  const nowIso = new Date().toISOString();
+
+  try {
+    const supabase = getSupabaseServiceClient();
+
+    const [coreSalesEnabled, deviceQuery, employee] = await withAuthTimeout(
+      Promise.all([
+        hasBranchFeatureSafe(flow.tenantId, flow.branchId, "core_pos_sales"),
+        supabase
+          .from("branch_devices")
+          .select("id,device_code,device_name,status")
+          .eq("tenant_id", flow.tenantId)
+          .eq("branch_id", flow.branchId)
+          .eq("device_code", selectedDeviceCode)
+          .maybeSingle<DeviceRow>(),
+        resolveEmployeeByUserId({
+          tenantId: flow.tenantId,
+          branchId: flow.branchId,
+          userId: flow.userId
+        })
+      ]),
+      "device_select_core_lookup_timeout"
+    );
+
+    if (!coreSalesEnabled) {
+      return timedJsonError(403, "feature_not_enabled", "แพ็กเกจปัจจุบันยังไม่รองรับการเข้าใช้งานหน้าขาย");
+    }
+    if (!employee) {
+      return timedJsonError(401, "employee_not_found", "ไม่พบผู้ใช้งานในสาขานี้ หรือผู้ใช้งานไม่พร้อมใช้งาน");
+    }
+    if (!hasPermission(employee.permissions, "pos.sales.access")) {
+      return timedJsonError(403, "permission_denied", "ผู้ใช้งานไม่มีสิทธิ์เข้าใช้งานหน้าขาย");
+    }
+
+    if (deviceQuery.error) {
+      return timedJsonError(500, "device_select_failed", "ไม่สามารถตรวจสอบข้อมูลเครื่องแคชเชียร์ได้");
+    }
+
+    const device = deviceQuery.data;
+    if (!device) {
+      return timedJsonError(404, "device_not_found", "ไม่พบเครื่องแคชเชียร์ที่เลือก");
+    }
+
+    if (device.status === "inactive") {
+      return timedJsonError(403, "device_disabled", "เครื่องที่เลือกถูกปิดใช้งาน");
+    }
+
+    if (device.status === "maintenance") {
+      return timedJsonError(403, "device_offline", "เครื่องที่เลือกออฟไลน์หรืออยู่ระหว่างบำรุงรักษา");
+    }
+
+    const activeSessionQuery = await withAuthTimeout(
+      supabase
+        .from("pos_sessions")
+        .select("id,user_id")
+        .eq("tenant_id", flow.tenantId)
+        .eq("branch_id", flow.branchId)
+        .eq("status", "active")
+        .or(`device_id.eq.${device.id},device_code.eq.${selectedDeviceCode}`)
+        .gt("expires_at", nowIso)
+        .limit(1)
+        .maybeSingle<ActiveSessionRow>(),
+      "device_active_session_lookup_timeout"
+    );
+
+    if (activeSessionQuery.error) {
+      return timedJsonError(500, "device_select_failed", "ไม่สามารถตรวจสอบสถานะเครื่องได้");
+    }
+
+    const activeSession = activeSessionQuery.data;
+    if (activeSession) {
+      const isSameEmployee = activeSession.user_id === employee.userId;
+      const canOverride = hasPermission(employee.permissions, "pos.device.override_in_use");
+      if (!isSameEmployee && (!canOverride || !forceOverride)) {
+        return timedJsonError(409, "device_in_use", "เครื่องนี้กำลังถูกใช้งานอยู่");
+      }
+
+      const revokeResult = await withAuthTimeout(
+        supabase
+          .from("pos_sessions")
+          .update({ status: "revoked", revoked_at: nowIso })
+          .eq("tenant_id", flow.tenantId)
+          .eq("branch_id", flow.branchId)
+          .eq("status", "active")
+          .or(`id.eq.${activeSession.id},device_id.eq.${device.id},device_code.eq.${selectedDeviceCode}`),
+        "device_session_revoke_timeout"
+      );
+
+      if (revokeResult.error) {
+        return timedJsonError(500, "device_select_failed", "ไม่สามารถปลดล็อกเครื่องที่กำลังใช้งานอยู่ได้");
+      }
+    }
+
+    const deviceScopeQuery = await withAuthTimeout(
+      supabase
+        .from("pos_user_device_scopes")
+        .select("scope_mode,device_id")
+        .eq("tenant_id", flow.tenantId)
+        .eq("branch_id", flow.branchId)
+        .eq("user_id", employee.userId)
+        .maybeSingle<UserDeviceScopeRow>(),
+      "device_scope_lookup_timeout"
+    );
+
+    if (deviceScopeQuery.error && !isMissingRelationError(deviceScopeQuery.error, "pos_user_device_scopes")) {
+      return timedJsonError(500, "device_select_failed", "ไม่สามารถตรวจสอบขอบเขตอุปกรณ์ของผู้ใช้งานได้");
+    }
+
+    const scopeMode = deviceScopeQuery.data?.scope_mode ?? "all_devices";
+    const scopedDeviceId = deviceScopeQuery.data?.device_id ?? null;
+    if (scopeMode === "single_device" && scopedDeviceId && scopedDeviceId !== device.id) {
+      return timedJsonError(403, "device_scope_denied", "ผู้ใช้งานนี้ไม่ได้รับสิทธิ์ใช้เครื่องที่เลือก");
+    }
+
+    const contextExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const contextResult = await withAuthTimeout(
+      supabase
+        .from("pos_login_contexts")
+        .insert({
+          tenant_id: flow.tenantId,
+          branch_id: flow.branchId,
+          store_code: flow.storeCode,
+          device_code: selectedDeviceCode,
+          status: "active",
+          expires_at: contextExpiresAt,
+          metadata: {
+            context_type: "pre_entry_device_selection",
+            employee_user_id: employee.userId,
+            employee_role: employee.role,
+            employee_auth_method: flow.employeeAuthMethod ?? "employee_code"
+          }
+        })
+        .select("id")
+        .single<{ id: string }>(),
+      "device_context_create_timeout"
+    );
+
+    if (contextResult.error || !contextResult.data?.id) {
+      return timedJsonError(500, "context_create_failed", "ไม่สามารถสร้างบริบทการเข้าสู่ระบบได้");
+    }
+
+    const contextId = contextResult.data.id;
+    const loginMethod = "staff_card";
+
+    const sessionCreated = await withAuthTimeout(
+      createPosSession({
+        tenantId: flow.tenantId,
+        branchId: flow.branchId,
+        deviceId: device.id,
+        deviceCode: selectedDeviceCode,
+        userId: employee.userId,
+        role: employee.role,
+        loginContextId: contextId,
+        loginMethod,
+        metadata: {
+          source: "pre_entry_flow",
+          employee_auth_method: flow.employeeAuthMethod ?? "employee_code",
+          employee_code: employee.employeeCode ?? flow.employeeCode ?? null
+        }
+      }),
+      "device_session_create_timeout"
+    );
+
+    if (!sessionCreated.ok) {
+      if (sessionCreated.code === "session_scope_conflict") {
+        return timedJsonError(409, "device_in_use", "เครื่องนี้กำลังถูกใช้งานอยู่");
+      }
+      return timedJsonError(500, sessionCreated.code, "ไม่สามารถสร้าง POS Session ได้");
+    }
+
+    void runBestEffort("consume_login_context", () => consumeLoginContext(contextId));
+
+    const token = createSessionHandoffToken({
+      sessionId: sessionCreated.session.id,
+      tenantId: flow.tenantId,
+      branchId: flow.branchId,
+      userId: employee.userId,
+      role: employee.role
+    });
+
+    const cookieConfig = resolveSessionCookieConfig();
+    const response = NextResponse.json({
+      data: {
+        redirect_to: resolvePosRedirectTarget(),
+        session_id: sessionCreated.session.id
+      },
+      error: null
+    });
+
+    response.cookies.set({
+      name: cookieConfig.name,
+      value: token,
+      httpOnly: true,
+      secure: cookieConfig.secure,
+      sameSite: "lax",
+      path: "/",
+      domain: cookieConfig.domain,
+      maxAge: 120
+    });
+    response.cookies.set({
+      name: cookieConfig.sessionIdName,
+      value: sessionCreated.session.id,
+      httpOnly: true,
+      secure: cookieConfig.secure,
+      sameSite: "lax",
+      path: "/",
+      domain: cookieConfig.domain,
+      maxAge: cookieConfig.sessionMaxAgeSeconds
+    });
+
+    void Promise.allSettled([
+      runBestEffort("touch_branch_device", () => supabase.from("branch_devices").update({ last_seen_at: nowIso }).eq("id", device.id)),
+      runBestEffort("write_login_attempt", () =>
+        writeLoginAttempt({
+          tenantId: flow.tenantId,
+          branchId: flow.branchId,
+          userId: employee.userId,
+          deviceCode: selectedDeviceCode,
+          loginContextId: contextId,
+          loginMethod,
+          success: true,
+          ipAddress,
+          userAgent,
+          metadata: {
+            source: "pre_entry_flow_device_select"
+          }
+        })
+      ),
+      runBestEffort("write_audit_device_selected", () =>
+        writeAuditLog({
+          tenantId: flow.tenantId,
+          branchId: flow.branchId,
+          actorUserId: employee.userId,
+          actorRole: employee.role,
+          targetUserId: employee.userId,
+          deviceCode: selectedDeviceCode,
+          posSessionId: sessionCreated.session.id,
+          action: "device_selected",
+          targetType: "branch_devices",
+          targetId: device.id,
+          ipAddress,
+          userAgent,
+          metadata: {
+            device_code: selectedDeviceCode,
+            device_name: device.device_name
+          }
+        })
+      ),
+      runBestEffort("write_audit_session_created", () =>
+        writeAuditLog({
+          tenantId: flow.tenantId,
+          branchId: flow.branchId,
+          actorUserId: employee.userId,
+          actorRole: employee.role,
+          targetUserId: employee.userId,
+          deviceCode: selectedDeviceCode,
+          posSessionId: sessionCreated.session.id,
+          action: "session_created",
+          targetType: "pos_session",
+          targetId: sessionCreated.session.id,
+          ipAddress,
+          userAgent,
+          metadata: {
+            login_method: loginMethod
+          }
+        })
+      )
+    ]);
+
+    clearPreEntryFlowState(response);
+    return withTimingHeaders(response, startedAt);
+  } catch (error) {
+    if (error instanceof AuthTimeoutError) {
+      return timedJsonError(504, "auth_timeout", "ระบบตอบสนองช้าเกินไป กรุณาลองใหม่อีกครั้ง");
+    }
+    console.error("[auth/devices/select] unexpected error", {
+      tenantId: flow.tenantId,
+      branchId: flow.branchId,
+      userId: flow.userId,
+      deviceCode: selectedDeviceCode,
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+    return timedJsonError(500, "device_select_failed", "ไม่สามารถเข้าใช้งานเครื่องที่เลือกได้");
+  }
+}

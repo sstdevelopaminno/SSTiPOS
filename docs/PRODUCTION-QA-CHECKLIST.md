@@ -1,9 +1,8 @@
 # Production QA Checklist (POS Preview)
 
-Last updated: 2026-05-17  
-Repository: `sstdevelopaminno/POS-Preview.git`  
-Production URL: `https://pos-preview-phi.vercel.app`  
-Latest deployed commit: `a3c3087`
+Last updated: 2026-05-26  
+Repository: `POS Preview` monorepo  
+Scope: `apps/backoffice-web` (unified login + POS)
 
 ## 1) Deployment and workspace checks
 
@@ -68,10 +67,10 @@ All checks run against `https://pos-preview-phi.vercel.app`:
 
 ## 6) Known limitations (must track)
 
-1. `appendAuditLog` is currently placeholder logic in code (no confirmed DB insert path in current implementation).
-2. Direct production business-flow API validation needs authenticated QA session/token flow.
-3. QR verify route belongs to `qr-login-web`; it is not exposed under `pos-preview` production URL.
-4. Full visual responsive regression checks still need browser-driven QA pass.
+1. Direct production business-flow API validation still needs authenticated QA session/token flow.
+2. Login/auth APIs are served from `backoffice-web`; validate on the same deployment surface as POS.
+3. Full visual responsive regression checks still need browser-driven QA pass.
+4. Go-live evidence collection is still pending in `docs/go-live-evidence-checklist.md`.
 
 ## 7) Release criteria
 
@@ -79,9 +78,9 @@ Minimum criteria to mark MVP release-ready:
 
 - [x] Production deploy successful
 - [x] Core routes healthy (`200`)
-- [x] Builds pass for `backoffice-web` and `qr-login-web`
+- [x] Build passes for `backoffice-web`
 - [x] Approval/shift integration tests pass
-- [ ] Audit log write path verified against Supabase table in production-like environment
+- [x] Audit log write path implemented server-side with compatibility fallback in `apps/backoffice-web/src/lib/audit-log.ts`
+- [ ] Audit log write path verified against Supabase table in production-like environment (evidence attached)
 - [ ] Authenticated production QA pass for protected business APIs
 - [ ] Responsive acceptance sign-off for mobile, desktop, tablet portrait, tablet landscape
-

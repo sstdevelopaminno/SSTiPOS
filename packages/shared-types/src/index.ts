@@ -1,16 +1,48 @@
 export type UUID = string;
 
 export type PlatformRole = "it_admin" | "tenant_user";
-export type BranchRole = "owner" | "manager" | "staff";
+export type BranchRole = "owner" | "manager" | "staff" | "accountant";
 
 export type PaymentMethod = "cash" | "bank_transfer";
 export type OrderType = "dine_in" | "takeaway" | "delivery_manual";
 export type DeliveryChannel = "storefront" | "walk_home" | "grab" | "line_man" | "shopee" | "merchant_app" | "other";
 export type OrderStatus = "draft" | "queued" | "preparing" | "completed" | "cancelled";
 export type DeliveryStatus = "pending" | "preparing" | "completed" | "cancelled";
-export type ShiftStatus = "open" | "closed";
+export type ShiftStatus = "open" | "closed" | "suspended";
 export type StockMovementType = "purchase" | "sale_deduction" | "manual_adjustment" | "waste";
-export type ApprovalAction = "cancel_bill" | "stock_adjustment" | "employee_delete" | "shift_close_override";
+export type ApprovalAction =
+  | "cancel_bill"
+  | "stock_adjustment"
+  | "employee_delete"
+  | "shift_close_override"
+  | "table_move_bill"
+  | "transfer_payment_override"
+  | "sales_record_edit"
+  | "sales_record_delete";
+export type PrinterConnectionType = "NETWORK_ESC_POS" | "STAR_WEBPRNT" | "LOCAL_BRIDGE" | "BLUETOOTH_BRIDGE";
+export type PrinterRole = "receipt" | "kitchen" | "report";
+export type PrintJobStatus = "pending" | "printing" | "printed" | "failed" | "retrying";
+export type TableStatus = "available" | "occupied" | "ordering" | "pending_payment" | "reserved" | "disabled";
+export type TableShape = "square" | "rectangle" | "circle";
+export type FloorPlanObjectType = "counter" | "cashier" | "partition" | "plant" | "entrance" | "service_station";
+export type PackageContractType = "saas" | "perpetual";
+export type PackageBillingInterval = "monthly" | "yearly";
+export type PackageDeploymentMode = "cloud" | "desktop_online" | "desktop_offline" | "hybrid";
+export type PackageCurrency = "THB";
+export type PosFeatureCode =
+  | "core_pos_sales"
+  | "table_management"
+  | "qr_table_ordering"
+  | "customer_facing_display"
+  | "transfer_slip_verification"
+  | "staff_qr_clockin"
+  | "advanced_sales_reports"
+  | "receipt_reprint_history"
+  | "multi_terminal_sync"
+  | "offline_queue_resilience"
+  | "desktop_app_runtime"
+  | "barcode_scanner_mode"
+  | "kitchen_printing";
 
 export interface Tenant {
   id: UUID;
@@ -57,6 +89,98 @@ export interface DineInTable {
   table_code: string;
   seats: number;
   is_active: boolean;
+}
+
+export interface SubscriptionPackage {
+  id: UUID;
+  code: string;
+  name: string;
+  monthly_price: number;
+  max_branches: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface PackageFeatureCatalogItem {
+  code: PosFeatureCode;
+  name: string;
+  description: string;
+  default_monthly_price: number;
+  default_yearly_price: number;
+  default_perpetual_price: number;
+  included_by_default: boolean;
+  priced_per_branch: boolean;
+  is_active: boolean;
+}
+
+export interface TableZone {
+  id: UUID;
+  tenant_id: UUID;
+  branch_id: UUID;
+  zone_name: string;
+  color: string;
+  display_order: number;
+  is_active: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DiningTable {
+  id: UUID;
+  tenant_id: UUID;
+  branch_id: UUID;
+  zone_id: UUID | null;
+  table_code: string;
+  table_name: string | null;
+  capacity: number;
+  status: TableStatus;
+  shape: TableShape;
+  position_x: number;
+  position_y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  is_active: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FloorPlanObject {
+  id: UUID;
+  tenant_id: UUID;
+  branch_id: UUID;
+  zone_id: UUID | null;
+  object_type: FloorPlanObjectType;
+  object_name: string | null;
+  color: string;
+  position_x: number;
+  position_y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  z_index: number;
+  is_active: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TableBillSession {
+  id: UUID;
+  tenant_id: UUID;
+  branch_id: UUID;
+  table_id: UUID;
+  opened_by: UUID;
+  closed_by: UUID | null;
+  order_id: UUID | null;
+  status: "open" | "ordering" | "pending_payment" | "closed" | "cancelled";
+  opened_at: string;
+  closed_at: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Product {
@@ -217,6 +341,77 @@ export interface AuditLog {
   user_agent: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
+}
+
+export interface PrinterProfile {
+  id: UUID;
+  tenant_id: UUID;
+  branch_id: UUID;
+  printer_name: string;
+  printer_role: PrinterRole;
+  connection_type: PrinterConnectionType;
+  ip_address: string | null;
+  port: number | null;
+  paper_width_mm: 58 | 80;
+  enabled: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PrintJob {
+  id: UUID;
+  tenant_id: UUID;
+  branch_id: UUID;
+  order_id: UUID | null;
+  printer_id: UUID | null;
+  printer_role: PrinterRole;
+  connection_type: PrinterConnectionType;
+  status: PrintJobStatus;
+  payload_text: string;
+  payload_json: Record<string, unknown>;
+  retry_count: number;
+  max_retry_count: number;
+  last_error: string | null;
+  printed_at: string | null;
+  failed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ReceiptTemplate {
+  order_id: UUID;
+  order_no: string;
+  branch_name: string;
+  cashier_name: string;
+  paid_at_iso: string;
+  currency: string;
+  items: Array<{
+    name: string;
+    qty: number;
+    unit_price: number;
+    line_total: number;
+  }>;
+  subtotal: number;
+  discount_amount: number;
+  tax_amount: number;
+  total_amount: number;
+  payment_method: PaymentMethod;
+  note?: string;
+}
+
+export interface KitchenTicketTemplate {
+  order_id: UUID;
+  order_no: string;
+  branch_name: string;
+  ticket_at_iso: string;
+  station: string;
+  items: Array<{
+    name: string;
+    qty: number;
+    note?: string;
+  }>;
 }
 
 export interface CreateManualDeliveryOrderInput {

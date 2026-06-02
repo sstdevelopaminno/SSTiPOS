@@ -1,4 +1,8 @@
-﻿# Responsive and Device QA Report (v0.1.1)
+﻿> [!WARNING]
+> ARCHIVED (2026-05-31): This document references legacy QR login flow and is kept for historical/audit context only.
+> Active runtime flow: apps/backoffice-web `/login/store -> /login/branches|employee -> /login/devices`.
+> See: `docs/ARCHIVE-QR-DECOMMISSION-2026-05-31.md`.
+# Responsive and Device QA Report (v0.1.1)
 
 Date: 2026-05-17
 

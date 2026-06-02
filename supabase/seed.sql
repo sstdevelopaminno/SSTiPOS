@@ -6,6 +6,299 @@ values
   ('10000000-0000-0000-0000-000000000001', 'starter', 'Starter MVP', 990, 3, true)
 on conflict (id) do nothing;
 
+-- Multi-tenant demo bundle for login/branch-scope development.
+-- Includes: 6 tenants, 12 branches, 18 users (owner/manager/staff), 30 role mappings.
+insert into tenants (id, code, name, owner_name, owner_phone, package_id, is_active)
+values
+  ('00000000-0000-0000-0000-000000010001', 'CAF-TH-001', 'Cafe Atlas', 'Owner Cafe Atlas', '0811001001', '10000000-0000-0000-0000-000000000001', true),
+  ('00000000-0000-0000-0000-000000010002', 'BBQ-TH-002', 'Bangkok BBQ Lab', 'Owner BBQ Lab', '0811001002', '10000000-0000-0000-0000-000000000001', true),
+  ('00000000-0000-0000-0000-000000010003', 'SFD-TH-003', 'Seafood Dock', 'Owner Seafood Dock', '0811001003', '10000000-0000-0000-0000-000000000001', true),
+  ('00000000-0000-0000-0000-000000010004', 'BAK-TH-004', 'Baker Street 24', 'Owner Baker Street 24', '0811001004', '10000000-0000-0000-0000-000000000001', true),
+  ('00000000-0000-0000-0000-000000010005', 'TEA-TH-005', 'Tea Time House', 'Owner Tea Time House', '0811001005', '10000000-0000-0000-0000-000000000001', true),
+  ('00000000-0000-0000-0000-000000010006', 'PIZ-TH-006', 'Pizza Factory', 'Owner Pizza Factory', '0811001006', '10000000-0000-0000-0000-000000000001', true)
+on conflict (id) do update
+set
+  code = excluded.code,
+  name = excluded.name,
+  owner_name = excluded.owner_name,
+  owner_phone = excluded.owner_phone,
+  package_id = excluded.package_id,
+  is_active = excluded.is_active;
+
+insert into branches (id, tenant_id, code, name, address, is_active)
+values
+  ('00000000-0000-0000-0000-000000020011', '00000000-0000-0000-0000-000000010001', 'CAF-BKK-01', 'Cafe Atlas Rama9', 'Rama 9, Bangkok', true),
+  ('00000000-0000-0000-0000-000000020012', '00000000-0000-0000-0000-000000010001', 'CAF-CNX-01', 'Cafe Atlas Nimman', 'Nimman, Chiang Mai', true),
+  ('00000000-0000-0000-0000-000000020021', '00000000-0000-0000-0000-000000010002', 'BBQ-BKK-01', 'BBQ Lab Ladprao', 'Ladprao, Bangkok', true),
+  ('00000000-0000-0000-0000-000000020022', '00000000-0000-0000-0000-000000010002', 'BBQ-PKT-01', 'BBQ Lab Patong', 'Patong, Phuket', true),
+  ('00000000-0000-0000-0000-000000020031', '00000000-0000-0000-0000-000000010003', 'SFD-BKK-01', 'Seafood Dock Sathorn', 'Sathorn, Bangkok', true),
+  ('00000000-0000-0000-0000-000000020032', '00000000-0000-0000-0000-000000010003', 'SFD-HDY-01', 'Seafood Dock Hatyai', 'Hat Yai, Songkhla', true),
+  ('00000000-0000-0000-0000-000000020041', '00000000-0000-0000-0000-000000010004', 'BAK-BKK-01', 'Baker Street Central', 'Ratchada, Bangkok', true),
+  ('00000000-0000-0000-0000-000000020042', '00000000-0000-0000-0000-000000010004', 'BAK-KKN-01', 'Baker Street Khonkaen', 'Mueang, Khon Kaen', true),
+  ('00000000-0000-0000-0000-000000020051', '00000000-0000-0000-0000-000000010005', 'TEA-BKK-01', 'Tea Time Siam', 'Siam, Bangkok', true),
+  ('00000000-0000-0000-0000-000000020052', '00000000-0000-0000-0000-000000010005', 'TEA-URT-01', 'Tea Time Surat', 'Mueang, Surat Thani', true),
+  ('00000000-0000-0000-0000-000000020061', '00000000-0000-0000-0000-000000010006', 'PIZ-BKK-01', 'Pizza Factory Bangna', 'Bangna, Bangkok', true),
+  ('00000000-0000-0000-0000-000000020062', '00000000-0000-0000-0000-000000010006', 'PIZ-CBI-01', 'Pizza Factory Chonburi', 'Mueang, Chonburi', true)
+on conflict (id) do update
+set
+  tenant_id = excluded.tenant_id,
+  code = excluded.code,
+  name = excluded.name,
+  address = excluded.address,
+  is_active = excluded.is_active;
+
+insert into auth.users (
+  id,
+  instance_id,
+  aud,
+  role,
+  email,
+  encrypted_password,
+  email_confirmed_at,
+  created_at,
+  updated_at,
+  raw_app_meta_data,
+  raw_user_meta_data
+)
+values
+  ('00000000-0000-0000-0000-000000030011', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'owner.caf@demo.local', crypt('Owner#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Owner Cafe Atlas"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030012', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'manager.caf@demo.local', crypt('Manager#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Manager Cafe Atlas"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030013', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'staff.caf@demo.local', crypt('Staff#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Staff Cafe Atlas"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030021', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'owner.bbq@demo.local', crypt('Owner#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Owner BBQ Lab"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030022', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'manager.bbq@demo.local', crypt('Manager#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Manager BBQ Lab"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030023', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'staff.bbq@demo.local', crypt('Staff#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Staff BBQ Lab"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030031', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'owner.sfd@demo.local', crypt('Owner#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Owner Seafood Dock"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030032', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'manager.sfd@demo.local', crypt('Manager#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Manager Seafood Dock"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030033', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'staff.sfd@demo.local', crypt('Staff#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Staff Seafood Dock"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030041', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'owner.bak@demo.local', crypt('Owner#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Owner Baker Street 24"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030042', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'manager.bak@demo.local', crypt('Manager#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Manager Baker Street 24"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030043', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'staff.bak@demo.local', crypt('Staff#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Staff Baker Street 24"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030051', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'owner.tea@demo.local', crypt('Owner#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Owner Tea Time House"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030052', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'manager.tea@demo.local', crypt('Manager#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Manager Tea Time House"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030053', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'staff.tea@demo.local', crypt('Staff#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Staff Tea Time House"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030061', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'owner.piz@demo.local', crypt('Owner#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Owner Pizza Factory"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030062', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'manager.piz@demo.local', crypt('Manager#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Manager Pizza Factory"}'::jsonb),
+  ('00000000-0000-0000-0000-000000030063', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'staff.piz@demo.local', crypt('Staff#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Staff Pizza Factory"}'::jsonb)
+on conflict (id) do update
+set
+  email = excluded.email,
+  encrypted_password = excluded.encrypted_password,
+  updated_at = now(),
+  raw_user_meta_data = excluded.raw_user_meta_data;
+
+insert into users_profiles (id, email, full_name, platform_role, pin_hash, is_active)
+values
+  ('00000000-0000-0000-0000-000000030011', 'owner.caf@demo.local', 'Owner Cafe Atlas', 'tenant_user', crypt('111111', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030012', 'manager.caf@demo.local', 'Manager Cafe Atlas', 'tenant_user', crypt('222222', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030013', 'staff.caf@demo.local', 'Staff Cafe Atlas', 'tenant_user', crypt('333333', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030021', 'owner.bbq@demo.local', 'Owner BBQ Lab', 'tenant_user', crypt('111111', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030022', 'manager.bbq@demo.local', 'Manager BBQ Lab', 'tenant_user', crypt('222222', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030023', 'staff.bbq@demo.local', 'Staff BBQ Lab', 'tenant_user', crypt('333333', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030031', 'owner.sfd@demo.local', 'Owner Seafood Dock', 'tenant_user', crypt('111111', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030032', 'manager.sfd@demo.local', 'Manager Seafood Dock', 'tenant_user', crypt('222222', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030033', 'staff.sfd@demo.local', 'Staff Seafood Dock', 'tenant_user', crypt('333333', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030041', 'owner.bak@demo.local', 'Owner Baker Street 24', 'tenant_user', crypt('111111', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030042', 'manager.bak@demo.local', 'Manager Baker Street 24', 'tenant_user', crypt('222222', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030043', 'staff.bak@demo.local', 'Staff Baker Street 24', 'tenant_user', crypt('333333', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030051', 'owner.tea@demo.local', 'Owner Tea Time House', 'tenant_user', crypt('111111', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030052', 'manager.tea@demo.local', 'Manager Tea Time House', 'tenant_user', crypt('222222', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030053', 'staff.tea@demo.local', 'Staff Tea Time House', 'tenant_user', crypt('333333', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030061', 'owner.piz@demo.local', 'Owner Pizza Factory', 'tenant_user', crypt('111111', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030062', 'manager.piz@demo.local', 'Manager Pizza Factory', 'tenant_user', crypt('222222', gen_salt('bf')), true),
+  ('00000000-0000-0000-0000-000000030063', 'staff.piz@demo.local', 'Staff Pizza Factory', 'tenant_user', crypt('333333', gen_salt('bf')), true)
+on conflict (id) do update
+set
+  email = excluded.email,
+  full_name = excluded.full_name,
+  platform_role = excluded.platform_role,
+  pin_hash = excluded.pin_hash,
+  is_active = excluded.is_active;
+
+insert into user_branch_roles (id, user_id, tenant_id, branch_id, role, is_default)
+values
+  ('00000000-0000-0000-0000-000000040001', '00000000-0000-0000-0000-000000030011', '00000000-0000-0000-0000-000000010001', '00000000-0000-0000-0000-000000020011', 'owner', true),
+  ('00000000-0000-0000-0000-000000040002', '00000000-0000-0000-0000-000000030011', '00000000-0000-0000-0000-000000010001', '00000000-0000-0000-0000-000000020012', 'owner', false),
+  ('00000000-0000-0000-0000-000000040003', '00000000-0000-0000-0000-000000030012', '00000000-0000-0000-0000-000000010001', '00000000-0000-0000-0000-000000020011', 'manager', true),
+  ('00000000-0000-0000-0000-000000040004', '00000000-0000-0000-0000-000000030012', '00000000-0000-0000-0000-000000010001', '00000000-0000-0000-0000-000000020012', 'manager', false),
+  ('00000000-0000-0000-0000-000000040005', '00000000-0000-0000-0000-000000030013', '00000000-0000-0000-0000-000000010001', '00000000-0000-0000-0000-000000020011', 'staff', true),
+  ('00000000-0000-0000-0000-000000040006', '00000000-0000-0000-0000-000000030021', '00000000-0000-0000-0000-000000010002', '00000000-0000-0000-0000-000000020021', 'owner', true),
+  ('00000000-0000-0000-0000-000000040007', '00000000-0000-0000-0000-000000030021', '00000000-0000-0000-0000-000000010002', '00000000-0000-0000-0000-000000020022', 'owner', false),
+  ('00000000-0000-0000-0000-000000040008', '00000000-0000-0000-0000-000000030022', '00000000-0000-0000-0000-000000010002', '00000000-0000-0000-0000-000000020021', 'manager', true),
+  ('00000000-0000-0000-0000-000000040009', '00000000-0000-0000-0000-000000030022', '00000000-0000-0000-0000-000000010002', '00000000-0000-0000-0000-000000020022', 'manager', false),
+  ('00000000-0000-0000-0000-000000040010', '00000000-0000-0000-0000-000000030023', '00000000-0000-0000-0000-000000010002', '00000000-0000-0000-0000-000000020021', 'staff', true),
+  ('00000000-0000-0000-0000-000000040011', '00000000-0000-0000-0000-000000030031', '00000000-0000-0000-0000-000000010003', '00000000-0000-0000-0000-000000020031', 'owner', true),
+  ('00000000-0000-0000-0000-000000040012', '00000000-0000-0000-0000-000000030031', '00000000-0000-0000-0000-000000010003', '00000000-0000-0000-0000-000000020032', 'owner', false),
+  ('00000000-0000-0000-0000-000000040013', '00000000-0000-0000-0000-000000030032', '00000000-0000-0000-0000-000000010003', '00000000-0000-0000-0000-000000020031', 'manager', true),
+  ('00000000-0000-0000-0000-000000040014', '00000000-0000-0000-0000-000000030032', '00000000-0000-0000-0000-000000010003', '00000000-0000-0000-0000-000000020032', 'manager', false),
+  ('00000000-0000-0000-0000-000000040015', '00000000-0000-0000-0000-000000030033', '00000000-0000-0000-0000-000000010003', '00000000-0000-0000-0000-000000020031', 'staff', true),
+  ('00000000-0000-0000-0000-000000040016', '00000000-0000-0000-0000-000000030041', '00000000-0000-0000-0000-000000010004', '00000000-0000-0000-0000-000000020041', 'owner', true),
+  ('00000000-0000-0000-0000-000000040017', '00000000-0000-0000-0000-000000030041', '00000000-0000-0000-0000-000000010004', '00000000-0000-0000-0000-000000020042', 'owner', false),
+  ('00000000-0000-0000-0000-000000040018', '00000000-0000-0000-0000-000000030042', '00000000-0000-0000-0000-000000010004', '00000000-0000-0000-0000-000000020041', 'manager', true),
+  ('00000000-0000-0000-0000-000000040019', '00000000-0000-0000-0000-000000030042', '00000000-0000-0000-0000-000000010004', '00000000-0000-0000-0000-000000020042', 'manager', false),
+  ('00000000-0000-0000-0000-000000040020', '00000000-0000-0000-0000-000000030043', '00000000-0000-0000-0000-000000010004', '00000000-0000-0000-0000-000000020041', 'staff', true),
+  ('00000000-0000-0000-0000-000000040021', '00000000-0000-0000-0000-000000030051', '00000000-0000-0000-0000-000000010005', '00000000-0000-0000-0000-000000020051', 'owner', true),
+  ('00000000-0000-0000-0000-000000040022', '00000000-0000-0000-0000-000000030051', '00000000-0000-0000-0000-000000010005', '00000000-0000-0000-0000-000000020052', 'owner', false),
+  ('00000000-0000-0000-0000-000000040023', '00000000-0000-0000-0000-000000030052', '00000000-0000-0000-0000-000000010005', '00000000-0000-0000-0000-000000020051', 'manager', true),
+  ('00000000-0000-0000-0000-000000040024', '00000000-0000-0000-0000-000000030052', '00000000-0000-0000-0000-000000010005', '00000000-0000-0000-0000-000000020052', 'manager', false),
+  ('00000000-0000-0000-0000-000000040025', '00000000-0000-0000-0000-000000030053', '00000000-0000-0000-0000-000000010005', '00000000-0000-0000-0000-000000020051', 'staff', true),
+  ('00000000-0000-0000-0000-000000040026', '00000000-0000-0000-0000-000000030061', '00000000-0000-0000-0000-000000010006', '00000000-0000-0000-0000-000000020061', 'owner', true),
+  ('00000000-0000-0000-0000-000000040027', '00000000-0000-0000-0000-000000030061', '00000000-0000-0000-0000-000000010006', '00000000-0000-0000-0000-000000020062', 'owner', false),
+  ('00000000-0000-0000-0000-000000040028', '00000000-0000-0000-0000-000000030062', '00000000-0000-0000-0000-000000010006', '00000000-0000-0000-0000-000000020061', 'manager', true),
+  ('00000000-0000-0000-0000-000000040029', '00000000-0000-0000-0000-000000030062', '00000000-0000-0000-0000-000000010006', '00000000-0000-0000-0000-000000020062', 'manager', false),
+  ('00000000-0000-0000-0000-000000040030', '00000000-0000-0000-0000-000000030063', '00000000-0000-0000-0000-000000010006', '00000000-0000-0000-0000-000000020061', 'staff', true)
+on conflict (user_id, tenant_id, branch_id) do update
+set
+  role = excluded.role,
+  is_default = excluded.is_default;
+
+with seeded_branches (tenant_id, branch_id, brand_prefix) as (
+  values
+    ('00000000-0000-0000-0000-000000010001'::uuid, '00000000-0000-0000-0000-000000020011'::uuid, 'CAF'),
+    ('00000000-0000-0000-0000-000000010001'::uuid, '00000000-0000-0000-0000-000000020012'::uuid, 'CAF'),
+    ('00000000-0000-0000-0000-000000010002'::uuid, '00000000-0000-0000-0000-000000020021'::uuid, 'BBQ'),
+    ('00000000-0000-0000-0000-000000010002'::uuid, '00000000-0000-0000-0000-000000020022'::uuid, 'BBQ'),
+    ('00000000-0000-0000-0000-000000010003'::uuid, '00000000-0000-0000-0000-000000020031'::uuid, 'SFD'),
+    ('00000000-0000-0000-0000-000000010003'::uuid, '00000000-0000-0000-0000-000000020032'::uuid, 'SFD'),
+    ('00000000-0000-0000-0000-000000010004'::uuid, '00000000-0000-0000-0000-000000020041'::uuid, 'BAK'),
+    ('00000000-0000-0000-0000-000000010004'::uuid, '00000000-0000-0000-0000-000000020042'::uuid, 'BAK'),
+    ('00000000-0000-0000-0000-000000010005'::uuid, '00000000-0000-0000-0000-000000020051'::uuid, 'TEA'),
+    ('00000000-0000-0000-0000-000000010005'::uuid, '00000000-0000-0000-0000-000000020052'::uuid, 'TEA'),
+    ('00000000-0000-0000-0000-000000010006'::uuid, '00000000-0000-0000-0000-000000020061'::uuid, 'PIZ'),
+    ('00000000-0000-0000-0000-000000010006'::uuid, '00000000-0000-0000-0000-000000020062'::uuid, 'PIZ')
+),
+channel_templates (channel_code, channel_name, is_manual, is_active) as (
+  values
+    ('storefront', 'หน้าร้าน', true, true),
+    ('delivery_manual', 'เดลิเวอรี', true, true)
+),
+expanded_channels as (
+  select
+    b.tenant_id,
+    b.branch_id,
+    c.channel_code,
+    c.channel_name,
+    c.is_manual,
+    c.is_active,
+    row_number() over (order by b.tenant_id, b.branch_id, c.channel_code) as rn
+  from seeded_branches b
+  cross join channel_templates c
+)
+insert into merchant_channels (id, tenant_id, branch_id, channel_code, channel_name, is_manual, is_active)
+select
+  ('00000000-0000-0000-0000-' || lpad((880000 + rn)::text, 12, '0'))::uuid,
+  tenant_id,
+  branch_id,
+  channel_code,
+  channel_name,
+  is_manual,
+  is_active
+from expanded_channels
+on conflict (tenant_id, branch_id, channel_code) do update
+set
+  channel_name = excluded.channel_name,
+  is_manual = excluded.is_manual,
+  is_active = excluded.is_active;
+
+with seeded_branches (tenant_id, branch_id, brand_prefix) as (
+  values
+    ('00000000-0000-0000-0000-000000010001'::uuid, '00000000-0000-0000-0000-000000020011'::uuid, 'CAF'),
+    ('00000000-0000-0000-0000-000000010001'::uuid, '00000000-0000-0000-0000-000000020012'::uuid, 'CAF'),
+    ('00000000-0000-0000-0000-000000010002'::uuid, '00000000-0000-0000-0000-000000020021'::uuid, 'BBQ'),
+    ('00000000-0000-0000-0000-000000010002'::uuid, '00000000-0000-0000-0000-000000020022'::uuid, 'BBQ'),
+    ('00000000-0000-0000-0000-000000010003'::uuid, '00000000-0000-0000-0000-000000020031'::uuid, 'SFD'),
+    ('00000000-0000-0000-0000-000000010003'::uuid, '00000000-0000-0000-0000-000000020032'::uuid, 'SFD'),
+    ('00000000-0000-0000-0000-000000010004'::uuid, '00000000-0000-0000-0000-000000020041'::uuid, 'BAK'),
+    ('00000000-0000-0000-0000-000000010004'::uuid, '00000000-0000-0000-0000-000000020042'::uuid, 'BAK'),
+    ('00000000-0000-0000-0000-000000010005'::uuid, '00000000-0000-0000-0000-000000020051'::uuid, 'TEA'),
+    ('00000000-0000-0000-0000-000000010005'::uuid, '00000000-0000-0000-0000-000000020052'::uuid, 'TEA'),
+    ('00000000-0000-0000-0000-000000010006'::uuid, '00000000-0000-0000-0000-000000020061'::uuid, 'PIZ'),
+    ('00000000-0000-0000-0000-000000010006'::uuid, '00000000-0000-0000-0000-000000020062'::uuid, 'PIZ')
+),
+product_templates (sku_suffix, product_name, category, price, is_combo, is_active) as (
+  values
+    ('001', 'Signature Dish', 'อาหาร', 79::numeric, false, true),
+    ('002', 'Special Set', 'อาหาร', 99::numeric, false, true),
+    ('D01', 'House Drink', 'เครื่องดื่ม', 35::numeric, false, true)
+),
+expanded_products as (
+  select
+    b.tenant_id,
+    b.branch_id,
+    (b.brand_prefix || '-' || p.sku_suffix) as sku,
+    p.product_name,
+    p.category,
+    p.price,
+    p.is_combo,
+    p.is_active,
+    row_number() over (order by b.tenant_id, b.branch_id, p.sku_suffix) as rn
+  from seeded_branches b
+  cross join product_templates p
+)
+insert into products (id, tenant_id, branch_id, sku, name, category, price, is_combo, is_active)
+select
+  ('00000000-0000-0000-0000-' || lpad((890000 + rn)::text, 12, '0'))::uuid,
+  tenant_id,
+  branch_id,
+  sku,
+  product_name,
+  category,
+  price,
+  is_combo,
+  is_active
+from expanded_products
+on conflict (tenant_id, branch_id, sku) do update
+set
+  name = excluded.name,
+  category = excluded.category,
+  price = excluded.price,
+  is_combo = excluded.is_combo,
+  is_active = excluded.is_active;
+
+with seeded_branches (tenant_id, branch_id) as (
+  values
+    ('00000000-0000-0000-0000-000000010001'::uuid, '00000000-0000-0000-0000-000000020011'::uuid),
+    ('00000000-0000-0000-0000-000000010001'::uuid, '00000000-0000-0000-0000-000000020012'::uuid),
+    ('00000000-0000-0000-0000-000000010002'::uuid, '00000000-0000-0000-0000-000000020021'::uuid),
+    ('00000000-0000-0000-0000-000000010002'::uuid, '00000000-0000-0000-0000-000000020022'::uuid),
+    ('00000000-0000-0000-0000-000000010003'::uuid, '00000000-0000-0000-0000-000000020031'::uuid),
+    ('00000000-0000-0000-0000-000000010003'::uuid, '00000000-0000-0000-0000-000000020032'::uuid),
+    ('00000000-0000-0000-0000-000000010004'::uuid, '00000000-0000-0000-0000-000000020041'::uuid),
+    ('00000000-0000-0000-0000-000000010004'::uuid, '00000000-0000-0000-0000-000000020042'::uuid),
+    ('00000000-0000-0000-0000-000000010005'::uuid, '00000000-0000-0000-0000-000000020051'::uuid),
+    ('00000000-0000-0000-0000-000000010005'::uuid, '00000000-0000-0000-0000-000000020052'::uuid),
+    ('00000000-0000-0000-0000-000000010006'::uuid, '00000000-0000-0000-0000-000000020061'::uuid),
+    ('00000000-0000-0000-0000-000000010006'::uuid, '00000000-0000-0000-0000-000000020062'::uuid)
+),
+table_templates (table_code, seats, is_active) as (
+  values
+    ('A01', 4, true),
+    ('A02', 4, true)
+),
+expanded_tables as (
+  select
+    b.tenant_id,
+    b.branch_id,
+    t.table_code,
+    t.seats,
+    t.is_active,
+    row_number() over (order by b.tenant_id, b.branch_id, t.table_code) as rn
+  from seeded_branches b
+  cross join table_templates t
+)
+insert into dine_in_tables (id, tenant_id, branch_id, table_code, seats, is_active)
+select
+  ('00000000-0000-0000-0000-' || lpad((870000 + rn)::text, 12, '0'))::uuid,
+  tenant_id,
+  branch_id,
+  table_code,
+  seats,
+  is_active
+from expanded_tables
+on conflict (tenant_id, branch_id, table_code) do update
+set
+  seats = excluded.seats,
+  is_active = excluded.is_active;
+
 insert into tenants (id, code, name, owner_name, owner_phone, package_id, is_active)
 values
   ('00000000-0000-0000-0000-000000000001', 'NDL-TH-001', 'ก๋วยเตี๋ยวคุณหนึ่ง', 'คุณหนึ่ง', '0899990001', '10000000-0000-0000-0000-000000000001', true)
@@ -112,6 +405,53 @@ insert into dine_in_tables (id, tenant_id, branch_id, table_code, seats, is_acti
 values
   ('00000000-0000-0000-0000-000000007001', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000011', 'A01', 4, true),
   ('00000000-0000-0000-0000-000000007002', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000011', 'A02', 4, true)
+on conflict (tenant_id, branch_id, table_code) do nothing;
+
+insert into table_zones (id, tenant_id, branch_id, zone_name, color, display_order, is_active)
+values
+  ('00000000-0000-0000-0000-00000000a001', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000011', 'Main Hall', '#16a34a', 1, true),
+  ('00000000-0000-0000-0000-00000000a002', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000011', 'Terrace', '#2563eb', 2, true)
+on conflict (tenant_id, branch_id, zone_name) do nothing;
+
+insert into dining_tables (
+  id, tenant_id, branch_id, zone_id, table_code, table_name, capacity, status, shape,
+  position_x, position_y, width, height, rotation, is_active
+)
+values
+  (
+    '00000000-0000-0000-0000-000000007001',
+    '00000000-0000-0000-0000-000000000001',
+    '00000000-0000-0000-0000-000000000011',
+    '00000000-0000-0000-0000-00000000a001',
+    'A01',
+    'A01',
+    4,
+    'available',
+    'rectangle',
+    120,
+    120,
+    96,
+    72,
+    0,
+    true
+  ),
+  (
+    '00000000-0000-0000-0000-000000007002',
+    '00000000-0000-0000-0000-000000000001',
+    '00000000-0000-0000-0000-000000000011',
+    '00000000-0000-0000-0000-00000000a001',
+    'A02',
+    'A02',
+    4,
+    'available',
+    'rectangle',
+    260,
+    120,
+    96,
+    72,
+    0,
+    true
+  )
 on conflict (tenant_id, branch_id, table_code) do nothing;
 
 insert into merchant_channels (id, tenant_id, branch_id, channel_code, channel_name, is_manual, is_active)

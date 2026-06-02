@@ -16,6 +16,7 @@ function createAwaitableQuery<T>(result: T) {
     eq: vi.fn(() => query),
     order: vi.fn(() => query),
     range: vi.fn(() => query),
+    in: vi.fn(() => query),
     or: vi.fn(() => query),
     then: (resolve: (value: T) => unknown) => Promise.resolve(resolve(result))
   };
@@ -51,8 +52,11 @@ describe("orders api integration", () => {
       }
     ];
 
-    const query = createAwaitableQuery({ data: rows, error: null, count: 1 });
-    const from = vi.fn(() => ({ select: vi.fn(() => query) }));
+    const ordersQuery = createAwaitableQuery({ data: rows, error: null, count: 1 });
+    const verificationsQuery = createAwaitableQuery({ data: [], error: null });
+    const from = vi.fn((table: string) => ({
+      select: vi.fn(() => (table === "orders" ? ordersQuery : verificationsQuery))
+    }));
     getSupabaseServiceClient.mockReturnValue({ from });
 
     const { GET } = await import("@/app/api/backoffice/orders/route");
@@ -62,9 +66,10 @@ describe("orders api integration", () => {
     expect(response.status).toBe(200);
     expect(body.data.items).toHaveLength(1);
     expect(body.data.pagination.total).toBe(1);
-    expect(query.eq).toHaveBeenCalledWith("tenant_id", "t1");
-    expect(query.eq).toHaveBeenCalledWith("branch_id", "b1");
-    expect(query.or).toHaveBeenCalledTimes(1);
+    expect(ordersQuery.eq).toHaveBeenCalledWith("tenant_id", "t1");
+    expect(ordersQuery.eq).toHaveBeenCalledWith("branch_id", "b1");
+    expect(ordersQuery.or).toHaveBeenCalledTimes(1);
+    expect(verificationsQuery.in).toHaveBeenCalledWith("order_id", ["o1"]);
   });
 
   it("blocks cross branch query", async () => {

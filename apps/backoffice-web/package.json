@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "node scripts/dev-safe.mjs",
     "build": "next build --webpack",
     "start": "next start -p 3000",
     "cf:build": "opennextjs-cloudflare build",

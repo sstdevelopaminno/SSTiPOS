@@ -2,11 +2,19 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { MouseEvent, useEffect, useState, useTransition } from "react";
 import { LanguageSwitcher } from "@/components/language/language-switcher";
 import { PosStaffMenu } from "@/components/pos-preview/pos-staff-menu";
-import type { Language } from "@/lib/i18n";
+import { t, type Language } from "@/lib/i18n";
+type PosRole = "owner" | "manager" | "staff" | "accountant";
+const POS_ROLE_STORAGE_KEY = "pos_session_role_v1";
+const POS_ROLE_EVENT_NAME = "pos-session-role-updated";
+
+function normalizePosRole(value: string): PosRole | null {
+  if (value === "owner" || value === "manager" || value === "staff" || value === "accountant") return value;
+  return null;
+}
 
 type Props = {
   lang: Language;
@@ -19,17 +27,103 @@ type Props = {
 export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel, englishLabel }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const [sessionRole, setSessionRole] = useState<PosRole | null>(null);
+  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
+  const [logoutBusyMode, setLogoutBusyMode] = useState<"switch_device" | "full" | null>(null);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   const isSettingsActive = pathname === "/preview/pos/settings";
+  const showAdvancedMenus = sessionRole === "owner";
+
+  useEffect(() => {
+    const applyStoredRole = () => {
+      try {
+        const storedRole = window.sessionStorage.getItem(POS_ROLE_STORAGE_KEY);
+        const normalized = normalizePosRole(storedRole ?? "");
+        setSessionRole(normalized);
+        return normalized;
+      } catch {
+        setSessionRole(null);
+        return null;
+      }
+    };
+
+    const onSessionRoleUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ role?: string | null }>).detail;
+      const nextRole = normalizePosRole(String(detail?.role ?? ""));
+      setSessionRole(nextRole);
+    };
+
+    applyStoredRole();
+    window.addEventListener(POS_ROLE_EVENT_NAME, onSessionRoleUpdated as EventListener);
+    return () => {
+      window.removeEventListener(POS_ROLE_EVENT_NAME, onSessionRoleUpdated as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isPending) {
+      setPendingHref(null);
+    }
+  }, [isPending]);
+
+  function handleSettingsNavigate(event: MouseEvent<HTMLAnchorElement>) {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    if (pathname === "/preview/pos/settings") {
+      event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    setPendingHref("/preview/pos/settings");
+    startTransition(() => {
+      router.push("/preview/pos/settings");
+    });
+  }
+
+  async function submitLogout(mode: "switch_device" | "full") {
+    if (logoutBusyMode) return;
+    setLogoutBusyMode(mode);
+    setLogoutError(null);
+    try {
+      const response = await fetch("/api/auth/session/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode })
+      });
+      const body = (await response.json().catch(() => null)) as { data?: { redirect_to?: string } | null; error?: { message?: string } | null } | null;
+      if (!response.ok) {
+        throw new Error(body?.error?.message ?? (lang === "th" ? "ไม่สามารถออกจากระบบได้" : "Unable to logout."));
+      }
+      window.sessionStorage.removeItem(POS_ROLE_STORAGE_KEY);
+      window.dispatchEvent(new CustomEvent(POS_ROLE_EVENT_NAME, { detail: { role: null } }));
+      window.location.assign(body?.data?.redirect_to ?? "/login/store");
+    } catch (error) {
+      setLogoutError(error instanceof Error ? error.message : lang === "th" ? "ไม่สามารถออกจากระบบได้" : "Unable to logout.");
+    } finally {
+      setLogoutBusyMode(null);
+    }
+  }
 
   return (
     <aside
-      className={`pos-shell-sidebar hidden rounded-xl border border-slate-700/60 bg-[radial-gradient(circle_at_70%_-20%,rgba(43,124,255,0.28),transparent_48%),linear-gradient(180deg,#162b45,#0f1d31)] p-3 text-white lg:flex lg:flex-col ${
-        collapsed ? "lg:w-[72px]" : "lg:w-[196px] xl:w-[206px]"
+      className={`pos-shell-sidebar hidden h-full shrink-0 border-r border-slate-900/40 bg-[radial-gradient(circle_at_80%_-20%,rgba(56,189,248,0.28),transparent_45%),radial-gradient(circle_at_20%_120%,rgba(37,99,235,0.26),transparent_40%),linear-gradient(185deg,#07142c,#081c3b_45%,#071731)] p-3 text-white lg:flex lg:flex-col ${
+        collapsed ? "lg:w-[70px]" : "lg:w-[214px]"
       }`}
     >
       <div className={`${collapsed ? "flex justify-center" : ""}`}>
         <div
-          className={`relative overflow-hidden rounded-md ${
+          className={`relative overflow-hidden rounded-xl border border-white/10 bg-white/5 ${
             collapsed ? "h-8 w-8" : "h-14 w-full"
           }`}
         >
@@ -49,13 +143,13 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
       </div>
 
       <div className={`mt-3 flex items-center ${collapsed ? "justify-center" : "justify-between"}`}>
-        {!collapsed ? <p className="text-[14px] font-semibold text-slate-200">{lang === "th" ? "เมนูพนักงาน" : "Staff Menu"}</p> : null}
+        {!collapsed ? <p className="text-[12px] font-semibold text-slate-200">{t(lang, "pos_sidebar_staff_menu")}</p> : null}
         <button
           type="button"
-          className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-white/15 bg-slate-900/40 p-0 text-slate-100 hover:bg-slate-900/65"
+          className="inline-flex h-[34px] min-w-[34px] items-center justify-center rounded-lg border border-white/20 bg-slate-900/45 p-0 text-slate-100 transition hover:bg-slate-900/70"
           onClick={() => setCollapsed((current) => !current)}
-          aria-label={collapsed ? (lang === "th" ? "แสดงชื่อเมนู" : "Expand menu labels") : (lang === "th" ? "ซ่อนชื่อเมนู" : "Collapse menu labels")}
-          title={collapsed ? (lang === "th" ? "แสดง" : "Expand") : lang === "th" ? "ซ่อน" : "Collapse"}
+          aria-label={collapsed ? t(lang, "pos_sidebar_expand_labels") : t(lang, "pos_sidebar_collapse_labels")}
+          title={collapsed ? t(lang, "pos_sidebar_expand") : t(lang, "pos_sidebar_collapse")}
         >
           <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor" aria-hidden>
             {collapsed ? <path d="M7 4l6 6-6 6" /> : <path d="M13 4l-6 6 6 6" />}
@@ -63,40 +157,45 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
         </button>
       </div>
 
-      <PosStaffMenu lang={lang} collapsed={collapsed} />
+      <PosStaffMenu lang={lang} collapsed={collapsed} sessionRole={sessionRole} onLogout={() => setLogoutModalOpen(true)} />
 
-      <Link
-        href="/preview/pos/settings"
-        className={`group relative mt-0.5 inline-flex min-h-10 w-full items-center px-2 text-sm font-semibold leading-tight transition ${
-          collapsed ? "justify-center" : "justify-start gap-2"
-        } ${
-          isSettingsActive
-            ? "rounded-md bg-white/10 text-white before:absolute before:left-0 before:top-1/2 before:h-5 before:w-1 before:-translate-y-1/2 before:rounded-r-full before:bg-blue-400"
-            : "text-slate-100/90 hover:text-white"
-        }`}
-        title={collapsed ? settingsLabel : undefined}
-      >
-        <span className="inline-flex w-4 justify-center" aria-hidden>
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.7 1.7 0 0 0 .33 1.82l.03.03a2 2 0 1 1-2.83 2.83l-.03-.03A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.04A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.82.33l-.03.03a2 2 0 1 1-2.83-2.83l.03-.03A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.96a2 2 0 1 1 0-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.33-1.82l-.03-.03a2 2 0 1 1 2.83-2.83l.03.03A1.7 1.7 0 0 0 9 4.6c.36 0 .7-.13 1-.38.27-.25.43-.6.4-.96V3a2 2 0 1 1 4 0v.04c-.03.37.12.72.4.96.3.25.64.38 1 .38a1.7 1.7 0 0 0 1.82-.33l.03-.03a2 2 0 1 1 2.83 2.83l-.03.03a1.7 1.7 0 0 0-.33 1.82c.1.38.35.73.72.95.29.18.62.27.95.25H21a2 2 0 1 1 0 4h-.04c-.37-.03-.72.12-.96.4-.24.3-.37.64-.36 1z" />
-          </svg>
-        </span>
-        {!collapsed ? <span className="truncate text-[14px]">{settingsLabel}</span> : null}
-      </Link>
+      {showAdvancedMenus ? (
+        <Link
+          href="/preview/pos/settings"
+          prefetch={false}
+          onClick={handleSettingsNavigate}
+          className={`group relative mt-0.5 inline-flex min-h-[40px] w-full items-center px-2 text-[13px] font-semibold leading-tight transition ${
+            collapsed ? "justify-center" : "justify-start gap-2"
+          } ${
+            isSettingsActive
+              ? "rounded-xl border border-blue-400/40 bg-blue-500/25 text-white"
+              : "rounded-xl text-slate-100/90 hover:bg-white/5 hover:text-white"
+          } ${pendingHref === "/preview/pos/settings" && isPending ? "opacity-80" : ""}`}
+          title={collapsed ? settingsLabel : undefined}
+          aria-busy={pendingHref === "/preview/pos/settings" && isPending}
+        >
+          <span className="inline-flex w-4 justify-center" aria-hidden>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .33 1.82l.03.03a2 2 0 1 1-2.83 2.83l-.03-.03A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.04A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.82.33l-.03.03a2 2 0 1 1-2.83-2.83l.03-.03A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.96a2 2 0 1 1 0-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.33-1.82l-.03-.03a2 2 0 1 1 2.83-2.83l.03.03A1.7 1.7 0 0 0 9 4.6c.36 0 .7-.13 1-.38.27-.25.43-.6.4-.96V3a2 2 0 1 1 4 0v.04c-.03.37.12.72.4.96.3.25.64.38 1 .38a1.7 1.7 0 0 0 1.82-.33l.03-.03a2 2 0 1 1 2.83 2.83l-.03.03a1.7 1.7 0 0 0-.33 1.82c.1.38.35.73.72.95.29.18.62.27.95.25H21a2 2 0 1 1 0 4h-.04c-.37-.03-.72.12-.96.4-.24.3-.37.64-.36 1z" />
+            </svg>
+          </span>
+          {!collapsed ? <span className="truncate text-[13px]">{settingsLabel}</span> : null}
+        </Link>
+      ) : null}
 
-      <div className="mt-auto pt-3">
+      <div className="mt-auto pt-4">
         {!collapsed ? (
-          <div className="rounded-lg border border-white/15 bg-white/95 px-2 py-1 text-slate-900">
+          <div className="rounded-2xl border border-white/20 bg-white/95 px-3 py-2 text-slate-900 shadow-lg shadow-slate-900/20">
             <LanguageSwitcher
               currentLanguage={lang}
               label={languageLabel}
@@ -107,6 +206,60 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
           </div>
         ) : null}
       </div>
+
+      {logoutModalOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/55 p-4"
+          onClick={() => {
+            if (!logoutBusyMode) {
+              setLogoutModalOpen(false);
+              setLogoutError(null);
+            }
+          }}
+        >
+          <section
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="text-lg font-extrabold">{t(lang, "pos_logout_title")}</h3>
+            <p className="mt-1 text-sm text-slate-600">{t(lang, "pos_logout_desc")}</p>
+            {logoutError ? <p className="mt-2 text-sm font-semibold text-red-600">{logoutError}</p> : null}
+            <div className="mt-4 grid gap-2">
+              <button
+                type="button"
+                disabled={Boolean(logoutBusyMode)}
+                onClick={() => void submitLogout("switch_device")}
+                className="h-10 rounded-xl border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {logoutBusyMode === "switch_device" ? t(lang, "pos_logout_loading") : t(lang, "pos_logout_switch_device")}
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(logoutBusyMode)}
+                onClick={() => void submitLogout("full")}
+                className="h-10 rounded-xl border border-orange-200 bg-orange-50 px-3 text-sm font-semibold text-orange-700 transition hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {logoutBusyMode === "full" ? t(lang, "pos_logout_loading") : t(lang, "pos_logout_full")}
+              </button>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700"
+                disabled={Boolean(logoutBusyMode)}
+                onClick={() => {
+                  setLogoutModalOpen(false);
+                  setLogoutError(null);
+                }}
+              >
+                {t(lang, "sales_list_cancel")}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </aside>
   );
 }

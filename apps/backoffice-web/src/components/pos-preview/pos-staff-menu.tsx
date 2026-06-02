@@ -1,10 +1,12 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import type { Language } from "@/lib/i18n";
+import { usePathname, useRouter } from "next/navigation";
+import { MouseEvent, useEffect, useMemo, useState, useTransition } from "react";
+import { t, type Language } from "@/lib/i18n";
 
-type IconName = "sales" | "list" | "stock" | "summary" | "receipt" | "users";
+type IconName = "sales" | "list" | "stock" | "summary" | "receipt" | "tables" | "users" | "display" | "shift" | "logout";
+type PosRole = "owner" | "manager" | "staff" | "accountant";
 
 function MenuIcon({ name }: { name: IconName }) {
   const common = {
@@ -41,8 +43,9 @@ function MenuIcon({ name }: { name: IconName }) {
   if (name === "stock") {
     return (
       <svg {...common}>
-        <path d="M3 7l9-4 9 4-9 4-9-4z" />
-        <path d="M3 7v10l9 4 9-4V7" />
+        <rect x="4" y="6" width="16" height="12" rx="2" />
+        <path d="M8 10h8" />
+        <path d="M8 14h8" />
       </svg>
     );
   }
@@ -65,6 +68,43 @@ function MenuIcon({ name }: { name: IconName }) {
       </svg>
     );
   }
+  if (name === "tables") {
+    return (
+      <svg {...common}>
+        <rect x="4" y="6" width="16" height="4" rx="1" />
+        <line x1="6" y1="10" x2="6" y2="18" />
+        <line x1="18" y1="10" x2="18" y2="18" />
+        <line x1="4" y1="18" x2="20" y2="18" />
+      </svg>
+    );
+  }
+  if (name === "display") {
+    return (
+      <svg {...common}>
+        <rect x="3" y="5" width="18" height="12" rx="2" />
+        <line x1="8" y1="20" x2="16" y2="20" />
+        <line x1="12" y1="17" x2="12" y2="20" />
+      </svg>
+    );
+  }
+  if (name === "shift") {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="8" />
+        <line x1="12" y1="8" x2="12" y2="12" />
+        <line x1="12" y1="12" x2="15" y2="14" />
+      </svg>
+    );
+  }
+  if (name === "logout") {
+    return (
+      <svg {...common}>
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+        <polyline points="16 17 21 12 16 7" />
+        <line x1="21" y1="12" x2="9" y2="12" />
+      </svg>
+    );
+  }
   return (
     <svg {...common}>
       <circle cx="12" cy="8" r="3" />
@@ -73,49 +113,146 @@ function MenuIcon({ name }: { name: IconName }) {
   );
 }
 
-const items: Record<Language, Array<{ label: string; href: string; icon: IconName }>> = {
-  th: [
-    { label: "หน้าขาย", href: "/preview/pos", icon: "sales" },
-    { label: "รายการขาย", href: "/preview/pos/sales-list", icon: "list" },
-    { label: "สินค้าหรือสต็อก", href: "/preview/pos/stock", icon: "stock" },
-    { label: "สรุปยอดขาย", href: "/preview/pos/sales-summary", icon: "summary" },
-    { label: "เช็คอินหรือใบเสร็จ", href: "/preview/pos/receipts", icon: "receipt" },
-    { label: "ผู้ใช้งาน", href: "/preview/pos/users", icon: "users" }
-  ],
-  en: [
-    { label: "Sales", href: "/preview/pos", icon: "sales" },
-    { label: "Sales List", href: "/preview/pos/sales-list", icon: "list" },
-    { label: "Products / Stock", href: "/preview/pos/stock", icon: "stock" },
-    { label: "Sales Summary", href: "/preview/pos/sales-summary", icon: "summary" },
-    { label: "Bill / Receipt Check", href: "/preview/pos/receipts", icon: "receipt" },
-    { label: "Users", href: "/preview/pos/users", icon: "users" }
-  ]
-};
+const MENU_DEFS: Array<{
+  key:
+    | "pos_menu_sales"
+    | "pos_menu_sales_list"
+    | "pos_menu_stock"
+    | "pos_menu_sales_summary"
+    | "pos_menu_receipts"
+    | "pos_menu_tables"
+    | "pos_menu_shift"
+    | "pos_menu_customer_display"
+    | "pos_menu_users"
+    | "pos_menu_logout";
+  href: string;
+  icon: IconName;
+  roles: PosRole[];
+  kind?: "route" | "logout";
+}> = [
+  { key: "pos_menu_sales", href: "/preview/pos", icon: "sales", roles: ["owner", "manager", "staff"] },
+  { key: "pos_menu_sales_list", href: "/preview/pos/sales-list", icon: "list", roles: ["owner", "manager", "staff"] },
+  { key: "pos_menu_stock", href: "/preview/pos/stock", icon: "stock", roles: ["owner", "manager", "accountant"] },
+  { key: "pos_menu_sales_summary", href: "/preview/pos/sales-summary", icon: "summary", roles: ["owner", "manager", "accountant"] },
+  { key: "pos_menu_receipts", href: "/preview/pos/receipts", icon: "receipt", roles: ["owner", "manager", "accountant"] },
+  { key: "pos_menu_tables", href: "/preview/pos/tables", icon: "tables", roles: ["owner", "manager"] },
+  { key: "pos_menu_shift", href: "/preview/pos/shift", icon: "shift", roles: ["owner", "manager", "staff"] },
+  { key: "pos_menu_customer_display", href: "/preview/pos/customer-display", icon: "display", roles: ["owner"] },
+  { key: "pos_menu_users", href: "/preview/pos/users", icon: "users", roles: ["owner", "manager"] },
+  { key: "pos_menu_logout", href: "#logout", icon: "logout", roles: ["owner", "manager", "staff", "accountant"], kind: "logout" }
+];
 
-export function PosStaffMenu({ lang, collapsed }: { lang: Language; collapsed: boolean }) {
+function resolveMenuRole(role: PosRole | null): PosRole {
+  // Keep menu visible after refresh while session role is still hydrating from API.
+  if (!role) return "staff";
+  if (role === "accountant") return "manager";
+  return role;
+}
+
+export function PosStaffMenu({
+  lang,
+  collapsed,
+  sessionRole,
+  onLogout
+}: {
+  lang: Language;
+  collapsed: boolean;
+  sessionRole: PosRole | null;
+  onLogout?: () => void;
+}) {
+  const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const effectiveRole = resolveMenuRole(sessionRole);
+  const menuItems = useMemo(
+    () =>
+      MENU_DEFS.map((item) => ({
+        label: t(lang, item.key),
+        href: item.href,
+        icon: item.icon,
+        roles: item.roles,
+        kind: item.kind ?? "route"
+      })).filter((item) => item.roles.includes(effectiveRole)),
+    [effectiveRole, lang]
+  );
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isPending) {
+      setPendingHref(null);
+    }
+  }, [isPending]);
+
+  function handleNavigate(event: MouseEvent<HTMLAnchorElement>, href: string) {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    if (pathname === href) {
+      event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    setPendingHref(href);
+    startTransition(() => {
+      router.push(href);
+    });
+  }
 
   return (
-    <nav className="mt-2 grid gap-0.5" aria-label={lang === "th" ? "เมนูระบบขายพนักงาน" : "POS staff menu"}>
-      {items[lang].map((item) => {
+    <nav className="mt-2 grid gap-1" aria-label={t(lang, "pos_menu_staff_aria")}>
+      {(mounted ? menuItems : []).map((item) => {
         const isActive = pathname === item.href;
+        const isNavigating = pendingHref === item.href && isPending;
+        if (item.kind === "logout") {
+          return (
+            <button
+              key={item.href}
+              type="button"
+              onClick={() => onLogout?.()}
+              className={`group relative inline-flex min-h-[42px] items-center px-2 text-[13px] font-semibold leading-tight transition ${
+                collapsed ? "justify-center" : "justify-start gap-2"
+              } rounded-xl text-slate-100/90 hover:bg-white/8 hover:text-white`}
+              title={collapsed ? item.label : undefined}
+            >
+              <span className="inline-flex w-4 justify-center" aria-hidden>
+                <MenuIcon name={item.icon} />
+              </span>
+              {!collapsed ? <span className="truncate text-[13px]">{item.label}</span> : null}
+            </button>
+          );
+        }
         return (
           <Link
             key={item.href}
             href={item.href}
-            className={`group relative inline-flex min-h-10 items-center px-2 text-sm font-semibold leading-tight transition ${
+            prefetch={false}
+            onClick={(event) => handleNavigate(event, item.href)}
+            className={`group relative inline-flex min-h-[42px] items-center px-2 text-[13px] font-semibold leading-tight transition ${
               collapsed ? "justify-center" : "justify-start gap-2"
             } ${
               isActive
-                ? "rounded-md bg-white/10 text-white before:absolute before:left-0 before:top-1/2 before:h-5 before:w-1 before:-translate-y-1/2 before:rounded-r-full before:bg-blue-400"
-                : "text-slate-100/90 hover:text-white"
-            }`}
+                ? "rounded-xl border border-cyan-300/45 bg-[linear-gradient(145deg,rgba(59,130,246,0.45),rgba(14,165,233,0.35))] text-white shadow-[0_10px_24px_rgba(14,116,255,0.25),inset_0_1px_0_rgba(255,255,255,0.2)]"
+                : "rounded-xl text-slate-100/90 hover:bg-white/8 hover:text-white"
+            } ${isNavigating ? "opacity-80" : ""}`}
             title={collapsed ? item.label : undefined}
+            aria-busy={isNavigating}
           >
             <span className="inline-flex w-4 justify-center" aria-hidden>
               <MenuIcon name={item.icon} />
             </span>
-            {!collapsed ? <span className="truncate text-[14px]">{item.label}</span> : null}
+            {!collapsed ? <span className="truncate text-[13px]">{item.label}</span> : null}
           </Link>
         );
       })}

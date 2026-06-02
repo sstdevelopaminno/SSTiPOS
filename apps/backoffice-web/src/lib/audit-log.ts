@@ -13,6 +13,7 @@ export type AppendAuditLogInput = {
   action: string;
   targetTable: string;
   targetId?: string;
+  targetUserId?: string;
   metadata?: Record<string, unknown>;
   module?: string;
   entityType?: string;
@@ -29,6 +30,7 @@ type AuditLogRow = {
   branch_id: string | null;
   actor_user_id: string;
   actor_role: string;
+  target_user_id: string | null;
   action: string;
   target_table: string;
   target_id: string | null;
@@ -48,6 +50,9 @@ type AuditLogRow = {
 type AppendAuditLogDeps = {
   writeRow?: (row: AuditLogRow) => Promise<void>;
 };
+
+const missingAuditColumns = new Set<string>();
+const compatibilityNoticeColumns = new Set<string>();
 
 function normalizeJsonObject(value: unknown): JsonObject {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -92,6 +97,7 @@ function mapInputToRow(input: AppendAuditLogInput): AuditLogRow {
     branch_id: input.branchId ?? null,
     actor_user_id: input.actorUserId,
     actor_role: input.actorRole,
+    target_user_id: input.targetUserId ?? null,
     action: input.action,
     target_table: input.targetTable,
     target_id: input.targetId ?? null,
@@ -111,11 +117,42 @@ function mapInputToRow(input: AppendAuditLogInput): AuditLogRow {
 
 async function writeAuditLogRow(row: AuditLogRow): Promise<void> {
   const supabase = getSupabaseServiceClient();
-  const { error } = await supabase.from("audit_logs").insert(row);
-
-  if (error) {
-    throw new Error(error.message);
+  const baseRow: Record<string, unknown> = { ...row };
+  for (const missingColumn of missingAuditColumns) {
+    delete baseRow[missingColumn];
   }
+
+  let attemptRow: Record<string, unknown> = baseRow;
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    const { error } = await supabase.from("audit_logs").insert(attemptRow);
+    if (!error) {
+      return;
+    }
+
+    const message = String(error.message ?? "");
+    const missingColumnMatch = message.match(/Could not find the '([^']+)' column of 'audit_logs'/i);
+    const missingColumn = missingColumnMatch?.[1]?.trim() ?? "";
+    if (!missingColumn) {
+      throw new Error(message || "Unknown audit log insert error.");
+    }
+    if (!(missingColumn in attemptRow)) {
+      throw new Error(message || "Unknown audit log insert error.");
+    }
+
+    missingAuditColumns.add(missingColumn);
+    if (!compatibilityNoticeColumns.has(missingColumn)) {
+      compatibilityNoticeColumns.add(missingColumn);
+      console.warn("[audit-log] compatibility fallback: missing audit_logs column skipped", {
+        column: missingColumn
+      });
+    }
+
+    const nextRow = { ...attemptRow };
+    delete nextRow[missingColumn];
+    attemptRow = nextRow;
+  }
+
+  throw new Error("Audit log insert failed after compatibility retries.");
 }
 
 export async function appendAuditLog(input: AppendAuditLogInput, deps: AppendAuditLogDeps = {}) {

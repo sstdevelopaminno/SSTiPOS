@@ -6,8 +6,9 @@ import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 export async function GET(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    if (!auth.branchRole || !["manager", "owner"].includes(auth.branchRole)) {
-      return fail("forbidden_role", "Only manager or owner can view audit logs.", 403);
+    const canViewAudit = Boolean(auth.branchRole && ["manager", "owner"].includes(auth.branchRole)) || auth.platformRole === "it_admin";
+    if (!canViewAudit) {
+      return fail("forbidden_role", "Only manager, owner, or IT Admin can view audit logs.", 403);
     }
 
     const supabase = getSupabaseServiceClient();
@@ -15,7 +16,7 @@ export async function GET(req: Request) {
     const { page, pageSize } = parsePagination(searchParams, 20);
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
-    const module = searchParams.get("module")?.trim();
+    const moduleFilter = searchParams.get("module")?.trim();
     const action = searchParams.get("action")?.trim();
     const search = searchParams.get("search")?.trim();
     const branchId = searchParams.get("branch_id")?.trim();
@@ -35,8 +36,8 @@ export async function GET(req: Request) {
       .order("created_at", { ascending: false })
       .range(from, to);
 
-    if (module) {
-      query = query.eq("module", module);
+    if (moduleFilter) {
+      query = query.eq("module", moduleFilter);
     }
 
     if (action) {

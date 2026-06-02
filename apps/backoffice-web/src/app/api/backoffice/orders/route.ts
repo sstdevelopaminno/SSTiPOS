@@ -3,8 +3,9 @@ import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { executeCreateManualDeliveryOrderTransaction } from "@/lib/services/stock-transaction-service";
-import { buildPaginationMeta, parsePagination } from "@/lib/query-params";
+import { buildPaginationMeta, parsePagination, sanitizeSearchTerm } from "@/lib/query-params";
 import { ok, fail } from "@/lib/http";
+import { enqueueOrderPrintJobs } from "@/lib/printing/print-service";
 
 export async function GET(req: Request) {
   try {
@@ -15,7 +16,7 @@ export async function GET(req: Request) {
     const { page, pageSize } = parsePagination(searchParams, 10);
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
-    const search = searchParams.get("search")?.trim();
+    const search = sanitizeSearchTerm(searchParams.get("search"));
     const status = searchParams.get("status")?.trim();
     const orderType = searchParams.get("order_type")?.trim();
     const channel = searchParams.get("channel")?.trim();
@@ -60,8 +61,89 @@ export async function GET(req: Request) {
       return fail("orders_query_failed", error.message, 500);
     }
 
+    const orderRows =
+      (data as Array<{
+        id: string;
+        order_no: string;
+        order_type: string;
+        channel: string;
+        external_order_code: string | null;
+        customer_name: string | null;
+        total_amount: number;
+        status: string;
+        created_at: string;
+        delivery_status: string | null;
+      }>) ?? [];
+
+    const orderIds = orderRows.map((row) => row.id);
+    const verificationMap = new Map<
+      string,
+      {
+        verification_status: string;
+        parsed_amount: number | null;
+        parsed_payer_name: string | null;
+        parsed_payee_name: string | null;
+        parsed_reference_no: string | null;
+        parsed_transaction_id: string | null;
+        verified_at: string;
+        override_approval_id: string | null;
+      }
+    >();
+
+    if (orderIds.length > 0) {
+      const { data: verificationRows, error: verificationError } = await supabase
+        .from("transfer_payment_verifications")
+        .select(
+          "order_id,verification_status,parsed_amount,parsed_payer_name,parsed_payee_name,parsed_reference_no,parsed_transaction_id,verified_at,override_approval_id"
+        )
+        .eq("tenant_id", auth.tenantId!)
+        .eq("branch_id", auth.branchId!)
+        .in("order_id", orderIds)
+        .order("verified_at", { ascending: false });
+
+      if (verificationError) {
+        const missingTable =
+          verificationError.message.toLowerCase().includes("transfer_payment_verifications") &&
+          verificationError.message.toLowerCase().includes("does not exist");
+        if (!missingTable) {
+          return fail("transfer_verifications_query_failed", verificationError.message, 500);
+        }
+      } else {
+        for (const row of (verificationRows ??
+          []) as Array<{
+          order_id: string;
+          verification_status: string;
+          parsed_amount: number | null;
+          parsed_payer_name: string | null;
+          parsed_payee_name: string | null;
+          parsed_reference_no: string | null;
+          parsed_transaction_id: string | null;
+          verified_at: string;
+          override_approval_id: string | null;
+        }>) {
+          if (!verificationMap.has(row.order_id)) {
+            verificationMap.set(row.order_id, {
+              verification_status: row.verification_status,
+              parsed_amount: row.parsed_amount,
+              parsed_payer_name: row.parsed_payer_name,
+              parsed_payee_name: row.parsed_payee_name,
+              parsed_reference_no: row.parsed_reference_no,
+              parsed_transaction_id: row.parsed_transaction_id,
+              verified_at: row.verified_at,
+              override_approval_id: row.override_approval_id
+            });
+          }
+        }
+      }
+    }
+
+    const enrichedItems = orderRows.map((row) => ({
+      ...row,
+      transfer_verification: verificationMap.get(row.id) ?? null
+    }));
+
     return ok({
-      items: data ?? [],
+      items: enrichedItems,
       pagination: buildPaginationMeta(page, pageSize, count)
     });
   } catch (error) {
@@ -71,7 +153,10 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const payload = (await req.json()) as CreateManualDeliveryOrderInput;
+    const payload = (await req.json()) as CreateManualDeliveryOrderInput & {
+      print_kitchen_ticket?: boolean;
+      payment_method?: "cash" | "bank_transfer";
+    };
     const auth = await getAuthContext({ requireBranchScope: true });
 
     if (!payload.external_order_code?.trim()) {
@@ -95,7 +180,30 @@ export async function POST(req: Request) {
       return fail(result.code, result.message, result.status);
     }
 
-    return ok(result.data, result.data.duplicate_request ? 200 : 201);
+    let printJobsQueued = 0;
+    let printWarning: string | null = null;
+    try {
+      const jobs = await enqueueOrderPrintJobs({
+        auth,
+        orderId: result.data.id,
+        orderNo: result.data.id,
+        paymentMethod: payload.payment_method ?? "cash",
+        input: payload,
+        includeKitchenTicket: payload.print_kitchen_ticket === true
+      });
+      printJobsQueued = jobs.length;
+    } catch (printError) {
+      printWarning = printError instanceof Error ? printError.message : "print_queue_failed";
+    }
+
+    return ok(
+      {
+        ...result.data,
+        print_jobs_queued: printJobsQueued,
+        print_warning: printWarning
+      },
+      result.data.duplicate_request ? 200 : 201
+    );
   } catch (error) {
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }

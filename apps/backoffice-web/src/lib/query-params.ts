@@ -39,6 +39,15 @@ export function parseBool(value: string | null): boolean | null {
   return null;
 }
 
+export function sanitizeSearchTerm(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const sanitized = value.replace(/[,%()]/g, " ").trim().replace(/\s+/g, " ");
+  return sanitized || null;
+}
+
 export function buildPaginationMeta(page: number, pageSize: number, total: number | null) {
   const safeTotal = total ?? 0;
   const totalPages = safeTotal === 0 ? 0 : Math.ceil(safeTotal / pageSize);

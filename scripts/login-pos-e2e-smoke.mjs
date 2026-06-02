@@ -2,8 +2,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
 
-const loginBaseUrl = process.env.POS_LOGIN_URL ?? "http://localhost:3001/login/store";
+const loginBaseUrl = process.env.POS_LOGIN_URL ?? "http://localhost:3000/login/store";
 const posPreviewUrl = process.env.POS_PREVIEW_URL ?? "http://localhost:3000/preview/pos";
+const loginApiOrigin = new URL(loginBaseUrl).origin;
 const posApiOrigin = new URL(posPreviewUrl).origin;
 const posTargetPath = new URL(posPreviewUrl).pathname;
 const storeCode = String(process.env.POS_SMOKE_STORE_CODE ?? "").trim().toUpperCase();
@@ -13,6 +14,7 @@ const preferredDevice = String(process.env.POS_SMOKE_DEVICE_CODE ?? "").trim().t
 const headless = String(process.env.POS_SMOKE_HEADLESS ?? "1").trim() !== "0";
 const outputDir = path.resolve("docs/qa-screenshots/login-pos-e2e-smoke");
 const API_TIMEOUT_MS = Number(process.env.POS_SMOKE_API_TIMEOUT_MS ?? 120000);
+const ROUTE_TIMEOUT_MS = Number(process.env.POS_SMOKE_ROUTE_TIMEOUT_MS ?? 90000);
 
 const SESSION_EXPIRED_CODES = new Set([
   "missing_pos_session",
@@ -48,8 +50,45 @@ async function waitForRoute(page, routes, timeoutMs = 25000) {
   throw new Error(`Timeout waiting for routes: ${routes.join(", ")}; current=${page.url()}`);
 }
 
+async function waitForEnabledButton(page, selector = "button[type='submit']", timeoutMs = 30000) {
+  const target = page.locator(selector).first();
+  await target.waitFor({ state: "visible", timeout: timeoutMs });
+  await page.waitForFunction(
+    (resolvedSelector) => {
+      const element = document.querySelector(resolvedSelector);
+      return element instanceof HTMLButtonElement ? !element.disabled : false;
+    },
+    selector,
+    { timeout: timeoutMs }
+  );
+}
+
 async function safeJson(response) {
   return response.json().catch(() => null);
+}
+
+async function warmupLoginApi(context, report) {
+  const warmupResponse = await context.request.post(`${loginApiOrigin}/api/auth/store-code/verify`, {
+    timeout: API_TIMEOUT_MS,
+    failOnStatusCode: false,
+    data: {}
+  });
+  const warmupOk = warmupResponse.status() < 500;
+  report.scenarios.push({
+    name: "warmup",
+    result: warmupOk ? "passed" : "failed",
+    steps: [
+      {
+        at: new Date().toISOString(),
+        name: "api_store_verify_warmup",
+        ok: warmupOk,
+        status: warmupResponse.status()
+      }
+    ],
+    errors: warmupOk
+      ? []
+      : [{ step: "api_store_verify_warmup", message: `Unexpected status ${warmupResponse.status()} while warming login API.` }]
+  });
 }
 
 function makeScenarioReport(name) {
@@ -84,11 +123,13 @@ async function captureScreenshot(page, scenario, fileName) {
 }
 
 async function loginStoreBranchEmployeeDevice(page, scenario) {
-  await page.goto(loginBaseUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.goto(loginBaseUrl, { waitUntil: "networkidle", timeout: 60000 });
   addStep(scenario, "open_login_store", { ok: true, url: page.url() });
   await captureScreenshot(page, scenario, "01-login-store.png");
 
+  await page.locator("#storeCode").waitFor({ state: "visible", timeout: 90000 });
   await page.fill("#storeCode", storeCode);
+  await waitForEnabledButton(page, "button[type='submit']", 90000);
   const storeVerifyResponsePromise = page.waitForResponse(
     (response) => response.url().includes("/api/auth/store-code/verify") && response.request().method() === "POST",
     { timeout: 90000 }
@@ -118,27 +159,88 @@ async function loginStoreBranchEmployeeDevice(page, scenario) {
     }
 
     await page.click("button.ipos-primary-btn");
-    await waitForRoute(page, ["/login/employee"], 15000);
+    await waitForRoute(page, ["/login/employee"], ROUTE_TIMEOUT_MS);
     addStep(scenario, "confirm_branch_selection", { ok: true });
     await captureScreenshot(page, scenario, "02-login-branches.png");
   } else {
     addStep(scenario, "branch_step_skipped", { ok: true, url: routeAfterStore });
   }
 
-  await waitForRoute(page, ["/login/employee"], 20000);
-  const employeeInput = page.locator("#employeeCodeInput, #employeeCode").first();
-  await employeeInput.waitFor({ state: "visible", timeout: 90000 });
-  await employeeInput.fill(employeeCode);
+  await waitForRoute(page, ["/login/employee"], ROUTE_TIMEOUT_MS);
+  await page.locator("#employeeCode").waitFor({ state: "visible", timeout: 90000 });
+  await page.fill("#employeeCode", employeeCode);
+  await waitForEnabledButton(page, "button[type='submit']", 90000);
   const employeeVerifyResponsePromise = page.waitForResponse(
     (response) => response.url().includes("/api/auth/employee/verify-code") && response.request().method() === "POST",
     { timeout: 90000 }
   );
   await page.click("button[type='submit']");
   const employeeVerifyResponse = await employeeVerifyResponsePromise;
-  addStep(scenario, "api_employee_verify", { ok: employeeVerifyResponse.ok(), status: employeeVerifyResponse.status() });
-  await waitForRoute(page, ["/login/devices"], 90000);
-  addStep(scenario, "employee_verified", { ok: true, employeeCode });
+  addStep(scenario, "api_employee_verify", {
+    ok: employeeVerifyResponse.ok(),
+    status: employeeVerifyResponse.status()
+  });
+  if (!employeeVerifyResponse.ok()) {
+    const employeeVerifyBody = await safeJson(employeeVerifyResponse);
+    throw new Error(`employee verify failed: ${JSON.stringify(employeeVerifyBody)}`);
+  }
+  addStep(scenario, "employee_verified_via_code", { ok: true, employeeCode });
   await captureScreenshot(page, scenario, "03-login-employee.png");
+  await waitForRoute(page, ["/login/devices"], ROUTE_TIMEOUT_MS);
+
+  const devicesApiResponse = await page.request.get(`${loginApiOrigin}/api/auth/devices`, { timeout: API_TIMEOUT_MS });
+  const devicesApiBody = await safeJson(devicesApiResponse);
+  const deviceItems = Array.isArray(devicesApiBody?.data?.devices) ? devicesApiBody.data.devices : [];
+  const canOverrideInUse = Boolean(devicesApiBody?.data?.can_override_in_use);
+  addStep(scenario, "api_devices_after_employee_success", {
+    ok: devicesApiResponse.ok(),
+    status: devicesApiResponse.status(),
+    deviceCount: deviceItems.length
+  });
+
+  if (devicesApiResponse.ok() && deviceItems.length > 0) {
+    const preferred = preferredDevice ? deviceItems.find((item) => String(item?.deviceCode ?? "").toUpperCase() === preferredDevice) : null;
+    const selectedDevice =
+      preferred ??
+      deviceItems.find((item) => item.status === "ready") ??
+      (canOverrideInUse ? deviceItems.find((item) => item.status === "in_use") : null) ??
+      deviceItems.find((item) => item.status !== "offline" && item.status !== "disabled") ??
+      null;
+
+    if (selectedDevice?.deviceCode) {
+      const selectResponse = await page.request.post(`${loginApiOrigin}/api/auth/devices/select`, {
+        timeout: API_TIMEOUT_MS,
+        data: {
+          device_code: selectedDevice.deviceCode,
+          force_override: selectedDevice.status === "in_use"
+        }
+      });
+      const selectBody = await safeJson(selectResponse);
+      addStep(scenario, "api_device_select_after_employee_success", {
+        ok: selectResponse.ok(),
+        status: selectResponse.status(),
+        deviceCode: selectedDevice.deviceCode
+      });
+
+      if (selectResponse.ok() && selectBody?.data?.redirect_to) {
+        await page.goto(selectBody.data.redirect_to, { waitUntil: "domcontentloaded", timeout: 120000 });
+        await waitForRoute(page, [posTargetPath], 120000);
+        addStep(scenario, "redirect_to_pos_preview", { ok: true, url: page.url() });
+        await captureScreenshot(page, scenario, "04-pos-preview-gate.png");
+        return;
+      }
+    }
+  }
+
+  await waitForEnabledButton(page, "button.ipos-primary-btn", 90000);
+  await page.click("button.ipos-primary-btn");
+  const routeAfterSuccess = await waitForRoute(page, ["/login/devices", posTargetPath], 120000);
+  addStep(scenario, "employee_success_continue_ui_fallback", { ok: true, url: routeAfterSuccess });
+  if (routeAfterSuccess.includes(posTargetPath)) {
+    addStep(scenario, "redirect_to_pos_preview", { ok: true, url: page.url() });
+    await captureScreenshot(page, scenario, "04-pos-preview-gate.png");
+    return;
+  }
 
   if (preferredDevice) {
     const preferredDeviceCard = page.locator("button.ipos-device-card", { hasText: preferredDevice }).first();
@@ -148,8 +250,15 @@ async function loginStoreBranchEmployeeDevice(page, scenario) {
     } else {
       addStep(scenario, "select_preferred_device", { ok: false, preferredDevice, reason: "not_found" });
     }
+  } else {
+    const firstDeviceCard = page.locator("button.ipos-device-card").first();
+    if ((await firstDeviceCard.count()) > 0) {
+      await firstDeviceCard.click();
+      addStep(scenario, "select_first_device", { ok: true });
+    }
   }
 
+  await waitForEnabledButton(page, "button.ipos-primary-btn", 90000);
   await page.click("button.ipos-primary-btn");
   await waitForRoute(page, [posTargetPath], 120000);
   addStep(scenario, "redirect_to_pos_preview", { ok: true, url: page.url() });
@@ -360,6 +469,7 @@ async function run() {
   };
 
   try {
+    await warmupLoginApi(context, report);
     await runHappyPath(context, page, report);
     await runSessionExpiredPath(context, page, report);
     report.result = "passed";

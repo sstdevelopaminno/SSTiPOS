@@ -14,6 +14,32 @@ export async function POST(req: Request) {
       actual_cash: number;
       manager_override_approval_id?: string;
     };
+    const overrideApprovalId = body.manager_override_approval_id?.trim();
+
+    if (overrideApprovalId) {
+      const { data: approvalRow, error: approvalError } = await supabase
+        .from("manager_pin_approvals")
+        .select("id,action,expires_at,target_table,target_id")
+        .eq("tenant_id", auth.tenantId!)
+        .eq("branch_id", auth.branchId!)
+        .eq("id", overrideApprovalId)
+        .maybeSingle();
+
+      if (approvalError) {
+        return fail("shift_override_approval_query_failed", approvalError.message, 500);
+      }
+      if (!approvalRow || approvalRow.action !== "shift_close_override") {
+        return fail("shift_override_approval_invalid", "Shift close override approval is invalid.", 403);
+      }
+
+      const expiresAt = new Date(approvalRow.expires_at).getTime();
+      if (Number.isNaN(expiresAt) || expiresAt <= Date.now()) {
+        return fail("shift_override_approval_expired", "Shift close override approval has expired.", 403);
+      }
+      if (approvalRow.target_id && approvalRow.target_id !== body.shift_id) {
+        return fail("shift_override_target_mismatch", "Shift close override approval does not match this shift.", 403);
+      }
+    }
 
     const { data: openOrders, error: orderError } = await supabase
       .from("orders")
@@ -30,7 +56,10 @@ export async function POST(req: Request) {
 
     const result = await executeShiftClose({
       auth,
-      input: body,
+      input: {
+        ...body,
+        manager_override_approval_id: overrideApprovalId
+      },
       openOrders: openOrders ?? [],
       appendAuditLog
     });
@@ -44,7 +73,7 @@ export async function POST(req: Request) {
       .update({
         expected_cash: body.expected_cash,
         actual_cash: body.actual_cash,
-        close_override_approval_id: body.manager_override_approval_id ?? null,
+        close_override_approval_id: overrideApprovalId ?? null,
         closed_by: auth.userId,
         status: "closed"
       })
