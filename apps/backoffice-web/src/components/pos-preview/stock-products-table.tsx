@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { BestSellersPopupButton } from "@/components/pos-preview/best-sellers-popup-button";
 import { CategoryManagePopupButton } from "@/components/pos-preview/category-manage-popup-button";
 import { EditProductPopupButton } from "@/components/pos-preview/edit-product-popup-button";
 import { StockSettingsPopupButton } from "@/components/pos-preview/stock-settings-popup-button";
@@ -28,6 +29,12 @@ type UnitStockItem = {
   name: string;
   category: string;
   stockOnHand: number;
+};
+
+type BranchOption = {
+  id: string;
+  name: string;
+  code: string | null;
 };
 
 type ProductRow = {
@@ -65,6 +72,7 @@ type Props = {
   inventorySettingsReady: boolean;
   inventorySettingsMessage?: string;
   branchId: string;
+  branchOptions: BranchOption[];
   canManageCatalog: boolean;
 };
 
@@ -166,6 +174,7 @@ export function StockProductsTable({
   inventorySettingsReady,
   inventorySettingsMessage = "",
   branchId,
+  branchOptions,
   canManageCatalog
 }: Props) {
   const PAGE_SIZE = 5;
@@ -221,10 +230,13 @@ export function StockProductsTable({
   );
   const productCategoryOptions = useMemo(() => {
     const options = Array.from(
-      new Set(baseProductsByMode.map((item) => String(item.category ?? "").trim()).filter((category) => category.length > 0))
+      new Set([
+        ...categoryList.map((item) => item.name.trim()).filter((category) => category.length > 0),
+        ...baseProductsByMode.map((item) => String(item.category ?? "").trim()).filter((category) => category.length > 0)
+      ])
     );
     return options.sort((a, b) => a.localeCompare(b, th ? "th" : "en"));
-  }, [baseProductsByMode, th]);
+  }, [baseProductsByMode, categoryList, th]);
 
   const filteredProducts = useMemo(() => {
     const keyword = productSearchText.trim().toLowerCase();
@@ -843,8 +855,14 @@ export function StockProductsTable({
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-base font-extrabold text-slate-900 lg:text-lg">{th ? "รายการสินค้า" : "Product List"}</h3>
         <div className="flex flex-wrap gap-2">
+          <BestSellersPopupButton
+            th={th}
+            branchId={branchId}
+            branchOptions={branchOptions}
+            canViewAllBranches={canManageCatalog && branchOptions.length > 1}
+          />
           <div className={canManageCatalog ? "" : "pointer-events-none opacity-60"}>
-            <CategoryManagePopupButton th={th} categories={categoryList} />
+            <CategoryManagePopupButton th={th} categories={categoryList} branchId={branchId} />
           </div>
           <div className={canManageCatalog ? "" : "pointer-events-none opacity-60"}>
             <UnitStockPopupButton th={th} items={unitStockList} />

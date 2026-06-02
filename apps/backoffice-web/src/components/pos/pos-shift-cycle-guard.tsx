@@ -154,11 +154,16 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
   }, [copy.requestTimeout, phase]);
 
   useEffect(() => {
-    void loadState();
+    const initialTimer = window.setTimeout(() => {
+      if (!busy) void loadState();
+    }, 2500);
     const timer = window.setInterval(() => {
       if (!busy) void loadState();
     }, 60_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
   }, [busy, loadState]);
 
   const logoutToBranchSelection = useCallback(async () => {

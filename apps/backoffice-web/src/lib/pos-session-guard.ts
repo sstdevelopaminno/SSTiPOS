@@ -112,6 +112,13 @@ function writePosSessionRowCache(sessionId: string, value: PosSessionRow | null)
   });
 }
 
+export function updateCachedPosSessionShift(sessionId: string, shiftId: string | null) {
+  const normalizedSessionId = sessionId.trim().replace(/^"+|"+$/g, "");
+  const cached = readPosSessionRowCache(normalizedSessionId);
+  if (!cached) return;
+  writePosSessionRowCache(normalizedSessionId, { ...cached, shift_id: shiftId });
+}
+
 function readPosScopeExtrasCache(cacheKey: string): Omit<PosSessionScope, "session" | "permissions"> | null {
   const cache = getPosScopeExtrasCache();
   const entry = cache.get(cacheKey);

@@ -54,6 +54,43 @@ const DEFAULT_DELIVERY_RATE_ROWS: DeliveryRate[] = [
   { channel: "shopee", channelLabel: "ShopeeFood", commissionRatePct: 30, commissionVatRatePct: 7 }
 ];
 
+const PRODUCT_FORM_CONTROL_CLASS =
+  "h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-base leading-5 text-slate-900 outline-none ring-blue-200 focus:ring-2";
+const PRODUCT_FORM_NUMBER_CLASS = `${PRODUCT_FORM_CONTROL_CLASS} tabular-nums`;
+
+const CATEGORY_FALLBACK_EVENT = "pos-product-categories-updated";
+
+function categoryStorageKey(branchId: string) {
+  return `pos_product_categories_v1:${branchId}`;
+}
+
+function readStoredCategoryNames(branchId: string) {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(categoryStorageKey(branchId)) ?? "[]") as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((item) => String(item ?? "").trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredCategoryNames(branchId: string, names: string[]) {
+  if (typeof window === "undefined") return;
+  const uniqueNames = Array.from(new Set(names.map((item) => item.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  window.localStorage.setItem(categoryStorageKey(branchId), JSON.stringify(uniqueNames));
+  window.dispatchEvent(new CustomEvent(CATEGORY_FALLBACK_EVENT, { detail: { branchId, names: uniqueNames } }));
+}
+
+function mergeCategoryItems(categories: CategoryItem[], names: string[], locale: "th" | "en") {
+  const merged = [...categories];
+  for (const name of names) {
+    if (merged.some((item) => item.name.trim().toLowerCase() === name.trim().toLowerCase())) continue;
+    merged.push({ name, productCount: 0 });
+  }
+  return merged.sort((a, b) => a.name.localeCompare(b.name, locale));
+}
+
 function calculateAutoDeliveryPrice(storePrice: number, commissionRatePct: number, commissionVatRatePct: number) {
   const commissionAmount = (storePrice * Math.max(0, commissionRatePct)) / 100;
   const vatAmount = (commissionAmount * Math.max(0, commissionVatRatePct)) / 100;
@@ -115,10 +152,12 @@ export function AddProductPopupButton({
   const [noticeMessage, setNoticeMessage] = useState("");
   const [activeTab, setActiveTab] = useState<PopupTab>("product");
   const [bulkMode, setBulkMode] = useState<BulkMode>("products");
+  const [localCategories, setLocalCategories] = useState<CategoryItem[]>(categories);
 
   const [categoryName, setCategoryName] = useState("");
   const [categoryCustomMode, setCategoryCustomMode] = useState(false);
   const [categoryCustomName, setCategoryCustomName] = useState("");
+  const [categoryCreating, setCategoryCreating] = useState(false);
   const [productName, setProductName] = useState("");
   const [stockQuantity, setStockQuantity] = useState("0");
   const [storePrice, setStorePrice] = useState("0");
@@ -154,6 +193,21 @@ export function AddProductPopupButton({
   }, [ingredientName, sortedIngredients]);
   const selectedIngredientId = selectedIngredient?.id ?? "";
   const selectedIsPiece = isPieceBaseUnit(selectedIngredient?.baseUnit ?? "");
+
+  useEffect(() => {
+    setLocalCategories(mergeCategoryItems(categories, readStoredCategoryNames(branchId), th ? "th" : "en"));
+  }, [branchId, categories, th]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function onCategoriesUpdated(event: Event) {
+      const detail = (event as CustomEvent<{ branchId?: string; names?: string[] }>).detail;
+      if (detail?.branchId !== branchId) return;
+      setLocalCategories(mergeCategoryItems(categories, detail.names ?? readStoredCategoryNames(branchId), th ? "th" : "en"));
+    }
+    window.addEventListener(CATEGORY_FALLBACK_EVENT, onCategoriesUpdated);
+    return () => window.removeEventListener(CATEGORY_FALLBACK_EVENT, onCategoriesUpdated);
+  }, [branchId, categories, th]);
 
   useEffect(() => {
     if (!autoDeliveryPricing) return;
@@ -256,6 +310,56 @@ export function AddProductPopupButton({
           : line
       )
     );
+  }
+
+  async function createCategoryFromProductForm() {
+    const value = categoryCustomName.trim();
+    if (!value) {
+      setErrorText(th ? "กรุณากรอกชื่อหมวดหมู่" : "Please enter category name.");
+      return;
+    }
+    const duplicated = localCategories.some((item) => item.name.trim().toLowerCase() === value.toLowerCase());
+    if (duplicated) {
+      setCategoryName(localCategories.find((item) => item.name.trim().toLowerCase() === value.toLowerCase())?.name ?? value);
+      setCategoryCustomMode(false);
+      setCategoryCustomName("");
+      setErrorText("");
+      return;
+    }
+
+    setCategoryCreating(true);
+    setErrorText("");
+    try {
+      const response = await fetch("/api/backoffice/catalog", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create_category",
+          branch_id: branchId,
+          name: value
+        })
+      });
+      const body = (await response.json().catch(() => null)) as ApiEnvelope<{ category?: { name: string; productCount?: number } }> | null;
+      if (!response.ok || body?.error) {
+        throw new Error(body?.error?.message ?? "Create category failed.");
+      }
+      const nextCategory = body?.data?.category?.name?.trim() || value;
+      writeStoredCategoryNames(branchId, [...readStoredCategoryNames(branchId), nextCategory]);
+      setLocalCategories((prev) =>
+        prev.some((item) => item.name.trim().toLowerCase() === nextCategory.toLowerCase())
+          ? prev
+          : [...prev, { name: nextCategory, productCount: Number(body?.data?.category?.productCount ?? 0) }].sort((a, b) =>
+              a.name.localeCompare(b.name, th ? "th" : "en")
+            )
+      );
+      setCategoryName(nextCategory);
+      setCategoryCustomMode(false);
+      setCategoryCustomName("");
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : th ? "เพิ่มหมวดหมู่ไม่สำเร็จ" : "Failed to add category.");
+    } finally {
+      setCategoryCreating(false);
+    }
   }
 
   async function submitProduct() {
@@ -417,7 +521,7 @@ export function AddProductPopupButton({
 
         let successCount = 0;
         const failures: string[] = [];
-        const defaultCategory = categories[0]?.name ?? (th ? "ไม่ระบุหมวดหมู่" : "Uncategorized");
+        const defaultCategory = localCategories[0]?.name ?? (th ? "ไม่ระบุหมวดหมู่" : "Uncategorized");
 
         for (const line of lines) {
           const [name, category, stock, store, delivery] = line.split(",").map((part) => part.trim());
@@ -639,10 +743,10 @@ export function AddProductPopupButton({
                           }
                           setCategoryName(value);
                         }}
-                        className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                        className={PRODUCT_FORM_CONTROL_CLASS}
                       >
                         <option value="">{th ? "เลือกหมวดหมู่" : "Select category"}</option>
-                        {categories.map((item) => (
+                        {localCategories.map((item) => (
                           <option key={item.name} value={item.name}>
                             {item.name} ({item.productCount})
                           </option>
@@ -654,9 +758,18 @@ export function AddProductPopupButton({
                         <input
                           value={categoryCustomName}
                           onChange={(event) => setCategoryCustomName(event.target.value)}
+                          disabled={categoryCreating}
                           placeholder={th ? "ชื่อหมวดหมู่ใหม่" : "New category name"}
-                          className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                          className={PRODUCT_FORM_CONTROL_CLASS}
                         />
+                        <button
+                          type="button"
+                          onClick={() => void createCategoryFromProductForm()}
+                          disabled={categoryCreating}
+                          className="justify-self-start rounded-lg border border-blue-600 bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {categoryCreating ? "..." : th ? "บันทึกหมวดหมู่" : "Save category"}
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
@@ -677,7 +790,7 @@ export function AddProductPopupButton({
                       value={productName}
                       onChange={(event) => setProductName(event.target.value)}
                       placeholder={th ? "เช่น ชาไทยพรีเมียม" : "e.g. Thai Tea Premium"}
-                      className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                      className={PRODUCT_FORM_CONTROL_CLASS}
                     />
                   </label>
 
@@ -689,7 +802,7 @@ export function AddProductPopupButton({
                       type="number"
                       min={0}
                       step="1"
-                      className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                      className={PRODUCT_FORM_NUMBER_CLASS}
                     />
                   </label>
 
@@ -701,7 +814,7 @@ export function AddProductPopupButton({
                       type="number"
                       min={0}
                       step="0.01"
-                      className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                      className={PRODUCT_FORM_NUMBER_CLASS}
                     />
                   </label>
 
@@ -734,7 +847,7 @@ export function AddProductPopupButton({
                             event.target.value === "grab" ? "grab" : event.target.value === "shopee" ? "shopee" : "line_man"
                           )
                         }
-                        className="min-h-10 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-semibold text-emerald-800"
+                        className={`${PRODUCT_FORM_CONTROL_CLASS} border-emerald-300 bg-emerald-50 font-semibold text-emerald-800`}
                       >
                         {normalizedDeliveryRates.map((row) => (
                           <option key={row.channel} value={row.channel}>
@@ -750,7 +863,7 @@ export function AddProductPopupButton({
                       min={0}
                       step="0.01"
                       disabled={autoDeliveryPricing}
-                      className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100"
+                      className={`${PRODUCT_FORM_NUMBER_CLASS} disabled:cursor-not-allowed disabled:bg-slate-100`}
                     />
                   </label>
                 </div>

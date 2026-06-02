@@ -504,6 +504,28 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
       window.location.assign("/preview/pos");
     } catch (openError) {
       const isTimeout = openError instanceof DOMException && openError.name === "AbortError";
+      if (isTimeout) {
+        setMessage(lang === "th" ? "กำลังตรวจสอบว่ากะเปิดสำเร็จแล้วหรือไม่..." : "Checking whether the shift opened successfully...");
+        try {
+          const confirmController = new AbortController();
+          const confirmTimeoutId = window.setTimeout(() => confirmController.abort(), 5000);
+          const sessionRes = await fetch("/api/pos/session/current", {
+            cache: "no-store",
+            signal: confirmController.signal
+          });
+          window.clearTimeout(confirmTimeoutId);
+          const sessionBody = (await sessionRes.json().catch(() => null)) as SessionCurrentResponse | null;
+          if (sessionRes.ok && sessionBody?.data?.has_active_shift) {
+            if (typeof window !== "undefined") {
+              window.sessionStorage.setItem(POS_SKIP_ENTRY_GATE_SPLASH_KEY, "1");
+            }
+            window.location.assign("/preview/pos");
+            return;
+          }
+        } catch {
+          // The first open request may still be finishing; retry remains protected by server idempotency.
+        }
+      }
       setError(isTimeout ? (lang === "th" ? "เปิดกะใช้เวลานานเกินไป กรุณาลองอีกครั้ง" : "Opening shift timed out. Please try again.") : openError instanceof Error ? openError.message : "Open shift failed.");
       setBusy(null);
     } finally {

@@ -7868,3 +7868,344 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+/* POS responsive/app shell hardening: landscape-first tablet, laptop, desktop, and large desktop. */
+html:has(.pos-app-root),
+body:has(.pos-app-root) {
+  min-height: 100dvh;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+.pos-app-root {
+  height: 100dvh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  padding:
+    env(safe-area-inset-top)
+    env(safe-area-inset-right)
+    env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+.pos-app-root button,
+.pos-app-root a,
+.pos-app-root input,
+.pos-app-root select,
+.pos-app-root textarea {
+  touch-action: manipulation;
+}
+
+.pos-app-root button,
+.pos-app-root [role="button"],
+.pos-app-root a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pos-app-frame,
+.pos-app-content-area {
+  min-width: 0;
+  min-height: 0;
+}
+
+.pos-app-content-area {
+  justify-content: center;
+}
+
+.pos-app-content-area > * {
+  width: 100%;
+  max-width: 1760px;
+}
+
+.pos-viewport-guard {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: grid;
+  place-items: center;
+  padding:
+    max(18px, env(safe-area-inset-top))
+    max(18px, env(safe-area-inset-right))
+    max(18px, env(safe-area-inset-bottom))
+    max(18px, env(safe-area-inset-left));
+  background:
+    radial-gradient(circle at 50% 12%, rgba(59, 130, 246, 0.2), transparent 34%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.98));
+  color: #ffffff;
+}
+
+.pos-viewport-guard__card {
+  width: min(92vw, 520px);
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.36);
+  padding: clamp(22px, 4vw, 34px);
+  text-align: center;
+  backdrop-filter: blur(16px);
+}
+
+.pos-viewport-guard__icon {
+  display: grid;
+  place-items: center;
+  width: 112px;
+  height: 112px;
+  margin: 0 auto 14px;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #93c5fd;
+}
+
+.pos-viewport-guard__status,
+.pos-viewport-guard__subtitle,
+.pos-viewport-guard__description,
+.pos-viewport-guard__size {
+  margin: 0;
+}
+
+.pos-viewport-guard__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  border: 1px solid rgba(251, 191, 36, 0.36);
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.12);
+  padding: 0 12px;
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pos-viewport-guard h1 {
+  margin: 14px 0 0;
+  color: #ffffff;
+  font-size: clamp(24px, 5vw, 34px);
+  font-weight: 950;
+  line-height: 1.16;
+}
+
+.pos-viewport-guard__subtitle {
+  margin-top: 8px;
+  color: #bfdbfe;
+  font-size: clamp(15px, 2.8vw, 18px);
+  font-weight: 800;
+}
+
+.pos-viewport-guard__description {
+  margin-top: 12px;
+  color: #dbeafe;
+  font-size: clamp(14px, 2.5vw, 16px);
+  line-height: 1.6;
+}
+
+.pos-viewport-guard__size {
+  margin-top: 18px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.posui-payment-modal-backdrop,
+.posui-held-modal-backdrop,
+.posui-modal-backdrop,
+.posui-cart-drawer-backdrop,
+.pos-app-root [role="dialog"][aria-modal="true"],
+.pos-app-root [role="alertdialog"][aria-modal="true"] {
+  padding:
+    max(10px, env(safe-area-inset-top))
+    max(10px, env(safe-area-inset-right))
+    max(10px, env(safe-area-inset-bottom))
+    max(10px, env(safe-area-inset-left));
+}
+
+.posui-payment-modal,
+.posui-held-modal,
+.posui-modal,
+.dialog-card,
+.pos-app-root [role="dialog"][aria-modal="true"] > section,
+.pos-app-root [role="alertdialog"][aria-modal="true"] > section {
+  max-height: min(92dvh, 860px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.posui-payment-modal__actions,
+.posui-held-modal__footer,
+.posui-modal-form > :last-child {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+}
+
+@media (orientation: landscape) and (min-width: 768px) and (max-width: 1023px) {
+  .pos-app-content-area {
+    padding: 8px 6px;
+  }
+
+  .pos-shell-sidebar {
+    width: 68px !important;
+    padding: 8px;
+  }
+
+  .pos-shell-sidebar nav a,
+  .pos-shell-sidebar nav button {
+    justify-content: center;
+    min-height: 44px;
+    padding-inline: 0;
+  }
+
+  .pos-shell-sidebar nav span:not([aria-hidden]) {
+    display: none;
+  }
+
+  .posui-shell {
+    gap: 8px;
+    padding: 6px;
+  }
+
+  .posui-topbar {
+    border-radius: 14px;
+    padding: 7px 8px;
+  }
+
+  .posui-body {
+    grid-template-columns: minmax(0, 1fr) clamp(276px, 36vw, 316px);
+    gap: 8px;
+  }
+
+  .posui-product-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .posui-product-card {
+    border-radius: 12px;
+  }
+
+  .posui-product-card__image {
+    height: clamp(70px, 14dvh, 92px);
+  }
+
+  .posui-product-card__body {
+    padding: 7px 8px 8px;
+  }
+
+  .posui-product-card__title {
+    font-size: 13px;
+  }
+
+  .posui-cart-panel {
+    border-radius: 16px;
+  }
+
+  .posui-payment-fields,
+  .posui-bill-actions {
+    gap: 6px;
+  }
+
+  .posui-btn,
+  .posui-chip,
+  .posui-payment-modal button {
+    min-height: 40px;
+  }
+}
+
+@media (orientation: landscape) and (min-width: 1024px) and (max-width: 1439px) {
+  .pos-app-content-area {
+    padding: 10px 8px 10px 12px;
+  }
+
+  .posui-shell {
+    gap: 10px;
+    padding: 8px;
+  }
+
+  .posui-body {
+    grid-template-columns: minmax(0, 1fr) clamp(304px, 29vw, 350px);
+    gap: 10px;
+  }
+
+  .posui-product-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .posui-product-card__image {
+    height: clamp(84px, 13dvh, 106px);
+  }
+}
+
+@media (orientation: landscape) and (min-width: 1440px) {
+  .pos-app-content-area {
+    padding: 16px 14px 16px 18px;
+  }
+
+  .posui-body {
+    grid-template-columns: minmax(0, 1fr) clamp(340px, 24vw, 408px);
+  }
+
+  .posui-product-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+}
+
+@media (orientation: landscape) and (min-width: 1600px) {
+  .pos-app-content-area > * {
+    max-width: 1840px;
+  }
+
+  .posui-product-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (orientation: landscape) and (min-width: 2200px) {
+  .pos-app-content-area > * {
+    max-width: 2040px;
+  }
+
+  .posui-product-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+@media (orientation: landscape) and (max-height: 760px) {
+  .posui-topbar {
+    padding-block: 6px;
+  }
+
+  .posui-product-card__image {
+    height: clamp(62px, 12dvh, 86px);
+  }
+
+  .posui-cart-panel__header {
+    min-height: 48px;
+  }
+
+  .posui-cart-items {
+    gap: 4px;
+    padding: 5px;
+  }
+
+  .posui-payment-panel {
+    padding-top: 5px;
+  }
+}
+
+@media (orientation: portrait), (max-width: 767px) {
+  .pos-app-root {
+    overflow: hidden;
+  }
+
+  .pos-app-frame {
+    filter: blur(1.5px);
+    pointer-events: none;
+    user-select: none;
+  }
+}

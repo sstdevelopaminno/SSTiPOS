@@ -117,6 +117,22 @@ type BulkDeleteIngredientsPayload = {
   ingredient_ids: string[];
 };
 
+type CreateCategoryPayload = {
+  action: "create_category";
+  name: string;
+};
+
+type RenameCategoryPayload = {
+  action: "rename_category";
+  old_name: string;
+  name: string;
+};
+
+type DeleteCategoryPayload = {
+  action: "delete_category";
+  name: string;
+};
+
 type CatalogBranchScopedPayload = {
   branch_id?: string;
 };
@@ -132,7 +148,10 @@ type CatalogActionPayload =
   | UpdateProductWithStockSetupPayload
   | DeactivateProductPayload
   | BulkDeactivateProductsPayload
-  | BulkDeleteIngredientsPayload;
+  | BulkDeleteIngredientsPayload
+  | CreateCategoryPayload
+  | RenameCategoryPayload
+  | DeleteCategoryPayload;
 
 type PostgrestLikeError = {
   code?: string | null;
@@ -257,6 +276,34 @@ function normalizeSku(raw: string | undefined, name: string) {
   return `PRD-${compactName || "ITEM"}-${suffix}`;
 }
 
+async function ensureProductCategory(input: {
+  supabase: ReturnType<typeof getSupabaseServiceClient>;
+  tenantId: string;
+  branchId: string;
+  name: string;
+  userId: string;
+}) {
+  const categoryName = input.name.trim();
+  if (!categoryName) return { ok: true as const };
+
+  const { error } = await input.supabase.from("product_categories").upsert(
+    {
+      tenant_id: input.tenantId,
+      branch_id: input.branchId,
+      name: categoryName,
+      created_by: input.userId
+    },
+    { onConflict: "tenant_id,branch_id,name" }
+  );
+  if (error && isMissingTableError(error, "product_categories")) {
+    return { ok: true as const, persisted: false as const };
+  }
+  if (error && !isMissingTableError(error, "product_categories")) {
+    return { ok: false as const, error };
+  }
+  return { ok: true as const, persisted: true as const };
+}
+
 function normalizeRecipeQuantityUnit(unit: unknown): "gram" | "khid" | "kg" | "piece" {
   if (unit === "khid") return "khid";
   if (unit === "kg") return "kg";
@@ -296,16 +343,17 @@ export async function GET(req: Request) {
     const auth = await getAuthContext({ requireBranchScope: true });
     const supabase = getSupabaseServiceClient();
     const { searchParams } = new URL(req.url);
+    const view = searchParams.get("view")?.trim() || "products";
     const requestedBranchId = searchParams.get("branch_id")?.trim() ?? null;
+    const useAllBranchesForBestSellers = view === "best_sellers" && requestedBranchId === "all" && canManageCatalogRole(auth.branchRole);
     const scopedBranchId = await resolveScopedBranchId({
       supabase,
       tenantId: auth.tenantId!,
       userId: auth.userId,
       currentBranchId: auth.branchId!,
       branchRole: auth.branchRole,
-      requestedBranchId
+      requestedBranchId: useAllBranchesForBestSellers ? null : requestedBranchId
     });
-    const view = searchParams.get("view")?.trim() || "products";
     const { page, pageSize } = parsePagination(searchParams, 12);
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
@@ -496,16 +544,173 @@ export async function GET(req: Request) {
       });
     }
 
-    if (view === "categories") {
-      const { data, error } = await supabase
-        .from("products")
-        .select("category")
+    if (view === "best_sellers") {
+      const daysRaw = Number(searchParams.get("days") ?? 30);
+      const days = Number.isFinite(daysRaw) ? Math.max(1, Math.min(180, Math.trunc(daysRaw))) : 30;
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      let branchIds = [scopedBranchId];
+      let branchOptions: Array<{ id: string; name: string | null; code: string | null }> = [];
+      if (useAllBranchesForBestSellers) {
+        const [{ data: branchRows, error: branchError }, { data: membershipRows, error: membershipError }] = await Promise.all([
+          supabase
+            .from("branches")
+            .select("id,name,code,is_active")
+            .eq("tenant_id", auth.tenantId!)
+            .eq("is_active", true)
+            .order("name", { ascending: true }),
+          supabase
+            .from("user_branch_roles")
+            .select("branch_id")
+            .eq("tenant_id", auth.tenantId!)
+            .eq("user_id", auth.userId)
+        ]);
+        if (branchError || membershipError) {
+          return fail("best_seller_branch_query_failed", branchError?.message ?? membershipError?.message ?? "Unable to load branches.", 500);
+        }
+        const allowed = new Set((membershipRows ?? []).map((row) => String((row as { branch_id?: string | null }).branch_id ?? "")));
+        branchOptions = ((branchRows ?? []) as Array<{ id: string; name: string | null; code: string | null; is_active: boolean }>)
+          .filter((row) => row.is_active && allowed.has(String(row.id)))
+          .map((row) => ({ id: String(row.id), name: row.name, code: row.code }));
+        branchIds = branchOptions.map((branch) => branch.id);
+      } else {
+        const { data: branchRow } = await supabase
+          .from("branches")
+          .select("id,name,code")
+          .eq("tenant_id", auth.tenantId!)
+          .eq("id", scopedBranchId)
+          .maybeSingle<{ id: string; name: string | null; code: string | null }>();
+        branchOptions = branchRow ? [branchRow] : [{ id: scopedBranchId, name: scopedBranchId, code: null }];
+      }
+
+      if (branchIds.length === 0) {
+        return ok({ view: "best_sellers", days, branch_id: "all", branch_options: [], items: [], summary: { units: 0, revenue: 0 } });
+      }
+
+      const orderQuery = supabase
+        .from("orders")
+        .select("id,branch_id,status,created_at")
         .eq("tenant_id", auth.tenantId!)
-        .eq("branch_id", scopedBranchId)
-        .eq("is_active", true);
+        .eq("status", "completed")
+        .gte("created_at", since)
+        .limit(1000);
+      const { data: orderRows, error: orderError } =
+        branchIds.length === 1 ? await orderQuery.eq("branch_id", branchIds[0]) : await orderQuery.in("branch_id", branchIds);
+      if (orderError) {
+        return fail("best_seller_orders_query_failed", orderError.message, 500);
+      }
+
+      const orders = (orderRows ?? []) as Array<{ id: string; branch_id: string; created_at: string }>;
+      const orderIds = orders.map((order) => String(order.id));
+      if (orderIds.length === 0) {
+        return ok({
+          view: "best_sellers",
+          days,
+          branch_id: useAllBranchesForBestSellers ? "all" : scopedBranchId,
+          branch_options: branchOptions,
+          items: [],
+          summary: { units: 0, revenue: 0 }
+        });
+      }
+
+      const { data: itemRows, error: itemError } = await supabase
+        .from("order_items")
+        .select("order_id,product_id,quantity,line_total,products(id,sku,name,category)")
+        .eq("tenant_id", auth.tenantId!)
+        .in("order_id", orderIds)
+        .limit(5000);
+      if (itemError) {
+        return fail("best_seller_items_query_failed", itemError.message, 500);
+      }
+
+      const branchByOrder = new Map(orders.map((order) => [String(order.id), String(order.branch_id)]));
+      const branchLabelById = new Map(branchOptions.map((branch) => [branch.id, branch.name ?? branch.code ?? branch.id]));
+      const rollup = new Map<
+        string,
+        {
+          product_id: string;
+          sku: string | null;
+          name: string;
+          category: string | null;
+          units: number;
+          revenue: number;
+          branchIds: Set<string>;
+        }
+      >();
+
+      for (const row of itemRows ?? []) {
+        const productRecord = Array.isArray(row.products) ? row.products[0] : row.products;
+        const productId = String(row.product_id ?? productRecord?.id ?? "");
+        if (!productId) continue;
+        const current =
+          rollup.get(productId) ??
+          {
+            product_id: productId,
+            sku: productRecord?.sku ?? null,
+            name: String(productRecord?.name ?? productId),
+            category: productRecord?.category ?? null,
+            units: 0,
+            revenue: 0,
+            branchIds: new Set<string>()
+          };
+        current.units += Number(row.quantity ?? 0);
+        current.revenue += Number(row.line_total ?? 0);
+        const branchId = branchByOrder.get(String(row.order_id));
+        if (branchId) current.branchIds.add(branchId);
+        rollup.set(productId, current);
+      }
+
+      const items = Array.from(rollup.values())
+        .sort((a, b) => b.units - a.units || b.revenue - a.revenue || a.name.localeCompare(b.name))
+        .slice(0, 30)
+        .map((item, index) => ({
+          rank: index + 1,
+          tier: index === 0 ? "gold" : index === 1 ? "silver" : index === 2 ? "bronze" : "standard",
+          product_id: item.product_id,
+          sku: item.sku,
+          name: item.name,
+          category: item.category,
+          units: Number(item.units.toFixed(3)),
+          revenue: Number(item.revenue.toFixed(2)),
+          branches: Array.from(item.branchIds)
+            .map((branchId) => branchLabelById.get(branchId) ?? branchId)
+            .sort((a, b) => a.localeCompare(b))
+        }));
+
+      return ok({
+        view: "best_sellers",
+        days,
+        branch_id: useAllBranchesForBestSellers ? "all" : scopedBranchId,
+        branch_options: branchOptions,
+        items,
+        summary: {
+          units: Number(items.reduce((sum, item) => sum + item.units, 0).toFixed(3)),
+          revenue: Number(items.reduce((sum, item) => sum + item.revenue, 0).toFixed(2))
+        }
+      });
+    }
+
+    if (view === "categories") {
+      const [{ data, error }, registryResult] = await Promise.all([
+        supabase
+          .from("products")
+          .select("category")
+          .eq("tenant_id", auth.tenantId!)
+          .eq("branch_id", scopedBranchId)
+          .eq("is_active", true),
+        supabase
+          .from("product_categories")
+          .select("name")
+          .eq("tenant_id", auth.tenantId!)
+          .eq("branch_id", scopedBranchId)
+          .order("name", { ascending: true })
+      ]);
 
       if (error) {
         return fail("categories_query_failed", error.message, 500);
+      }
+      if (registryResult.error && !isMissingTableError(registryResult.error, "product_categories")) {
+        return fail("categories_registry_query_failed", registryResult.error.message, 500);
       }
 
       const counts = new Map<string, number>();
@@ -513,6 +718,11 @@ export async function GET(req: Request) {
         const category = String(row.category ?? "").trim();
         if (!category) continue;
         counts.set(category, (counts.get(category) ?? 0) + 1);
+      }
+      for (const row of registryResult.error ? [] : registryResult.data ?? []) {
+        const category = String((row as { name?: string | null }).name ?? "").trim();
+        if (!category || counts.has(category)) continue;
+        counts.set(category, 0);
       }
       const items = Array.from(counts.entries())
         .map(([category, count]) => ({ category, count }))
@@ -662,6 +872,91 @@ export async function POST(req: Request) {
       return { ok: true as const, archived: true };
     };
 
+    if (body.action === "create_category") {
+      const name = body.name.trim();
+      if (!name) {
+        return fail("invalid_category_name", "Category name is required.", 422);
+      }
+      const ensured = await ensureProductCategory({
+        supabase,
+        tenantId: auth.tenantId!,
+        branchId: scopedBranchId,
+        name,
+        userId: auth.userId
+      });
+      if (!ensured.ok) {
+        return fail("category_create_failed", ensured.error.message ?? "Failed to create category.", 500);
+      }
+      return ok({ category: { name, productCount: 0 }, persisted: ensured.persisted });
+    }
+
+    if (body.action === "rename_category") {
+      const oldName = body.old_name.trim();
+      const name = body.name.trim();
+      if (!oldName || !name) {
+        return fail("invalid_category_name", "Both old_name and name are required.", 422);
+      }
+      const ensured = await ensureProductCategory({
+        supabase,
+        tenantId: auth.tenantId!,
+        branchId: scopedBranchId,
+        name,
+        userId: auth.userId
+      });
+      if (!ensured.ok) {
+        return fail("category_rename_failed", ensured.error.message ?? "Failed to rename category.", 500);
+      }
+      const productUpdate = await supabase
+        .from("products")
+        .update({ category: name })
+        .eq("tenant_id", auth.tenantId!)
+        .eq("branch_id", scopedBranchId)
+        .eq("category", oldName);
+      if (productUpdate.error) {
+        return fail("category_product_update_failed", productUpdate.error.message, 500);
+      }
+      const registryDelete = await supabase
+        .from("product_categories")
+        .delete()
+        .eq("tenant_id", auth.tenantId!)
+        .eq("branch_id", scopedBranchId)
+        .eq("name", oldName);
+      if (registryDelete.error && !isMissingTableError(registryDelete.error, "product_categories")) {
+        return fail("category_old_registry_delete_failed", registryDelete.error.message, 500);
+      }
+      return ok({ category: { oldName, name } });
+    }
+
+    if (body.action === "delete_category") {
+      const name = body.name.trim();
+      if (!name) {
+        return fail("invalid_category_name", "Category name is required.", 422);
+      }
+      const { count, error: productCountError } = await supabase
+        .from("products")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", auth.tenantId!)
+        .eq("branch_id", scopedBranchId)
+        .eq("category", name)
+        .eq("is_active", true);
+      if (productCountError) {
+        return fail("category_product_count_failed", productCountError.message, 500);
+      }
+      if ((count ?? 0) > 0) {
+        return fail("category_in_use", "Cannot delete a category that still has products.", 409);
+      }
+      const registryDelete = await supabase
+        .from("product_categories")
+        .delete()
+        .eq("tenant_id", auth.tenantId!)
+        .eq("branch_id", scopedBranchId)
+        .eq("name", name);
+      if (registryDelete.error && !isMissingTableError(registryDelete.error, "product_categories")) {
+        return fail("category_delete_failed", registryDelete.error.message, 500);
+      }
+      return ok({ category: { name, deleted: true } });
+    }
+
     if (body.action === "create_product_with_stock_setup") {
       const name = body.name?.trim();
       const category = body.category?.trim();
@@ -693,6 +988,17 @@ export async function POST(req: Request) {
       }
       if (!Number.isFinite(stockQuantity) || stockQuantity < 0) {
         return fail("invalid_stock_quantity", "stock_quantity must be greater than or equal to 0.", 422);
+      }
+
+      const categoryEnsured = await ensureProductCategory({
+        supabase,
+        tenantId: auth.tenantId!,
+        branchId: scopedBranchId,
+        name: category,
+        userId: auth.userId
+      });
+      if (!categoryEnsured.ok) {
+        return fail("category_create_failed", categoryEnsured.error.message ?? "Failed to create category.", 500);
       }
 
       const normalizedRecipeLines = ingredientLines
@@ -946,6 +1252,17 @@ export async function POST(req: Request) {
       }
       if (!Number.isFinite(stockQuantity) || stockQuantity < 0) {
         return fail("invalid_stock_quantity", "stock_quantity must be greater than or equal to 0.", 422);
+      }
+
+      const categoryEnsured = await ensureProductCategory({
+        supabase,
+        tenantId: auth.tenantId!,
+        branchId: scopedBranchId,
+        name: category,
+        userId: auth.userId
+      });
+      if (!categoryEnsured.ok) {
+        return fail("category_create_failed", categoryEnsured.error.message ?? "Failed to create category.", 500);
       }
 
       const normalizedRecipeLines = ingredientLines
@@ -1295,6 +1612,17 @@ export async function POST(req: Request) {
       }
       if (!["unit_only", "recipe_deduction"].includes(stockMode)) {
         return fail("invalid_stock_mode", "stock_deduction_mode is invalid.", 422);
+      }
+
+      const categoryEnsured = await ensureProductCategory({
+        supabase,
+        tenantId: auth.tenantId!,
+        branchId: scopedBranchId,
+        name: category,
+        userId: auth.userId
+      });
+      if (!categoryEnsured.ok) {
+        return fail("category_create_failed", categoryEnsured.error.message ?? "Failed to create category.", 500);
       }
 
       if (stockMode === "recipe_deduction") {

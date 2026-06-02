@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   PosGuardError,
   requirePosSession,
+  updateCachedPosSessionShift,
   withPosSessionCookie
 } from "@/lib/pos-session-guard";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
@@ -22,6 +23,22 @@ async function withQueryTimeout<T>(queryPromise: Promise<T>, timeoutMs: number):
   }
 }
 
+function isMissingSessionShiftColumnError(error: { code?: string; message?: string } | null | undefined) {
+  if (!error) return false;
+  const message = String(error.message ?? "").toLowerCase();
+  if (error.code === "42703") return true;
+  if (message.includes("pos_sessions.shift_id") || message.includes("column shift_id")) return true;
+  return message.includes("could not find the 'shift_id' column");
+}
+
+function isMissingShiftDeviceCodeColumnError(error: { code?: string; message?: string } | null | undefined) {
+  if (!error) return false;
+  const message = String(error.message ?? "").toLowerCase();
+  if (error.code === "42703") return true;
+  if (message.includes("shifts.device_code") || message.includes("column device_code")) return true;
+  return message.includes("could not find the 'device_code' column");
+}
+
 export async function GET() {
   const startedAt = Date.now();
   try {
@@ -31,6 +48,7 @@ export async function GET() {
     const shiftId = scope.session.shift_id;
     let shiftSummary: { id: string; status: string; opened_at: string; closed_at: string | null } | null = null;
     let shiftLookupFallback = false;
+    let reboundShiftBinding = false;
     if (shiftId) {
       const shiftQuery = supabase
         .from("shifts")
@@ -47,6 +65,56 @@ export async function GET() {
         shiftLookupFallback = true;
       } else {
         shiftSummary = shiftResult.data ?? null;
+      }
+    }
+
+    if (!shiftSummary && !shiftId) {
+      let activeShiftQuery = supabase
+        .from("shifts")
+        .select("id,status,opened_at,closed_at")
+        .eq("tenant_id", scope.session.tenant_id)
+        .eq("branch_id", scope.session.branch_id)
+        .eq("status", "open")
+        .order("opened_at", { ascending: false })
+        .limit(1);
+      if (scope.session.device_code) {
+        activeShiftQuery = activeShiftQuery.eq("device_code", scope.session.device_code);
+      }
+      let activeShiftResult = await withQueryTimeout(
+        Promise.resolve(activeShiftQuery.maybeSingle<{ id: string; status: string; opened_at: string; closed_at: string | null }>()) as Promise<{
+          data: { id: string; status: string; opened_at: string; closed_at: string | null } | null;
+          error?: { code?: string; message?: string } | null;
+        }>,
+        2500
+      );
+      if (isMissingShiftDeviceCodeColumnError(activeShiftResult?.error)) {
+        activeShiftResult = await withQueryTimeout(
+          Promise.resolve(
+            supabase
+              .from("shifts")
+              .select("id,status,opened_at,closed_at")
+              .eq("tenant_id", scope.session.tenant_id)
+              .eq("branch_id", scope.session.branch_id)
+              .eq("status", "open")
+              .order("opened_at", { ascending: false })
+              .limit(1)
+              .maybeSingle<{ id: string; status: string; opened_at: string; closed_at: string | null }>()
+          ) as Promise<{
+            data: { id: string; status: string; opened_at: string; closed_at: string | null } | null;
+            error?: { code?: string; message?: string } | null;
+          }>,
+          2500
+        );
+      }
+      if (!activeShiftResult) {
+        shiftLookupFallback = true;
+      } else if (activeShiftResult.data?.id) {
+        shiftSummary = activeShiftResult.data;
+        const { error: bindError } = await supabase.from("pos_sessions").update({ shift_id: shiftSummary.id }).eq("id", scope.session.id);
+        if (!bindError || isMissingSessionShiftColumnError(bindError)) {
+          reboundShiftBinding = true;
+          updateCachedPosSessionShift(scope.session.id, shiftSummary.id);
+        }
       }
     }
 
@@ -93,6 +161,7 @@ export async function GET() {
     });
 
     response.headers.set("x-pos-session-shift-fallback", shiftLookupFallback ? "1" : "0");
+    response.headers.set("x-pos-session-shift-rebound", reboundShiftBinding ? "1" : "0");
     const durationMs = Date.now() - startedAt;
     response.headers.set("x-pos-api-ms", String(durationMs));
     response.headers.set("server-timing", `total;dur=${durationMs}`);

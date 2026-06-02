@@ -200,3 +200,30 @@ Before go-live, complete:
 - Rotate all production secrets and verify alert/on-call routing
 - Configure centralized rate limiter backend (`RATE_LIMIT_BACKEND=upstash|redis`) and verify auth fail-closed behavior
 - Complete `docs/go-live-evidence-checklist.md` with evidence links
+
+## POS Sales Summary
+
+- Route: `/preview/pos/sales-summary`
+- API: `GET /api/pos/sales-summary`
+- Returned data: `summary`, `paymentMethods`, `shifts`, `cashiers`, `bestSellingProducts`, and `salesRows`.
+- Filters: `dateFrom`, `dateTo`, `branchId`, `shiftId`, `cashierId`, `paymentMethod`, and `status`.
+- Access rules: the API resolves tenant, branch, user, and role from the authenticated server/POS session. The client never supplies trusted `tenant_id`.
+- Branch isolation: owner/IT admin can view active branches in the tenant; manager/accountant are limited to assigned branches; staff-style access is scoped to self if reports permission is ever granted.
+- UI behavior: the page shows KPI cards, payment breakdown, shift summary, cashier performance, best-selling products, detailed sales rows, loading/error/empty states, and CSV export.
+- Verification commands used for this module should include `npm run typecheck`, `npm run lint`, and `npm run build`.
+
+## POS Responsive Landscape UI
+
+- POS route scope: `/preview/pos/*`
+- Viewport behavior: the POS layout exports route-level viewport settings with `width=device-width`, `initial-scale=1`, `maximum-scale=1`, `user-scalable=no`, and `viewport-fit=cover`.
+- Orientation guard: `PosViewportGuard` blocks unsupported portrait or narrow POS usage and asks users to rotate to landscape. It shows Thai and English text and displays the current viewport size.
+- Breakpoints:
+  - `< 768px` or portrait: blocked/warning overlay for POS usage.
+  - `768px-1023px` landscape: compact tablet/iPad layout, compact icon sidebar, tighter spacing, smaller product cards.
+  - `1024px-1439px` landscape: laptop/small desktop layout with standard product grid and right cart panel.
+  - `1440px+` landscape: expanded desktop layout with wider cart and 4-column product grid.
+  - `1600px+` and `2200px+`: centered workspace with larger max-width and 5-6 product columns.
+- App-ready CSS: POS shell uses `100dvh`, safe-area padding, `overscroll-behavior`, and `touch-action: manipulation` to reduce accidental zoom/double-tap behavior.
+- Modal behavior: POS dialogs and drawers now have viewport-safe max-height, internal scrolling, safe-area padding, and sticky action zones where possible.
+- Files changed for this layer: `app/preview/pos/layout.tsx`, `components/pos-preview/pos-viewport-guard.tsx`, `lib/viewport-hooks.ts`, `components/pos-preview/pos-shell-sidebar.tsx`, and `app/globals.css`.
+- Target checklist: verify 1024x768, 1180x820, 1194x834, 1366x1024, 1280x720, 1366x768, 1440x900, 1536x864, 1600x900, 1920x1080, 2560x1440, plus portrait/narrow warning states.

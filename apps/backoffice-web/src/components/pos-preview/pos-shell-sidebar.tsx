@@ -117,8 +117,8 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
 
   return (
     <aside
-      className={`pos-shell-sidebar hidden h-full shrink-0 border-r border-slate-900/40 bg-[radial-gradient(circle_at_80%_-20%,rgba(56,189,248,0.28),transparent_45%),radial-gradient(circle_at_20%_120%,rgba(37,99,235,0.26),transparent_40%),linear-gradient(185deg,#07142c,#081c3b_45%,#071731)] p-3 text-white lg:flex lg:flex-col ${
-        collapsed ? "lg:w-[70px]" : "lg:w-[214px]"
+      className={`pos-shell-sidebar hidden h-full shrink-0 border-r border-slate-900/40 bg-[radial-gradient(circle_at_80%_-20%,rgba(56,189,248,0.28),transparent_45%),radial-gradient(circle_at_20%_120%,rgba(37,99,235,0.26),transparent_40%),linear-gradient(185deg,#07142c,#081c3b_45%,#071731)] p-3 text-white md:flex md:flex-col ${
+        collapsed ? "md:w-[68px] xl:w-[70px]" : "md:w-[188px] xl:w-[214px]"
       }`}
     >
       <div className={`${collapsed ? "flex justify-center" : ""}`}>

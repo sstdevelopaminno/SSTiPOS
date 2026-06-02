@@ -5,6 +5,7 @@ import {
   getTenantBranchScopeFromSession,
   requirePermission,
   requirePosSession,
+  updateCachedPosSessionShift,
   withPosSessionCookie
 } from "@/lib/pos-session-guard";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
@@ -33,6 +34,10 @@ function shouldUseLegacyShiftInsert(error: { message?: string } | null | undefin
   );
 }
 
+function isUniqueViolationError(error: { code?: string; message?: string } | null | undefined) {
+  return error?.code === "23505" || String(error?.message ?? "").toLowerCase().includes("duplicate key value");
+}
+
 export async function POST(request: Request) {
   try {
     const scope = await requirePosSession();
@@ -53,53 +58,58 @@ export async function POST(request: Request) {
     const sessionScope = getTenantBranchScopeFromSession(scope);
     const supabase = getSupabaseServiceClient();
 
-    let existingQuery = supabase
-      .from("shifts")
-      .select("id,status,opened_at,opening_cash,device_code")
-      .eq("tenant_id", sessionScope.tenantId)
-      .eq("branch_id", sessionScope.branchId)
-      .eq("status", "open")
-      .limit(1);
-    if (sessionScope.deviceCode) {
-      existingQuery = existingQuery.eq("device_code", sessionScope.deviceCode);
-    }
-    let { data: existingOpenShift, error: existingOpenShiftError } = await existingQuery.maybeSingle<{
+    type OpenShiftSummary = {
       id: string;
       status: string;
       opened_at: string;
       opening_cash: number | null;
       device_code: string | null;
-    }>();
-    if (isMissingShiftDeviceCodeColumnError(existingOpenShiftError)) {
-      const fallbackExisting = await supabase
+    };
+
+    async function findExistingOpenShift() {
+      let existingQuery = supabase
         .from("shifts")
-        .select("id,status,opened_at,opening_cash")
+        .select("id,status,opened_at,opening_cash,device_code")
         .eq("tenant_id", sessionScope.tenantId)
         .eq("branch_id", sessionScope.branchId)
         .eq("status", "open")
-        .limit(1)
-        .maybeSingle<{ id: string; status: string; opened_at: string; opening_cash: number | null }>();
-      existingOpenShift = fallbackExisting.data ? { ...fallbackExisting.data, device_code: null } : null;
-      existingOpenShiftError = fallbackExisting.error;
+        .order("opened_at", { ascending: false })
+        .limit(1);
+      if (sessionScope.deviceCode) {
+        existingQuery = existingQuery.eq("device_code", sessionScope.deviceCode);
+      }
+      let { data, error } = await existingQuery.maybeSingle<OpenShiftSummary>();
+      if (isMissingShiftDeviceCodeColumnError(error)) {
+        const fallbackExisting = await supabase
+          .from("shifts")
+          .select("id,status,opened_at,opening_cash")
+          .eq("tenant_id", sessionScope.tenantId)
+          .eq("branch_id", sessionScope.branchId)
+          .eq("status", "open")
+          .order("opened_at", { ascending: false })
+          .limit(1)
+          .maybeSingle<Omit<OpenShiftSummary, "device_code">>();
+        data = fallbackExisting.data ? { ...fallbackExisting.data, device_code: null } : null;
+        error = fallbackExisting.error;
+      }
+      return { data: data ?? null, error };
     }
-    if (existingOpenShiftError) {
-      return NextResponse.json(
-        { data: null, error: { code: "shift_query_failed", message: existingOpenShiftError.message } },
-        { status: 500 }
-      );
-    }
-    if (existingOpenShift) {
-      const { error: existingSessionBindError } = await supabase
-        .from("pos_sessions")
-        .update({ shift_id: existingOpenShift.id })
-        .eq("id", scope.session.id);
-      if (existingSessionBindError && !isMissingSessionShiftColumnError(existingSessionBindError)) {
+
+    async function bindSessionToShift(shiftId: string) {
+      const { error } = await supabase.from("pos_sessions").update({ shift_id: shiftId }).eq("id", scope.session.id);
+      if (error && !isMissingSessionShiftColumnError(error)) {
         return NextResponse.json(
-          { data: null, error: { code: "session_update_failed", message: existingSessionBindError.message } },
+          { data: null, error: { code: "session_update_failed", message: error.message } },
           { status: 500 }
         );
       }
+      updateCachedPosSessionShift(scope.session.id, shiftId);
+      return null;
+    }
 
+    async function reuseExistingShift(existingOpenShift: OpenShiftSummary) {
+      const bindErrorResponse = await bindSessionToShift(existingOpenShift.id);
+      if (bindErrorResponse) return bindErrorResponse;
       const response = NextResponse.json(
         {
           data: {
@@ -112,6 +122,17 @@ export async function POST(request: Request) {
         { status: 200 }
       );
       return withPosSessionCookie(response, scope.session.id);
+    }
+
+    const existingLookup = await findExistingOpenShift();
+    if (existingLookup.error) {
+      return NextResponse.json(
+        { data: null, error: { code: "shift_query_failed", message: existingLookup.error.message } },
+        { status: 500 }
+      );
+    }
+    if (existingLookup.data) {
+      return reuseExistingShift(existingLookup.data);
     }
 
     const createResult = await supabase
@@ -155,6 +176,13 @@ export async function POST(request: Request) {
       createError = legacyCreateResult.error;
     }
 
+    if (isUniqueViolationError(createError)) {
+      const conflictLookup = await findExistingOpenShift();
+      if (conflictLookup.data) {
+        return reuseExistingShift(conflictLookup.data);
+      }
+    }
+
     if (createError || !createdShift) {
       return NextResponse.json(
         { data: null, error: { code: "shift_open_failed", message: createError?.message ?? "Unable to open shift." } },
@@ -162,13 +190,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const { error: sessionBindError } = await supabase.from("pos_sessions").update({ shift_id: createdShift.id }).eq("id", scope.session.id);
-    if (sessionBindError && !isMissingSessionShiftColumnError(sessionBindError)) {
-      return NextResponse.json(
-        { data: null, error: { code: "session_update_failed", message: sessionBindError.message } },
-        { status: 500 }
-      );
-    }
+    const bindErrorResponse = await bindSessionToShift(createdShift.id);
+    if (bindErrorResponse) return bindErrorResponse;
 
     await appendAuditLog({
       tenantId: sessionScope.tenantId,

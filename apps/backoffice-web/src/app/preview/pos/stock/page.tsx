@@ -252,6 +252,13 @@ export default async function PosStockPage({
         .maybeSingle<{ allow_negative_stock: boolean }>()
     ]);
 
+    const categoriesRegistryResult = await supabase
+      .from("product_categories")
+      .select("name")
+      .eq("tenant_id", auth.tenantId!)
+      .eq("branch_id", selectedBranchId)
+      .order("name", { ascending: true });
+
     if (productsError || ingredientsResult.error) {
       throw new Error("Failed to load stock preview data.");
     }
@@ -361,6 +368,16 @@ export default async function PosStockPage({
       const categoryName = (item.category ?? "").trim();
       if (!categoryName) continue;
       categoryMap.set(categoryName, (categoryMap.get(categoryName) ?? 0) + 1);
+    }
+    if (categoriesRegistryResult.error && !isMissingTableError(categoriesRegistryResult.error as PostgrestErrorLike)) {
+      throw new Error("Failed to load category registry.");
+    }
+    if (!categoriesRegistryResult.error) {
+      for (const row of categoriesRegistryResult.data ?? []) {
+        const categoryName = String((row as { name?: string | null }).name ?? "").trim();
+        if (!categoryName || categoryMap.has(categoryName)) continue;
+        categoryMap.set(categoryName, 0);
+      }
     }
     categoryList = Array.from(categoryMap.entries())
       .map(([name, productCount]) => ({ name, productCount }))
@@ -484,6 +501,7 @@ export default async function PosStockPage({
           inventorySettingsReady={inventorySettingsReady}
           inventorySettingsMessage={inventorySettingsMessage}
           branchId={selectedBranchId}
+          branchOptions={branchOptions}
           canManageCatalog={canManageCatalog}
         />
       </div>
