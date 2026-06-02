@@ -1,7 +1,7 @@
 ﻿"use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PosSalesModule } from "@/components/pos/pos-sales-module";
 import { t } from "@/lib/i18n";
 
 type Lang = "th" | "en";
@@ -27,6 +27,17 @@ const POS_DISPLAY_TIMEZONE = "Asia/Bangkok";
 const POS_ROLE_STORAGE_KEY = "pos_session_role_v1";
 const POS_ROLE_EVENT_NAME = "pos-session-role-updated";
 const POS_SKIP_ENTRY_GATE_SPLASH_KEY = "pos_skip_entry_gate_overlay_once_v1";
+const PosSalesModule = dynamic(
+  () => import("@/components/pos/pos-sales-module").then((module) => module.PosSalesModule),
+  {
+    ssr: false,
+    loading: () => (
+      <section className="surface" style={{ maxWidth: 760, margin: "0 auto", display: "grid", gap: 12 }}>
+        <h2 style={{ margin: 0 }}>กำลังเตรียมหน้าขาย...</h2>
+      </section>
+    )
+  }
+);
 const SESSION_EXPIRED_CODES = new Set([
   "missing_pos_session",
   "invalid_handoff_token",

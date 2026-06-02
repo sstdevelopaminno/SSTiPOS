@@ -1,14 +1,31 @@
 import type { ReactNode } from "react";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { PosShiftCycleGuard } from "@/components/pos/pos-shift-cycle-guard";
 import { PosRoutePerformanceTracker } from "@/components/pos-preview/pos-route-performance-tracker";
 import { PosShellSidebar } from "@/components/pos-preview/pos-shell-sidebar";
 import { getCurrentLanguage, t } from "@/lib/i18n";
+
+function resolvePosSessionCookieNames() {
+  const handoffName = String(process.env.POS_SESSION_COOKIE_NAME ?? "pos_session_handoff").trim() || "pos_session_handoff";
+  const sessionIdName = String(process.env.POS_SESSION_ID_COOKIE_NAME ?? "pos_session_id").trim() || "pos_session_id";
+
+  return { handoffName, sessionIdName };
+}
 
 export default async function PosPreviewLayout({
   children,
 }: {
   children: ReactNode;
 }) {
+  const cookieStore = await cookies();
+  const { handoffName, sessionIdName } = resolvePosSessionCookieNames();
+  const hasPosSession = Boolean(cookieStore.get(sessionIdName)?.value || cookieStore.get(handoffName)?.value);
+
+  if (!hasPosSession) {
+    redirect("/login/store");
+  }
+
   const lang = await getCurrentLanguage();
 
   return (
