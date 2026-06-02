@@ -24,6 +24,7 @@ type DeviceRow = {
 type ActiveSessionRow = {
   id: string;
   user_id: string;
+  issued_at: string;
 };
 
 type UserDeviceScopeRow = {
@@ -61,6 +62,12 @@ async function runBestEffort(label: string, action: () => PromiseLike<unknown> |
       error: error instanceof Error ? error.message : "Unknown error"
     });
   }
+}
+
+function pickNewestActiveSession(rows: Array<ActiveSessionRow | null | undefined>) {
+  return rows
+    .filter((row): row is ActiveSessionRow => Boolean(row))
+    .sort((a, b) => new Date(b.issued_at).getTime() - new Date(a.issued_at).getTime())[0] ?? null;
 }
 
 export async function POST(request: Request) {
@@ -139,25 +146,39 @@ export async function POST(request: Request) {
       return timedJsonError(403, "device_offline", "เครื่องที่เลือกออฟไลน์หรืออยู่ระหว่างบำรุงรักษา");
     }
 
-    const activeSessionQuery = await withAuthTimeout(
-      supabase
-        .from("pos_sessions")
-        .select("id,user_id")
-        .eq("tenant_id", flow.tenantId)
-        .eq("branch_id", flow.branchId)
-        .eq("status", "active")
-        .or(`device_id.eq.${device.id},device_code.eq.${selectedDeviceCode}`)
-        .gt("expires_at", nowIso)
-        .limit(1)
-        .maybeSingle<ActiveSessionRow>(),
+    const [activeSessionById, activeSessionByCode] = await withAuthTimeout(
+      Promise.all([
+        supabase
+          .from("pos_sessions")
+          .select("id,user_id,issued_at")
+          .eq("tenant_id", flow.tenantId)
+          .eq("branch_id", flow.branchId)
+          .eq("status", "active")
+          .eq("device_id", device.id)
+          .gt("expires_at", nowIso)
+          .order("issued_at", { ascending: false })
+          .limit(1)
+          .maybeSingle<ActiveSessionRow>(),
+        supabase
+          .from("pos_sessions")
+          .select("id,user_id,issued_at")
+          .eq("tenant_id", flow.tenantId)
+          .eq("branch_id", flow.branchId)
+          .eq("status", "active")
+          .eq("device_code", selectedDeviceCode)
+          .gt("expires_at", nowIso)
+          .order("issued_at", { ascending: false })
+          .limit(1)
+          .maybeSingle<ActiveSessionRow>()
+      ]),
       "device_active_session_lookup_timeout"
     );
 
-    if (activeSessionQuery.error) {
+    if (activeSessionById.error || activeSessionByCode.error) {
       return timedJsonError(500, "device_select_failed", "ไม่สามารถตรวจสอบสถานะเครื่องได้");
     }
 
-    const activeSession = activeSessionQuery.data;
+    const activeSession = pickNewestActiveSession([activeSessionById.data, activeSessionByCode.data]);
     if (activeSession) {
       const isSameEmployee = activeSession.user_id === employee.userId;
       const canOverride = hasPermission(employee.permissions, "pos.device.override_in_use");
@@ -165,18 +186,27 @@ export async function POST(request: Request) {
         return timedJsonError(409, "device_in_use", "เครื่องนี้กำลังถูกใช้งานอยู่");
       }
 
-      const revokeResult = await withAuthTimeout(
-        supabase
-          .from("pos_sessions")
-          .update({ status: "revoked", revoked_at: nowIso })
-          .eq("tenant_id", flow.tenantId)
-          .eq("branch_id", flow.branchId)
-          .eq("status", "active")
-          .or(`id.eq.${activeSession.id},device_id.eq.${device.id},device_code.eq.${selectedDeviceCode}`),
+      const [revokeByDeviceId, revokeByDeviceCode] = await withAuthTimeout(
+        Promise.all([
+          supabase
+            .from("pos_sessions")
+            .update({ status: "revoked", revoked_at: nowIso })
+            .eq("tenant_id", flow.tenantId)
+            .eq("branch_id", flow.branchId)
+            .eq("status", "active")
+            .eq("device_id", device.id),
+          supabase
+            .from("pos_sessions")
+            .update({ status: "revoked", revoked_at: nowIso })
+            .eq("tenant_id", flow.tenantId)
+            .eq("branch_id", flow.branchId)
+            .eq("status", "active")
+            .eq("device_code", selectedDeviceCode)
+        ]),
         "device_session_revoke_timeout"
       );
 
-      if (revokeResult.error) {
+      if (revokeByDeviceId.error || revokeByDeviceCode.error) {
         return timedJsonError(500, "device_select_failed", "ไม่สามารถปลดล็อกเครื่องที่กำลังใช้งานอยู่ได้");
       }
     }

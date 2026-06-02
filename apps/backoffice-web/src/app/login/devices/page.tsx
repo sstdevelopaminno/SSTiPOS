@@ -55,6 +55,7 @@ function mapDeviceError(code?: string | null, fallback?: string | null) {
   if (code === "session_scope_conflict") return "เครื่องนี้กำลังถูกใช้งานอยู่";
   if (code === "context_create_failed") return "ไม่สามารถเตรียมบริบทการล็อคอินได้";
   if (code === "session_creation_failed") return "ไม่สามารถสร้าง POS Session ได้";
+  if (code === "auth_timeout") return "ระบบตอบสนองช้าเกินไป กรุณาลองใหม่อีกครั้ง";
   if (code === "device_select_failed") return "ไม่สามารถเข้าใช้งานเครื่องที่เลือกได้";
   return fallback ?? "ไม่สามารถเลือกเครื่องได้ในขณะนี้";
 }
@@ -162,6 +163,22 @@ function LoginDevicesPageContent() {
     };
   }, [flow, router]);
 
+  useEffect(() => {
+    if (!submitting) return undefined;
+
+    const slowTimer = window.setTimeout(() => {
+      setPopup({ type: "loading", message: "กำลังตรวจสอบและปลดล็อก session เครื่อง..." });
+    }, 4000);
+    const timeoutTimer = window.setTimeout(() => {
+      setPopup({ type: "loading", message: "ระบบยังประมวลผลอยู่ กรุณารอสักครู่..." });
+    }, 10000);
+
+    return () => {
+      window.clearTimeout(slowTimer);
+      window.clearTimeout(timeoutTimer);
+    };
+  }, [submitting]);
+
   const selectedDevice = useMemo(() => devices.find((device) => device.deviceCode === selectedCode) ?? null, [devices, selectedCode]);
 
   async function handleSelectDevice() {
@@ -183,7 +200,11 @@ function LoginDevicesPageContent() {
 
     setSubmitting(true);
     setError("");
-    setPopup({ type: "loading", message: "กำลังเปิดเครื่องแคชเชียร์..." });
+    const isOverridingDevice = selectedDevice.status === "in_use";
+    setPopup({
+      type: "loading",
+      message: isOverridingDevice ? "กำลังปลดล็อกเครื่องที่กำลังใช้งาน..." : "กำลังเปิดเครื่องแคชเชียร์..."
+    });
 
     let hasFailure = false;
     let redirectTo = "";
@@ -196,7 +217,7 @@ function LoginDevicesPageContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           device_code: selectedDevice.deviceCode,
-          force_override: selectedDevice.status === "in_use"
+          force_override: isOverridingDevice
         })
         },
         2
@@ -286,7 +307,7 @@ function LoginDevicesPageContent() {
                       if (popup.type === "error") setPopup({ type: "none" });
                     }
                   }}
-                  disabled={disabled}
+                  disabled={disabled || submitting}
                 >
                   <h3>{device.deviceName}</h3>
                   <p>

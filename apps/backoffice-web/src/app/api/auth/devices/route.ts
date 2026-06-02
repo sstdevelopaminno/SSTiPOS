@@ -20,6 +20,10 @@ function withTimingHeaders<T extends NextResponse>(response: T, startedAt: numbe
   return response;
 }
 
+function emptySessionResult() {
+  return Promise.resolve({ data: [] as SessionRow[], error: null });
+}
+
 export async function GET() {
   const startedAt = Date.now();
   const cookieStore = await cookies();
@@ -45,26 +49,17 @@ export async function GET() {
 
   try {
     const supabase = getSupabaseServiceClient();
-    const [{ data: deviceRows, error: deviceError }, { data: activeSessionRows, error: sessionError }] = await withAuthTimeout(
-      Promise.all([
-        supabase
-          .from("branch_devices")
-          .select("id,tenant_id,branch_id,device_code,device_name,status,last_seen_at,metadata")
-          .eq("tenant_id", flow.tenantId)
-          .eq("branch_id", flow.branchId)
-          .order("device_name", { ascending: true }),
-        supabase
-          .from("pos_sessions")
-          .select("id,device_id,device_code,user_id,users_profiles(full_name)")
-          .eq("tenant_id", flow.tenantId)
-          .eq("branch_id", flow.branchId)
-          .eq("status", "active")
-          .gt("expires_at", new Date().toISOString())
-      ]),
+    const { data: deviceRows, error: deviceError } = await withAuthTimeout(
+      supabase
+        .from("branch_devices")
+        .select("id,tenant_id,branch_id,device_code,device_name,status,last_seen_at,metadata")
+        .eq("tenant_id", flow.tenantId)
+        .eq("branch_id", flow.branchId)
+        .order("device_name", { ascending: true }),
       "devices_lookup_timeout"
     );
 
-    if (deviceError || sessionError) {
+    if (deviceError) {
       return withTimingHeaders(
         NextResponse.json(
           { data: null, error: { code: "device_query_failed", message: "ไม่สามารถโหลดรายการเครื่องแคชเชียร์ได้" } },
@@ -75,7 +70,51 @@ export async function GET() {
     }
 
     const devices = (deviceRows ?? []) as DeviceCandidate[];
-    const occupancies = ((activeSessionRows ?? []) as SessionRow[]).map((row) => {
+    const deviceIds = devices.map((device) => device.id).filter(Boolean);
+    const deviceCodes = devices.map((device) => device.device_code).filter(Boolean);
+    const nowIso = new Date().toISOString();
+    const [sessionsById, sessionsByCode] = await withAuthTimeout(
+      Promise.all([
+        deviceIds.length > 0
+          ? supabase
+              .from("pos_sessions")
+              .select("id,device_id,device_code,user_id,users_profiles(full_name)")
+              .eq("tenant_id", flow.tenantId)
+              .eq("branch_id", flow.branchId)
+              .eq("status", "active")
+              .gt("expires_at", nowIso)
+              .in("device_id", deviceIds)
+          : emptySessionResult(),
+        deviceCodes.length > 0
+          ? supabase
+              .from("pos_sessions")
+              .select("id,device_id,device_code,user_id,users_profiles(full_name)")
+              .eq("tenant_id", flow.tenantId)
+              .eq("branch_id", flow.branchId)
+              .eq("status", "active")
+              .gt("expires_at", nowIso)
+              .in("device_code", deviceCodes)
+          : emptySessionResult()
+      ]),
+      "device_sessions_lookup_timeout"
+    );
+
+    if (sessionsById.error || sessionsByCode.error) {
+      return withTimingHeaders(
+        NextResponse.json(
+          { data: null, error: { code: "device_query_failed", message: "ไม่สามารถโหลดรายการเครื่องแคชเชียร์ได้" } },
+          { status: 500 }
+        ),
+        startedAt
+      );
+    }
+
+    const activeSessionRows = new Map<string, SessionRow>();
+    for (const row of [...((sessionsById.data ?? []) as SessionRow[]), ...((sessionsByCode.data ?? []) as SessionRow[])]) {
+      activeSessionRows.set(row.id, row);
+    }
+
+    const occupancies = Array.from(activeSessionRows.values()).map((row) => {
       const profile = Array.isArray(row.users_profiles) ? row.users_profiles[0] : row.users_profiles;
       return {
         session_id: row.id,

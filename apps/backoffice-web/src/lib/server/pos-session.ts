@@ -137,8 +137,8 @@ export function createSessionHandoffToken(input: {
 }
 
 export function resolvePosRedirectTarget(): string {
-  const baseUrl = String(process.env.NEXT_PUBLIC_POS_APP_URL ?? "http://localhost:3000/preview/pos").trim();
-  return baseUrl || "http://localhost:3000/preview/pos";
+  const baseUrl = String(process.env.NEXT_PUBLIC_POS_APP_URL ?? "/preview/pos").trim();
+  return baseUrl || "/preview/pos";
 }
 
 export function resolveSessionCookieConfig() {
