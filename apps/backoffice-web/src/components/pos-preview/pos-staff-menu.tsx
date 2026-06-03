@@ -121,14 +121,10 @@ const MENU_DEFS: Array<{
     | "pos_menu_sales_summary"
     | "pos_menu_receipts"
     | "pos_menu_tables"
-    | "pos_menu_shift"
-    | "pos_menu_customer_display"
-    | "pos_menu_users"
-    | "pos_menu_logout";
+    | "pos_menu_shift";
   href: string;
   icon: IconName;
   roles: PosRole[];
-  kind?: "route" | "logout";
 }> = [
   { key: "pos_menu_sales", href: "/preview/pos", icon: "sales", roles: ["owner", "manager", "staff"] },
   { key: "pos_menu_sales_list", href: "/preview/pos/sales-list", icon: "list", roles: ["owner", "manager", "staff"] },
@@ -136,10 +132,7 @@ const MENU_DEFS: Array<{
   { key: "pos_menu_sales_summary", href: "/preview/pos/sales-summary", icon: "summary", roles: ["owner", "manager", "accountant"] },
   { key: "pos_menu_receipts", href: "/preview/pos/receipts", icon: "receipt", roles: ["owner", "manager", "accountant"] },
   { key: "pos_menu_tables", href: "/preview/pos/tables", icon: "tables", roles: ["owner", "manager"] },
-  { key: "pos_menu_shift", href: "/preview/pos/shift", icon: "shift", roles: ["owner", "manager", "staff"] },
-  { key: "pos_menu_customer_display", href: "/preview/pos/customer-display", icon: "display", roles: ["owner"] },
-  { key: "pos_menu_users", href: "/preview/pos/users", icon: "users", roles: ["owner", "manager"] },
-  { key: "pos_menu_logout", href: "#logout", icon: "logout", roles: ["owner", "manager", "staff", "accountant"], kind: "logout" }
+  { key: "pos_menu_shift", href: "/preview/pos/shift", icon: "shift", roles: ["owner", "manager", "staff"] }
 ];
 
 function resolveMenuRole(role: PosRole | null): PosRole {
@@ -152,13 +145,11 @@ function resolveMenuRole(role: PosRole | null): PosRole {
 export function PosStaffMenu({
   lang,
   collapsed,
-  sessionRole,
-  onLogout
+  sessionRole
 }: {
   lang: Language;
   collapsed: boolean;
   sessionRole: PosRole | null;
-  onLogout?: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
@@ -172,8 +163,7 @@ export function PosStaffMenu({
         label: t(lang, item.key),
         href: item.href,
         icon: item.icon,
-        roles: item.roles,
-        kind: item.kind ?? "route"
+        roles: item.roles
       })).filter((item) => item.roles.includes(effectiveRole)),
     [effectiveRole, lang]
   );
@@ -215,24 +205,6 @@ export function PosStaffMenu({
       {(mounted ? menuItems : []).map((item) => {
         const isActive = pathname === item.href;
         const isNavigating = pendingHref === item.href && isPending;
-        if (item.kind === "logout") {
-          return (
-            <button
-              key={item.href}
-              type="button"
-              onClick={() => onLogout?.()}
-              className={`group relative inline-flex min-h-[42px] items-center px-2 text-[13px] font-semibold leading-tight transition ${
-                collapsed ? "justify-center" : "justify-start gap-2"
-              } rounded-xl text-slate-100/90 hover:bg-white/8 hover:text-white`}
-              title={collapsed ? item.label : undefined}
-            >
-              <span className="inline-flex w-4 justify-center" aria-hidden>
-                <MenuIcon name={item.icon} />
-              </span>
-              {!collapsed ? <span className="truncate text-[13px]">{item.label}</span> : null}
-            </button>
-          );
-        }
         return (
           <Link
             key={item.href}

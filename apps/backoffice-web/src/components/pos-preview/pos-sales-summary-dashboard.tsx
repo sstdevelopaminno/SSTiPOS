@@ -71,6 +71,9 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
   const [paymentMethod, setPaymentMethod] = useState(initialPayload.filters.paymentMethod);
   const [status, setStatus] = useState(initialPayload.filters.status);
   const [error, setError] = useState("");
+  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
+  const [moreDialogOpen, setMoreDialogOpen] = useState(false);
+  const [salesRowsDialogOpen, setSalesRowsDialogOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const maxPaymentAmount = useMemo(() => Math.max(1, ...payload.paymentMethods.map((row) => row.amount)), [payload.paymentMethods]);
@@ -108,6 +111,11 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
         setError("ไม่สามารถโหลดข้อมูลสรุปยอดขายได้ กรุณาลองใหม่อีกครั้ง");
       }
     });
+  }
+
+  function applyFilters() {
+    refresh();
+    setFilterDialogOpen(false);
   }
 
   function exportCsv() {
@@ -162,6 +170,27 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
+                onClick={() => setFilterDialogOpen(true)}
+                className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
+              >
+                คัดกรอง
+              </button>
+              <button
+                type="button"
+                onClick={() => setMoreDialogOpen(true)}
+                className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
+              >
+                ดูเพิ่มเติม
+              </button>
+              <button
+                type="button"
+                onClick={() => setSalesRowsDialogOpen(true)}
+                className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
+              >
+                รายการขาย
+              </button>
+              <button
+                type="button"
                 onClick={refresh}
                 disabled={isPending}
                 className="h-10 rounded-lg border border-blue-200 bg-blue-600 px-4 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70"
@@ -179,7 +208,8 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+          <Dialog open={filterDialogOpen} title="คัดกรองข้อมูล" onClose={() => setFilterDialogOpen(false)}>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <Field label="ตั้งแต่">
               <input value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} type="date" className={inputClass} />
             </Field>
@@ -245,6 +275,24 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
               สิทธิ์ปัจจุบันดูได้เฉพาะข้อมูลกะ/ผู้ใช้งานของตัวเอง
             </p>
           ) : null}
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setFilterDialogOpen(false)}
+              className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+            >
+              ปิด
+            </button>
+            <button
+              type="button"
+              onClick={applyFilters}
+              disabled={isPending}
+              className="h-10 rounded-lg border border-blue-200 bg-blue-600 px-4 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70"
+            >
+              {isPending ? "กำลังโหลด" : "ใช้ตัวกรอง"}
+            </button>
+          </div>
+          </Dialog>
         </header>
 
         {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div> : null}
@@ -258,28 +306,99 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
           ))}
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-          <Panel title="ช่องทางชำระเงิน">
-            {payload.paymentMethods.length === 0 ? (
-              <EmptyState />
-            ) : (
-              <div className="grid gap-3">
-                {payload.paymentMethods.map((method) => (
-                  <div key={method.method}>
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="text-sm font-bold text-slate-800">{method.label}</span>
-                      <span className="text-sm font-black text-slate-950">{money(method.amount, lang)}</span>
+        <Dialog open={moreDialogOpen} title="ดูเพิ่มเติม" onClose={() => setMoreDialogOpen(false)} wide>
+          <div className="grid gap-4">
+            <Panel title="ช่องทางชำระเงิน">
+              {payload.paymentMethods.length === 0 ? (
+                <EmptyState />
+              ) : (
+                <div className="grid gap-3">
+                  {payload.paymentMethods.map((method) => (
+                    <div key={method.method}>
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-sm font-bold text-slate-800">{method.label}</span>
+                        <span className="text-sm font-black text-slate-950">{money(method.amount, lang)}</span>
+                      </div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.max(5, (method.amount / maxPaymentAmount) * 100)}%` }} />
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">{method.receiptCount} บิล</p>
                     </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                      <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.max(5, (method.amount / maxPaymentAmount) * 100)}%` }} />
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">{method.receiptCount} บิล</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
+                  ))}
+                </div>
+              )}
+            </Panel>
 
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Panel title="ประสิทธิภาพพนักงาน">
+                <ScrollTable minWidth="720px">
+                  <thead>
+                    <tr>
+                      <Th>พนักงาน</Th>
+                      <Th align="right">บิล</Th>
+                      <Th align="right">ยอดรวม</Th>
+                      <Th align="right">ยอดสุทธิ</Th>
+                      <Th align="right">ยกเลิก</Th>
+                      <Th align="right">เฉลี่ย/บิล</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payload.cashiers.length === 0 ? (
+                      <EmptyRow colSpan={6} />
+                    ) : (
+                      payload.cashiers.map((cashier) => (
+                        <tr key={cashier.cashierId} className="border-t border-slate-100">
+                          <Td strong>{cashier.cashierName}</Td>
+                          <Td align="right">{number(cashier.receiptCount, lang)}</Td>
+                          <Td align="right">{money(cashier.grossSales, lang)}</Td>
+                          <Td align="right">{money(cashier.netSales, lang)}</Td>
+                          <Td align="right">{cashier.cancelledCount}</Td>
+                          <Td align="right">{money(cashier.averageReceiptValue, lang)}</Td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </ScrollTable>
+              </Panel>
+
+              <Panel title="สินค้าขายดี">
+                <ScrollTable minWidth="680px">
+                  <thead>
+                    <tr>
+                      <Th>สินค้า</Th>
+                      <Th>หมวดหมู่</Th>
+                      <Th align="right">จำนวน</Th>
+                      <Th align="right">ยอดรวม</Th>
+                      <Th align="right">ยอดสุทธิ</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payload.bestSellingProducts.length === 0 ? (
+                      <EmptyRow colSpan={5} />
+                    ) : (
+                      payload.bestSellingProducts.slice(0, 10).map((product, index) => (
+                        <tr key={product.productId} className="border-t border-slate-100">
+                          <Td strong>
+                            <span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                              {index + 1}
+                            </span>
+                            {product.productName}
+                          </Td>
+                          <Td>{product.category}</Td>
+                          <Td align="right">{number(product.quantitySold, lang)}</Td>
+                          <Td align="right">{money(product.grossAmount, lang)}</Td>
+                          <Td align="right">{money(product.netAmount, lang)}</Td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </ScrollTable>
+              </Panel>
+            </div>
+          </div>
+        </Dialog>
+
+        <div className="grid gap-4">
           <Panel title="สรุปกะ">
             <ScrollTable minWidth="860px">
               <thead>
@@ -320,73 +439,7 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
           </Panel>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-2">
-          <Panel title="ประสิทธิภาพพนักงาน">
-            <ScrollTable minWidth="720px">
-              <thead>
-                <tr>
-                  <Th>พนักงาน</Th>
-                  <Th align="right">บิล</Th>
-                  <Th align="right">ยอดรวม</Th>
-                  <Th align="right">ยอดสุทธิ</Th>
-                  <Th align="right">ยกเลิก</Th>
-                  <Th align="right">เฉลี่ย/บิล</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {payload.cashiers.length === 0 ? (
-                  <EmptyRow colSpan={6} />
-                ) : (
-                  payload.cashiers.map((cashier) => (
-                    <tr key={cashier.cashierId} className="border-t border-slate-100">
-                      <Td strong>{cashier.cashierName}</Td>
-                      <Td align="right">{number(cashier.receiptCount, lang)}</Td>
-                      <Td align="right">{money(cashier.grossSales, lang)}</Td>
-                      <Td align="right">{money(cashier.netSales, lang)}</Td>
-                      <Td align="right">{cashier.cancelledCount}</Td>
-                      <Td align="right">{money(cashier.averageReceiptValue, lang)}</Td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </ScrollTable>
-          </Panel>
-
-          <Panel title="สินค้าขายดี">
-            <ScrollTable minWidth="680px">
-              <thead>
-                <tr>
-                  <Th>สินค้า</Th>
-                  <Th>หมวดหมู่</Th>
-                  <Th align="right">จำนวน</Th>
-                  <Th align="right">ยอดรวม</Th>
-                  <Th align="right">ยอดสุทธิ</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {payload.bestSellingProducts.length === 0 ? (
-                  <EmptyRow colSpan={5} />
-                ) : (
-                  payload.bestSellingProducts.slice(0, 10).map((product, index) => (
-                    <tr key={product.productId} className="border-t border-slate-100">
-                      <Td strong>
-                        <span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                          {index + 1}
-                        </span>
-                        {product.productName}
-                      </Td>
-                      <Td>{product.category}</Td>
-                      <Td align="right">{number(product.quantitySold, lang)}</Td>
-                      <Td align="right">{money(product.grossAmount, lang)}</Td>
-                      <Td align="right">{money(product.netAmount, lang)}</Td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </ScrollTable>
-          </Panel>
-        </div>
-
+        <Dialog open={salesRowsDialogOpen} title="รายการขาย" onClose={() => setSalesRowsDialogOpen(false)} wide>
         <Panel title="รายการขาย">
           <ScrollTable minWidth="1040px">
             <thead>
@@ -429,8 +482,50 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
             </tbody>
           </ScrollTable>
         </Panel>
+        </Dialog>
       </div>
     </section>
+  );
+}
+
+function Dialog({
+  open,
+  title,
+  onClose,
+  children,
+  wide = false
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4" role="presentation" onMouseDown={onClose}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={`max-h-[86vh] w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl ${wide ? "max-w-6xl" : "max-w-4xl"}`}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <h2 className="text-lg font-black text-slate-950">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="ปิด"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-xl font-bold text-slate-600 transition hover:bg-slate-50"
+          >
+            ×
+          </button>
+        </header>
+        {children}
+      </section>
+    </div>
   );
 }
 

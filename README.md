@@ -192,7 +192,7 @@ Note: docs marked as archived are historical reference only. Use the current `/l
 - Shared TS contracts in `packages/shared-types`
 
 ## Current implementation status
-This scaffold is production-oriented in architecture and separation of concerns, with working route surfaces and enforceable schema constraints. Latest audit handoff: `docs/PROJECT-AUDIT-HANDOFF-2026-06-02.md`.
+This scaffold is production-oriented in architecture and separation of concerns, with working route surfaces and enforceable schema constraints. Latest audit handoff: `docs/PROJECT-AUDIT-HANDOFF-2026-06-02.md`; latest system/UI stability update: `docs/system-stability-audit-2026-06-04.md`.
 
 Before go-live, complete:
 - Execute the manual QA checklist and attach signoff evidence

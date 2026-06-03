@@ -16,6 +16,26 @@ function normalizePosRole(value: string): PosRole | null {
   return null;
 }
 
+function LogoutIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
+
 type Props = {
   lang: Language;
   settingsLabel: string;
@@ -157,7 +177,7 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
         </button>
       </div>
 
-      <PosStaffMenu lang={lang} collapsed={collapsed} sessionRole={sessionRole} onLogout={() => setLogoutModalOpen(true)} />
+      <PosStaffMenu lang={lang} collapsed={collapsed} sessionRole={sessionRole} />
 
       {showAdvancedMenus ? (
         <Link
@@ -193,7 +213,24 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
         </Link>
       ) : null}
 
-      <div className="mt-auto pt-4">
+      <div className="mt-auto grid gap-2 pt-4">
+        <button
+          type="button"
+          onClick={() => {
+            if (!logoutBusyMode) setLogoutModalOpen(true);
+          }}
+          disabled={Boolean(logoutBusyMode)}
+          className={`group inline-flex min-h-[42px] w-full items-center px-2 text-[13px] font-semibold leading-tight text-slate-100/90 transition hover:bg-white/8 hover:text-white disabled:cursor-wait disabled:opacity-60 ${
+            collapsed ? "justify-center rounded-xl" : "justify-start gap-2 rounded-xl"
+          }`}
+          title={collapsed ? t(lang, "pos_menu_logout") : undefined}
+          aria-label={t(lang, "pos_menu_logout")}
+        >
+          <span className="inline-flex w-4 justify-center">
+            <LogoutIcon />
+          </span>
+          {!collapsed ? <span className="truncate text-[13px]">{t(lang, "pos_menu_logout")}</span> : null}
+        </button>
         {!collapsed ? (
           <div className="px-1 py-1 text-slate-900">
             <LanguageSwitcher
