@@ -131,16 +131,51 @@ describe("reprint flow", () => {
       data: printerRows,
       error: null
     });
+    const orderItemsSelect = createAwaitableQuery({
+      data: [
+        {
+          product_id: "prod-1",
+          name: "Noodles",
+          quantity: 2,
+          unit_price: 60,
+          line_total: 120
+        }
+      ],
+      error: null
+    });
+    const paymentsSelect = createAwaitableQuery({
+      data: [
+        {
+          method: "cash",
+          amount: 120,
+          created_at: new Date().toISOString()
+        }
+      ],
+      error: null
+    });
+    const branchMaybeSingle = vi.fn(async () => ({
+      data: { name: "Branch POS" },
+      error: null
+    }));
+    const cashierMaybeSingle = vi.fn(async () => ({
+      data: { full_name: "Cashier One" },
+      error: null
+    }));
 
     const orderMaybeSingle = vi.fn(async () => ({
       data: {
         id: "o2",
         order_no: "DLV-2",
+        subtotal: 120,
         total_amount: 120,
+        grand_total: 120,
         discount_amount: 0,
         gp_amount: 0,
+        tax_total: 0,
         notes: null,
-        created_by: "u1"
+        created_by: "u1",
+        payment_completed_at: new Date().toISOString(),
+        created_at: new Date().toISOString()
       },
       error: null
     }));
@@ -202,6 +237,40 @@ describe("reprint flow", () => {
       if (table === "printer_profiles") {
         return {
           select: vi.fn(() => printerSelect)
+        };
+      }
+
+      if (table === "order_items") {
+        return {
+          select: vi.fn(() => orderItemsSelect)
+        };
+      }
+
+      if (table === "payments") {
+        return {
+          select: vi.fn(() => paymentsSelect)
+        };
+      }
+
+      if (table === "branches") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: branchMaybeSingle
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "users_profiles") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: cashierMaybeSingle
+            }))
+          }))
         };
       }
 

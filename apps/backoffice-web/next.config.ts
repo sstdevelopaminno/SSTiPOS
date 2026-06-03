@@ -11,6 +11,10 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  experimental: {
+    lockDistDir: false,
+    webpackBuildWorker: false
+  },
   transpilePackages: ["@pos/shared-types", "@pos/pos-domain", "@pos/ui"],
   images: {
     remotePatterns: [
