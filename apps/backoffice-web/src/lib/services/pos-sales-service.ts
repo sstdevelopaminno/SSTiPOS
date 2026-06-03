@@ -52,6 +52,9 @@ function parseOrderTxError(message: string) {
   if (message.includes("PGRST202") || message.includes("Could not find the function")) {
     return { code: "rpc_not_available", status: 500, message: "POS transaction function is unavailable (RPC not exposed)." };
   }
+  if (message.includes("column reference \"order_no\" is ambiguous") || message.includes("column reference 'order_no' is ambiguous")) {
+    return { code: "rpc_compatibility_error", status: 500, message: "POS transaction function is incompatible with the current order schema." };
+  }
   if (message.includes("INVALID_PRODUCT_ID") || message.includes("invalid input syntax for type uuid")) {
     return { code: "invalid_product_id", status: 422, message: "One or more product IDs are invalid." };
   }
@@ -989,7 +992,7 @@ export async function executeCreatePosOrderTransaction(args: {
         request_id: idempotencyKey ?? null
       }
     });
-    if (parsed.code === "rpc_not_available" || parsed.code === "missing_delivery_snapshot_columns") {
+    if (parsed.code === "rpc_not_available" || parsed.code === "rpc_compatibility_error" || parsed.code === "missing_delivery_snapshot_columns") {
       return executeCreatePosOrderDirectFallback({ auth, input, idempotencyKey });
     }
     if (parsed.code === "insufficient_stock" && shouldSoftBypassInsufficientStock(input.order_type)) {
