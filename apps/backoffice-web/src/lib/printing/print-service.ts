@@ -1,6 +1,7 @@
 import type {
   CreateManualDeliveryOrderInput,
   KitchenTicketTemplate,
+  PaymentMethod,
   PrintJob,
   PrintJobStatus,
   PrinterConnectionType,
@@ -672,11 +673,24 @@ export async function reprintOrderReceipt(auth: AuthContext, orderId: string, de
 
   const { data: orderRow, error: orderError } = await supabase
     .from("orders")
-    .select("id,order_no,total_amount,discount_amount,gp_amount,notes,created_by")
+    .select("id,order_no,subtotal,total_amount,grand_total,discount_amount,gp_amount,tax_total,notes,created_by,payment_completed_at,created_at")
     .eq("tenant_id", auth.tenantId!)
     .eq("branch_id", auth.branchId!)
     .eq("id", orderId)
-    .maybeSingle();
+    .maybeSingle<{
+      id: string;
+      order_no: string;
+      subtotal: number | null;
+      total_amount: number | null;
+      grand_total: number | null;
+      discount_amount: number | null;
+      gp_amount: number | null;
+      tax_total: number | null;
+      notes: string | null;
+      created_by: string | null;
+      payment_completed_at: string | null;
+      created_at: string;
+    }>();
 
   if (orderError) {
     throw new Error(orderError.message);
@@ -684,6 +698,49 @@ export async function reprintOrderReceipt(auth: AuthContext, orderId: string, de
   if (!orderRow) {
     throw new Error("order_not_found");
   }
+
+  const [itemsResult, paymentsResult, branchResult, cashierResult] = await Promise.all([
+    supabase
+      .from("order_items")
+      .select("product_id,name,quantity,unit_price,line_total")
+      .eq("tenant_id", auth.tenantId!)
+      .eq("branch_id", auth.branchId!)
+      .eq("order_id", orderId),
+    supabase
+      .from("payments")
+      .select("method,amount,created_at")
+      .eq("tenant_id", auth.tenantId!)
+      .eq("branch_id", auth.branchId!)
+      .eq("order_id", orderId)
+      .order("created_at", { ascending: false }),
+    supabase.from("branches").select("name").eq("tenant_id", auth.tenantId!).eq("id", auth.branchId!).maybeSingle<{ name: string | null }>(),
+    orderRow.created_by
+      ? supabase.from("users_profiles").select("full_name").eq("id", orderRow.created_by).maybeSingle<{ full_name: string | null }>()
+      : Promise.resolve({ data: null, error: null })
+  ]);
+
+  if (itemsResult.error) {
+    throw new Error(itemsResult.error.message);
+  }
+  if (paymentsResult.error) {
+    throw new Error(paymentsResult.error.message);
+  }
+  if (branchResult.error) {
+    throw new Error(branchResult.error.message);
+  }
+  if (cashierResult.error) {
+    throw new Error(cashierResult.error.message);
+  }
+
+  const receiptItems = (itemsResult.data ?? []).map((item) => ({
+    name: String(item.name ?? item.product_id ?? "Item"),
+    qty: Number(item.quantity ?? 0),
+    unit_price: Number(item.unit_price ?? 0),
+    line_total: Number(item.line_total ?? 0)
+  }));
+  const primaryPayment = (paymentsResult.data ?? [])[0] as { method?: string | null } | undefined;
+  const paymentMethod = primaryPayment?.method === "bank_transfer" ? "bank_transfer" : "cash";
+  const totalAmount = Number(orderRow.grand_total ?? orderRow.total_amount ?? 0);
 
   const receiptPrinters = await getEnabledPrintersByRole(auth, "receipt");
   const createdJobs: PrintJobRow[] = [];
@@ -693,16 +750,16 @@ export async function reprintOrderReceipt(auth: AuthContext, orderId: string, de
       {
         order_id: orderId,
         order_no: String(orderRow.order_no),
-        branch_name: "Branch POS",
-        cashier_name: String(orderRow.created_by ?? auth.userId),
-        paid_at_iso: nowIso(),
+        branch_name: String(branchResult.data?.name ?? "Branch POS"),
+        cashier_name: String(cashierResult.data?.full_name ?? orderRow.created_by ?? auth.userId),
+        paid_at_iso: orderRow.payment_completed_at ?? orderRow.created_at ?? nowIso(),
         currency: "THB",
-        items: [{ name: "Reprint copy", qty: 1, unit_price: 0, line_total: 0 }],
-        subtotal: Number(orderRow.total_amount ?? 0),
+        items: receiptItems.length > 0 ? receiptItems : [{ name: "Reprint copy", qty: 1, unit_price: 0, line_total: 0 }],
+        subtotal: Number(orderRow.subtotal ?? orderRow.total_amount ?? 0),
         discount_amount: Number(orderRow.discount_amount ?? 0),
-        tax_amount: 0,
-        total_amount: Number(orderRow.total_amount ?? 0) - Number(orderRow.discount_amount ?? 0) - Number(orderRow.gp_amount ?? 0),
-        payment_method: "cash",
+        tax_amount: Number(orderRow.tax_total ?? 0),
+        total_amount: totalAmount,
+        payment_method: paymentMethod as PaymentMethod,
         note: `Reprint for order ${orderRow.order_no}`
       },
       printer.paper_width_mm

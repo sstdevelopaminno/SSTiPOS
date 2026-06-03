@@ -123,7 +123,7 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
     >
       <div className={`${collapsed ? "flex justify-center" : ""}`}>
         <div
-          className={`relative overflow-hidden rounded-xl border border-white/10 bg-white/5 ${
+          className={`relative overflow-hidden ${
             collapsed ? "h-8 w-8" : "h-14 w-full"
           }`}
         >
@@ -195,7 +195,7 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
 
       <div className="mt-auto pt-4">
         {!collapsed ? (
-          <div className="rounded-2xl border border-white/20 bg-white/95 px-3 py-2 text-slate-900 shadow-lg shadow-slate-900/20">
+          <div className="px-1 py-1 text-slate-900">
             <LanguageSwitcher
               currentLanguage={lang}
               label={languageLabel}

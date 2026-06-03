@@ -10,21 +10,21 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: "/",
     display: "standalone",
     orientation: "portrait",
-    background_color: "#f4efe7",
-    theme_color: "#c15627",
+    background_color: "#071831",
+    theme_color: "#0f2a4a",
     icons: [
       {
-        src: "/brand/sst-ipos-logo-new.png",
+        src: "/icons/sstipos-icon-192.png",
         sizes: "192x192",
         type: "image/png"
       },
       {
-        src: "/brand/sst-ipos-logo-new.png",
+        src: "/icons/sstipos-icon-512.png",
         sizes: "512x512",
         type: "image/png"
       },
       {
-        src: "/brand/sst-ipos-logo-new.png",
+        src: "/icons/sstipos-icon-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable"

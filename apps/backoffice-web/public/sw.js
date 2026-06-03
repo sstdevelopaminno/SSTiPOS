@@ -1,5 +1,5 @@
-const CACHE_NAME = "sstipos-shell-v1";
-const ASSETS_TO_CACHE = ["/", "/manifest.webmanifest", "/brand/sst-ipos-logo-new.png"];
+const CACHE_NAME = "sstipos-shell-v2";
+const ASSETS_TO_CACHE = ["/", "/manifest.webmanifest", "/brand/sst-ipos-logo-new.png", "/icons/sstipos-icon-192.png", "/icons/sstipos-icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
