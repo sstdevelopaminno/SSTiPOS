@@ -10,6 +10,7 @@ type EmployeeRow = {
   full_name: string;
   is_active: boolean;
   role: BranchRole;
+  employee_code: string | null;
 };
 
 export type EmployeeIdentity = {
@@ -127,6 +128,35 @@ export function hasPermission(permissions: string[], permissionKey: string) {
   return permissions.includes(permissionKey);
 }
 
+function isMissingRelationError(error: { code?: string | null; message?: string | null } | null | undefined, relationName: string) {
+  if (!error) return false;
+  const code = String(error.code ?? "");
+  const message = String(error.message ?? "").toLowerCase();
+  return code === "42P01" || message.includes("does not exist") || message.includes(relationName.toLowerCase());
+}
+
+async function loadEmployeeCodes(tenantId: string, userIds: string[]) {
+  const supabase = getSupabaseServiceClient();
+  const codesByUser = new Map<string, string>();
+  if (!userIds.length) return codesByUser;
+
+  const { data, error } = await supabase
+    .from("pos_user_profiles")
+    .select("user_id,employee_code")
+    .eq("tenant_id", tenantId)
+    .in("user_id", userIds);
+
+  if (error) {
+    if (isMissingRelationError(error, "pos_user_profiles")) return codesByUser;
+    throw new Error(error.message);
+  }
+
+  for (const row of (data ?? []) as Array<{ user_id: string; employee_code: string | null }>) {
+    if (row.employee_code) codesByUser.set(row.user_id, normalizeEmpCandidate(row.employee_code));
+  }
+  return codesByUser;
+}
+
 export async function resolveEmployeeByCode(input: {
   tenantId: string;
   branchId: string;
@@ -153,6 +183,7 @@ export async function resolveEmployeeByCode(input: {
     users_profiles: { id: string; email: string; full_name: string; is_active: boolean } | Array<{ id: string; email: string; full_name: string; is_active: boolean }>;
   }>;
 
+  const codeByUser = await loadEmployeeCodes(input.tenantId, rows.map((row) => row.user_id));
   const employeeRows: EmployeeRow[] = rows
     .map((row) => {
       const profile = Array.isArray(row.users_profiles) ? row.users_profiles[0] : row.users_profiles;
@@ -162,18 +193,23 @@ export async function resolveEmployeeByCode(input: {
         email: profile.email,
         full_name: profile.full_name,
         is_active: profile.is_active,
-        role: row.role
+        role: row.role,
+        employee_code: codeByUser.get(profile.id) ?? null
       } satisfies EmployeeRow;
     })
     .filter((row): row is EmployeeRow => Boolean(row && row.is_active));
 
   const matched = employeeRows.find((row) => {
     const derived = deriveEmployeeCode(row.id);
+    const customCode = normalizeEmpCandidate(row.employee_code ?? "");
     const derivedDigits = normalizeEmpDigits(derived).slice(-6);
+    const customDigits = normalizeEmpDigits(customCode).slice(-6);
     const email = normalizeEmpCandidate(row.email);
     const emailLocalPart = email.includes("@") ? email.split("@")[0] : "";
     const userId = normalizeEmpCandidate(row.id);
 
+    if (customCode && codeCandidates.has(customCode)) return true;
+    if (customDigits && codeCandidates.has(customDigits)) return true;
     if (codeCandidates.has(derived)) return true;
     if (derivedDigits && codeCandidates.has(derivedDigits)) return true;
     if (userId && codeCandidates.has(userId)) return true;
@@ -188,7 +224,7 @@ export async function resolveEmployeeByCode(input: {
     userId: matched.id,
     fullName: matched.full_name,
     role: matched.role,
-    employeeCode: deriveEmployeeCode(matched.id),
+    employeeCode: matched.employee_code || deriveEmployeeCode(matched.id),
     permissions
   };
 }
@@ -222,11 +258,12 @@ export async function resolveEmployeeByUserId(input: {
   const profile = Array.isArray(data.users_profiles) ? data.users_profiles[0] : data.users_profiles;
   if (!profile || profile.is_active === false) return null;
 
+  const codeByUser = await loadEmployeeCodes(input.tenantId, [profile.id]);
   return {
     userId: profile.id,
     fullName: profile.full_name,
     role: data.role,
-    employeeCode: deriveEmployeeCode(profile.id),
+    employeeCode: codeByUser.get(profile.id) || deriveEmployeeCode(profile.id),
     permissions: roleToPermissions(data.role)
   };
 }
@@ -256,6 +293,7 @@ export async function resolveEmployeeByName(input: {
     users_profiles: { id: string; email: string; full_name: string; is_active: boolean } | Array<{ id: string; email: string; full_name: string; is_active: boolean }>;
   }>;
 
+  const codeByUser = await loadEmployeeCodes(input.tenantId, rows.map((row) => row.user_id));
   const employeeRows: EmployeeRow[] = rows
     .map((row) => {
       const profile = Array.isArray(row.users_profiles) ? row.users_profiles[0] : row.users_profiles;
@@ -265,7 +303,8 @@ export async function resolveEmployeeByName(input: {
         email: profile.email,
         full_name: profile.full_name,
         is_active: profile.is_active,
-        role: row.role
+        role: row.role,
+        employee_code: codeByUser.get(profile.id) ?? null
       } satisfies EmployeeRow;
     })
     .filter((row): row is EmployeeRow => Boolean(row && row.is_active));
@@ -281,7 +320,7 @@ export async function resolveEmployeeByName(input: {
       userId: matched.id,
       fullName: matched.full_name,
       role: matched.role,
-      employeeCode: deriveEmployeeCode(matched.id),
+      employeeCode: matched.employee_code || deriveEmployeeCode(matched.id),
       permissions: roleToPermissions(matched.role)
     }
   };

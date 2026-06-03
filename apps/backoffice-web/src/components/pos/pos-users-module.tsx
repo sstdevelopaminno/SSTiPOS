@@ -4,10 +4,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 type BranchRole = "owner" | "manager" | "staff" | "accountant";
+type ScopeMode = "all_devices" | "single_device";
 type Lang = "th" | "en";
+
+type Branch = {
+  id: string;
+  code: string;
+  name: string;
+};
 
 type Device = {
   id: string;
+  branch_id: string;
   device_code: string;
   device_name: string;
   status: string;
@@ -15,63 +23,76 @@ type Device = {
 
 type PosUser = {
   user_id: string;
+  branch_id: string;
+  branch_name: string;
+  branch_code: string;
   role: BranchRole;
+  permission_role: string;
+  position_title: string;
+  employee_code: string;
   full_name: string;
   email: string;
   is_active: boolean;
+  can_edit: boolean;
+  can_delete: boolean;
   device_scope: {
-    scope_mode: "all_devices" | "single_device";
+    scope_mode: ScopeMode;
     device_id: string | null;
   };
 };
 
 type UsersResponse = {
   items: PosUser[];
+  branches: Branch[];
   devices: Device[];
   metadata: {
     role: BranchRole;
-    manager_scope_staff_only: boolean;
+    user_id: string;
+    branch_id: string;
+    can_add: boolean;
+    can_delete: boolean;
   };
 };
 
 type FormState = {
   user_id: string | null;
+  branch_id: string;
   full_name: string;
   email: string;
+  employee_code: string;
+  position_title: string;
+  permission_role: string;
   role: BranchRole;
   is_active: boolean;
-  scope_mode: "all_devices" | "single_device";
+  scope_mode: ScopeMode;
   device_id: string;
   pin: string;
+  approval_pin: string;
 };
 
-const emptyForm: FormState = {
-  user_id: null,
-  full_name: "",
-  email: "",
-  role: "staff",
-  is_active: true,
-  scope_mode: "all_devices",
-  device_id: "",
-  pin: "",
-};
+const roleOptions: BranchRole[] = ["owner", "manager", "staff", "accountant"];
 
 const copy = {
   th: {
     title: "ผู้ใช้งาน POS",
-    subtitle: "จัดการผู้ใช้งาน สิทธิ์สาขา PIN และขอบเขตเครื่องที่ใช้งานได้",
+    subtitle: "จัดการรายชื่อผู้ใช้งาน รหัสพนักงาน บทบาทสิทธิ์ และสาขาที่ผูกกับระบบ",
     refresh: "รีเฟรช",
     add: "เพิ่มผู้ใช้งาน",
-    search: "ค้นหาชื่อหรืออีเมล",
+    search: "ค้นหาชื่อ อีเมล หรือรหัสพนักงาน",
+    allBranches: "ทุกสาขา",
     allRoles: "ทุกบทบาท",
     allStatus: "ทุกสถานะ",
     activeOnly: "เปิดใช้งาน",
     inactiveOnly: "ปิดใช้งาน",
     total: "ผู้ใช้งานทั้งหมด",
     active: "เปิดใช้งาน",
-    manager: "ผู้จัดการ",
+    managers: "ผู้จัดการ",
     staff: "พนักงาน",
+    employeeCode: "รหัสพนักงาน",
     name: "ชื่อ",
+    position: "ตำแหน่ง",
+    permissionRole: "บทบาทสิทธิ์",
+    branch: "สาขา",
     role: "บทบาท",
     status: "สถานะ",
     deviceScope: "ขอบเขตเครื่อง",
@@ -81,17 +102,17 @@ const copy = {
     save: "บันทึก",
     cancel: "ยกเลิก",
     close: "ปิด",
-    pin: "PIN ใหม่",
-    pinHint: "กรอกเมื่อต้องการตั้งหรือเปลี่ยน PIN",
+    pin: "PIN ผู้ใช้งาน",
+    approvalPin: "PIN ยืนยัน",
+    pinHint: "กรอกเมื่อต้องการตั้ง/เปลี่ยน PIN",
+    approvalPinHint: "PIN เจ้าของร้านหรือผู้จัดการสำหรับยืนยันรหัส",
     email: "อีเมล",
     fullName: "ชื่อผู้ใช้งาน",
     allDevices: "ทุกเครื่องในสาขา",
     specificDevice: "ระบุเครื่อง",
     chooseDevice: "เลือกเครื่อง",
     empty: "ยังไม่พบผู้ใช้งานตามเงื่อนไข",
-    ownerNote: "เจ้าของร้านสามารถเพิ่ม แก้ไข และลบผู้ใช้งานได้",
-    managerNote: "ผู้จัดการสามารถแก้ไขข้อมูลพนักงานได้ แต่ไม่สามารถเพิ่มหรือลบผู้ใช้งาน",
-    confirmDelete: "ยืนยันลบผู้ใช้งานนี้ออกจากสาขา?",
+    confirmDelete: "ยืนยันลบสิทธิ์ผู้ใช้งานนี้ออกจากสาขา?",
     addTitle: "เพิ่มผู้ใช้งาน",
     editTitle: "แก้ไขผู้ใช้งาน",
     saved: "บันทึกข้อมูลเรียบร้อย",
@@ -99,22 +120,29 @@ const copy = {
     loadError: "โหลดข้อมูลผู้ใช้งานไม่สำเร็จ",
     saveError: "บันทึกข้อมูลไม่สำเร็จ",
     deleteError: "ลบผู้ใช้งานไม่สำเร็จ",
+    accessOwner: "เจ้าของร้าน: เห็นทุกสาขา เพิ่ม แก้ไข และลบได้",
+    accessManager: "ผู้จัดการ: เห็นทุกสาขา เพิ่มผู้ใช้ได้ แก้ไขพนักงานได้ และลบไม่ได้",
   },
   en: {
     title: "POS users",
-    subtitle: "Manage branch users, roles, PINs, and device access.",
+    subtitle: "Manage users, employee codes, permission roles, and branch access.",
     refresh: "Refresh",
     add: "Add user",
-    search: "Search name or email",
+    search: "Search name, email, or employee code",
+    allBranches: "All branches",
     allRoles: "All roles",
     allStatus: "All status",
     activeOnly: "Active",
     inactiveOnly: "Inactive",
     total: "Total users",
     active: "Active",
-    manager: "Managers",
+    managers: "Managers",
     staff: "Staff",
+    employeeCode: "Employee code",
     name: "Name",
+    position: "Position",
+    permissionRole: "Permission role",
+    branch: "Branch",
     role: "Role",
     status: "Status",
     deviceScope: "Device scope",
@@ -124,17 +152,17 @@ const copy = {
     save: "Save",
     cancel: "Cancel",
     close: "Close",
-    pin: "New PIN",
-    pinHint: "Fill only when setting or changing PIN.",
+    pin: "User PIN",
+    approvalPin: "Approval PIN",
+    pinHint: "Fill only when setting/changing PIN",
+    approvalPinHint: "Owner or manager PIN for code confirmation",
     email: "Email",
     fullName: "Full name",
     allDevices: "All branch devices",
     specificDevice: "Specific device",
     chooseDevice: "Choose device",
     empty: "No users match the current filters.",
-    ownerNote: "Owners can add, edit, and delete users.",
-    managerNote: "Managers can edit staff users, but cannot add or delete users.",
-    confirmDelete: "Remove this user from the branch?",
+    confirmDelete: "Remove this user's access from the branch?",
     addTitle: "Add user",
     editTitle: "Edit user",
     saved: "User saved.",
@@ -142,6 +170,8 @@ const copy = {
     loadError: "Could not load users.",
     saveError: "Could not save user.",
     deleteError: "Could not delete user.",
+    accessOwner: "Owner: all branches, add, edit, and delete.",
+    accessManager: "Manager: all branches, can add and edit staff, cannot delete.",
   },
 } satisfies Record<Lang, Record<string, string>>;
 
@@ -167,9 +197,28 @@ const roleTone: Record<BranchRole, string> = {
   accountant: "border-violet-200 bg-violet-50 text-violet-700",
 };
 
+function buildEmptyForm(defaultBranchId: string): FormState {
+  return {
+    user_id: null,
+    branch_id: defaultBranchId,
+    full_name: "",
+    email: "",
+    employee_code: "",
+    position_title: "",
+    permission_role: "pos_user",
+    role: "staff",
+    is_active: true,
+    scope_mode: "all_devices",
+    device_id: "",
+    pin: "",
+    approval_pin: "",
+  };
+}
+
 export function PosUsersModule({ lang }: { lang: Lang }) {
   const t = copy[lang];
   const [items, setItems] = useState<PosUser[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [metadata, setMetadata] = useState<UsersResponse["metadata"] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -177,49 +226,48 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
+  const [branchFilter, setBranchFilter] = useState("all");
   const [roleFilter, setRoleFilter] = useState<"all" | BranchRole>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [form, setForm] = useState<FormState | null>(null);
 
   const currentRole = metadata?.role ?? "staff";
-  const canAddDelete = currentRole === "owner";
-  const canEdit = currentRole === "owner" || currentRole === "manager";
-  const canEditUser = useCallback(
-    (item: PosUser) => canEdit && (currentRole === "owner" || item.role !== "owner"),
-    [canEdit, currentRole]
-  );
+  const canAdd = Boolean(metadata?.can_add);
+  const canDelete = Boolean(metadata?.can_delete);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/pos/users", { cache: "no-store" });
-      const data = (await response.json()) as UsersResponse & { error?: string };
-      if (!response.ok) {
-        throw new Error(data.error || t.loadError);
-      }
-      setItems(data.items ?? []);
-      setDevices(data.devices ?? []);
-      setMetadata(data.metadata ?? null);
+      const params = new URLSearchParams();
+      if (branchFilter !== "all") params.set("branch_id", branchFilter);
+      const response = await fetch(`/api/pos/users?${params.toString()}`, { cache: "no-store" });
+      const payload = (await response.json()) as { data?: UsersResponse; error?: { message?: string } };
+      if (!response.ok || !payload.data) throw new Error(payload.error?.message || t.loadError);
+      setItems(payload.data.items ?? []);
+      setBranches(payload.data.branches ?? []);
+      setDevices(payload.data.devices ?? []);
+      setMetadata(payload.data.metadata ?? null);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : t.loadError);
     } finally {
       setLoading(false);
     }
-  }, [t.loadError]);
+  }, [branchFilter, t.loadError]);
 
   useEffect(() => {
     void loadUsers();
   }, [loadUsers]);
 
-  const stats = useMemo(() => {
-    return {
+  const stats = useMemo(
+    () => ({
       total: items.length,
       active: items.filter((item) => item.is_active).length,
       managers: items.filter((item) => item.role === "manager").length,
       staff: items.filter((item) => item.role === "staff").length,
-    };
-  }, [items]);
+    }),
+    [items]
+  );
 
   const filteredItems = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -227,7 +275,8 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
       const matchesQuery =
         !normalized ||
         item.full_name.toLowerCase().includes(normalized) ||
-        item.email.toLowerCase().includes(normalized);
+        item.email.toLowerCase().includes(normalized) ||
+        item.employee_code.toLowerCase().includes(normalized);
       const matchesRole = roleFilter === "all" || item.role === roleFilter;
       const matchesStatus =
         statusFilter === "all" ||
@@ -237,8 +286,15 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
     });
   }, [items, query, roleFilter, statusFilter]);
 
+  const branchDevices = useMemo(() => {
+    if (!form) return [];
+    return devices.filter((device) => device.branch_id === form.branch_id);
+  }, [devices, form]);
+
+  const deviceById = useMemo(() => new Map(devices.map((device) => [device.id, device])), [devices]);
+
   function openAdd() {
-    setForm(emptyForm);
+    setForm(buildEmptyForm(branchFilter !== "all" ? branchFilter : branches[0]?.id ?? metadata?.branch_id ?? ""));
     setNotice("");
     setError("");
   }
@@ -246,13 +302,18 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
   function openEdit(item: PosUser) {
     setForm({
       user_id: item.user_id,
+      branch_id: item.branch_id,
       full_name: item.full_name,
       email: item.email,
+      employee_code: item.employee_code,
+      position_title: item.position_title,
+      permission_role: item.permission_role,
       role: item.role,
       is_active: item.is_active,
       scope_mode: item.device_scope.scope_mode,
       device_id: item.device_scope.device_id ?? "",
       pin: "",
+      approval_pin: "",
     });
     setNotice("");
     setError("");
@@ -261,22 +322,14 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
   async function requestJson(url: string, init: RequestInit) {
     const response = await fetch(url, {
       ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(init.headers ?? {}),
-      },
+      headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
     });
-    const data = (await response.json().catch(() => ({}))) as { error?: string };
-    if (!response.ok) {
-      throw new Error(data.error || t.saveError);
-    }
-    return data;
+    const payload = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+    if (!response.ok) throw new Error(payload.error?.message || t.saveError);
   }
 
   async function saveForm() {
-    if (!form) {
-      return;
-    }
+    if (!form) return;
     setSaving(true);
     setError("");
     setNotice("");
@@ -285,10 +338,15 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
         await requestJson("/api/pos/users", {
           method: "POST",
           body: JSON.stringify({
+            branch_id: form.branch_id,
             full_name: form.full_name,
             email: form.email,
+            employee_code: form.employee_code,
+            position_title: form.position_title,
+            permission_role: form.permission_role,
             role: form.role,
             pin: form.pin,
+            approval_pin: form.approval_pin,
             is_active: form.is_active,
             scope_mode: form.scope_mode,
             device_id: form.scope_mode === "single_device" ? form.device_id : null,
@@ -300,24 +358,26 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
           body: JSON.stringify({
             action: "update_profile",
             user_id: form.user_id,
+            branch_id: form.branch_id,
             full_name: form.full_name,
             email: form.email,
+            employee_code: form.employee_code,
+            position_title: form.position_title,
+            permission_role: form.permission_role,
             role: form.role,
+            approval_pin: form.approval_pin,
           }),
         });
         await requestJson("/api/pos/users", {
           method: "PATCH",
-          body: JSON.stringify({
-            action: "set_active",
-            user_id: form.user_id,
-            is_active: form.is_active,
-          }),
+          body: JSON.stringify({ action: "set_active", user_id: form.user_id, branch_id: form.branch_id, is_active: form.is_active }),
         });
         await requestJson("/api/pos/users", {
           method: "PATCH",
           body: JSON.stringify({
             action: "set_device_scope",
             user_id: form.user_id,
+            branch_id: form.branch_id,
             scope_mode: form.scope_mode,
             device_id: form.scope_mode === "single_device" ? form.device_id : null,
           }),
@@ -328,7 +388,9 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
             body: JSON.stringify({
               action: "set_pin",
               user_id: form.user_id,
+              branch_id: form.branch_id,
               pin: form.pin,
+              approval_pin: form.approval_pin,
             }),
           });
         }
@@ -344,20 +406,14 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
   }
 
   async function deleteUser(item: PosUser) {
-    if (!window.confirm(t.confirmDelete)) {
-      return;
-    }
+    if (!window.confirm(t.confirmDelete)) return;
     setSaving(true);
     setError("");
     setNotice("");
     try {
-      const response = await fetch(`/api/pos/users?user_id=${encodeURIComponent(item.user_id)}`, {
+      await requestJson(`/api/pos/users?user_id=${encodeURIComponent(item.user_id)}&branch_id=${encodeURIComponent(item.branch_id)}`, {
         method: "DELETE",
       });
-      const data = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) {
-        throw new Error(data.error || t.deleteError);
-      }
       setNotice(t.deleted);
       await loadUsers();
     } catch (nextError) {
@@ -374,10 +430,8 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-600">SST iPOS</p>
             <h1 className="mt-1 text-2xl font-bold tracking-normal text-slate-950">{t.title}</h1>
-            <p className="mt-2 max-w-2xl text-sm text-slate-600">{t.subtitle}</p>
-            <p className="mt-3 inline-flex rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-              {canAddDelete ? t.ownerNote : t.managerNote}
-            </p>
+            <p className="mt-2 max-w-3xl text-sm text-slate-600">{t.subtitle}</p>
+            <p className="mt-2 text-xs font-semibold text-slate-500">{currentRole === "owner" ? t.accessOwner : t.accessManager}</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -388,12 +442,8 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
             >
               {t.refresh}
             </button>
-            {canAddDelete ? (
-              <button
-                type="button"
-                onClick={openAdd}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-              >
+            {canAdd ? (
+              <button type="button" onClick={openAdd} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">
                 + {t.add}
               </button>
             ) : null}
@@ -403,83 +453,86 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
         <div className="grid gap-3 md:grid-cols-4">
           <StatCard label={t.total} value={stats.total} />
           <StatCard label={t.active} value={stats.active} />
-          <StatCard label={t.manager} value={stats.managers} />
+          <StatCard label={t.managers} value={stats.managers} />
           <StatCard label={t.staff} value={stats.staff} />
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="grid gap-3 border-b border-slate-200 p-4 lg:grid-cols-[1fr_180px_180px]">
+          <div className="grid gap-3 border-b border-slate-200 p-4 xl:grid-cols-[1fr_220px_180px_180px]">
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={t.search}
               className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
             />
-            <select
-              value={roleFilter}
-              onChange={(event) => setRoleFilter(event.target.value as "all" | BranchRole)}
-              className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-            >
+            <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)} className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+              <option value="all">{t.allBranches}</option>
+              {branches.map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name} {branch.code ? `(${branch.code})` : ""}
+                </option>
+              ))}
+            </select>
+            <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as "all" | BranchRole)} className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
               <option value="all">{t.allRoles}</option>
-              {(["owner", "manager", "staff", "accountant"] as BranchRole[]).map((role) => (
+              {roleOptions.map((role) => (
                 <option key={role} value={role}>
                   {roleLabels[lang][role]}
                 </option>
               ))}
             </select>
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as "all" | "active" | "inactive")}
-              className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-            >
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | "active" | "inactive")} className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
               <option value="all">{t.allStatus}</option>
               <option value="active">{t.activeOnly}</option>
               <option value="inactive">{t.inactiveOnly}</option>
             </select>
           </div>
 
-          {error ? (
-            <div className="mx-4 mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-              {error}
-            </div>
-          ) : null}
-          {notice ? (
-            <div className="mx-4 mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-              {notice}
-            </div>
-          ) : null}
+          {error ? <div className="mx-4 mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div> : null}
+          {notice ? <div className="mx-4 mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{notice}</div> : null}
 
           <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
+            <table className="min-w-[1240px] text-left text-sm">
               <thead className="bg-slate-100 text-xs font-bold uppercase text-slate-500">
                 <tr>
+                  <th className="px-4 py-3">{t.employeeCode}</th>
                   <th className="px-4 py-3">{t.name}</th>
+                  <th className="px-4 py-3">{t.position}</th>
+                  <th className="px-4 py-3">{t.permissionRole}</th>
+                  <th className="px-4 py-3">{t.branch}</th>
+                  <th className="px-4 py-3">{t.chooseDevice}</th>
                   <th className="px-4 py-3">{t.role}</th>
                   <th className="px-4 py-3">{t.status}</th>
-                  <th className="px-4 py-3">{t.deviceScope}</th>
                   <th className="px-4 py-3 text-right">{t.actions}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td className="px-4 py-10 text-center text-slate-500" colSpan={5}>
+                    <td className="px-4 py-10 text-center text-slate-500" colSpan={9}>
                       Loading...
                     </td>
                   </tr>
                 ) : filteredItems.length ? (
                   filteredItems.map((item) => (
-                    <tr key={item.user_id} className="bg-white hover:bg-slate-50">
+                    <tr key={`${item.branch_id}:${item.user_id}`} className="bg-white hover:bg-slate-50">
+                      <td className="px-4 py-4 font-bold text-slate-900">{item.employee_code}</td>
                       <td className="px-4 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="grid h-10 w-10 place-items-center rounded-md bg-slate-900 text-sm font-bold text-white">
-                            {getInitials(item.full_name)}
-                          </div>
-                          <div>
-                            <div className="font-bold text-slate-950">{item.full_name}</div>
-                            <div className="text-xs text-slate-500">{item.email}</div>
-                          </div>
-                        </div>
+                        <div className="font-bold text-slate-950">{item.full_name}</div>
+                        <div className="text-xs text-slate-500">{item.email}</div>
+                      </td>
+                      <td className="px-4 py-4 font-semibold text-slate-700">{item.position_title || "-"}</td>
+                      <td className="px-4 py-4 font-semibold text-slate-700">{item.permission_role}</td>
+                      <td className="px-4 py-4">
+                        <div className="font-semibold text-slate-900">{item.branch_name}</div>
+                        <div className="text-xs text-slate-500">{item.branch_code}</div>
+                      </td>
+                      <td className="px-4 py-4 font-semibold text-slate-700">
+                        {item.device_scope.scope_mode === "all_devices"
+                          ? t.allDevices
+                          : deviceById.get(item.device_scope.device_id ?? "")?.device_name ||
+                            deviceById.get(item.device_scope.device_id ?? "")?.device_code ||
+                            "-"}
                       </td>
                       <td className="px-4 py-4">
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${roleTone[item.role]}`}>
@@ -487,37 +540,19 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
                         </span>
                       </td>
                       <td className="px-4 py-4">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${
-                            item.is_active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
-                          }`}
-                        >
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${item.is_active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
                           {item.is_active ? t.activeOnly : t.inactiveOnly}
                         </span>
                       </td>
-                      <td className="px-4 py-4 font-semibold text-slate-700">
-                        {item.device_scope.scope_mode === "all_devices"
-                          ? t.allDevices
-                          : devices.find((device) => device.id === item.device_scope.device_id)?.device_name ?? "-"}
-                      </td>
                       <td className="px-4 py-4">
                         <div className="flex justify-end gap-2">
-                          {canEditUser(item) ? (
-                            <button
-                              type="button"
-                              onClick={() => openEdit(item)}
-                              className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"
-                            >
+                          {item.can_edit ? (
+                            <button type="button" onClick={() => openEdit(item)} className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">
                               {t.edit}
                             </button>
                           ) : null}
-                          {canAddDelete ? (
-                            <button
-                              type="button"
-                              onClick={() => void deleteUser(item)}
-                              disabled={saving}
-                              className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-60"
-                            >
+                          {canDelete && item.can_delete ? (
+                            <button type="button" onClick={() => void deleteUser(item)} disabled={saving} className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-60">
                               {t.delete}
                             </button>
                           ) : null}
@@ -527,7 +562,7 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
                   ))
                 ) : (
                   <tr>
-                    <td className="px-4 py-12 text-center text-slate-500" colSpan={5}>
+                    <td className="px-4 py-12 text-center text-slate-500" colSpan={9}>
                       {t.empty}
                     </td>
                   </tr>
@@ -540,80 +575,69 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
 
       {form ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6">
-          <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white shadow-2xl">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
               <div>
                 <h2 className="text-lg font-bold text-slate-950">{form.user_id ? t.editTitle : t.addTitle}</h2>
-                <p className="mt-1 text-sm text-slate-500">{canAddDelete ? t.ownerNote : t.managerNote}</p>
+                <p className="mt-1 text-sm text-slate-500">{t.subtitle}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setForm(null)}
-                className="rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
+              <button type="button" onClick={() => setForm(null)} className="rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                 {t.close}
               </button>
             </div>
 
             <div className="grid gap-4 p-5 md:grid-cols-2">
-              <Field label={t.fullName}>
-                <input
-                  value={form.full_name}
-                  onChange={(event) => setForm({ ...form, full_name: event.target.value })}
-                  className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                />
-              </Field>
-              <Field label={t.email}>
-                <input
-                  value={form.email}
-                  onChange={(event) => setForm({ ...form, email: event.target.value })}
-                  className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                />
-              </Field>
-              <Field label={t.role}>
-                <select
-                  value={form.role}
-                  onChange={(event) => setForm({ ...form, role: event.target.value as BranchRole })}
-                  disabled={!canAddDelete}
-                  className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100"
-                >
-                  {(["owner", "manager", "staff", "accountant"] as BranchRole[]).map((role) => (
-                    <option key={role} value={role}>
-                      {roleLabels[lang][role]}
+              <Field label={t.branch}>
+                <select value={form.branch_id} onChange={(event) => setForm({ ...form, branch_id: event.target.value, device_id: "" })} disabled={Boolean(form.user_id)} className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100">
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name} {branch.code ? `(${branch.code})` : ""}
                     </option>
                   ))}
                 </select>
               </Field>
+              <Field label={t.employeeCode}>
+                <input value={form.employee_code} onChange={(event) => setForm({ ...form, employee_code: event.target.value.toUpperCase() })} className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+              </Field>
+              <Field label={t.fullName}>
+                <input value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+              </Field>
+              <Field label={t.email}>
+                <input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+              </Field>
+              <Field label={t.position}>
+                <input value={form.position_title} onChange={(event) => setForm({ ...form, position_title: event.target.value })} className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+              </Field>
+              <Field label={t.permissionRole}>
+                <input value={form.permission_role} onChange={(event) => setForm({ ...form, permission_role: event.target.value })} className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+              </Field>
+              <Field label={t.role}>
+                <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as BranchRole })} disabled={currentRole !== "owner" && (form.role === "owner" || form.role === "manager")} className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100">
+                  {roleOptions
+                    .filter((role) => currentRole === "owner" || (role !== "owner" && role !== "manager"))
+                    .map((role) => (
+                      <option key={role} value={role}>
+                        {roleLabels[lang][role]}
+                      </option>
+                    ))}
+                </select>
+              </Field>
               <Field label={t.status}>
                 <label className="flex h-11 items-center gap-3 rounded-md border border-slate-200 px-3 text-sm font-semibold">
-                  <input
-                    type="checkbox"
-                    checked={form.is_active}
-                    onChange={(event) => setForm({ ...form, is_active: event.target.checked })}
-                    className="h-4 w-4"
-                  />
+                  <input type="checkbox" checked={form.is_active} onChange={(event) => setForm({ ...form, is_active: event.target.checked })} className="h-4 w-4" />
                   {form.is_active ? t.activeOnly : t.inactiveOnly}
                 </label>
               </Field>
               <Field label={t.deviceScope}>
-                <select
-                  value={form.scope_mode}
-                  onChange={(event) => setForm({ ...form, scope_mode: event.target.value as "all_devices" | "single_device" })}
-                  className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                >
+                <select value={form.scope_mode} onChange={(event) => setForm({ ...form, scope_mode: event.target.value as ScopeMode })} className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
                   <option value="all_devices">{t.allDevices}</option>
                   <option value="single_device">{t.specificDevice}</option>
                 </select>
               </Field>
               <Field label={t.chooseDevice}>
-                <select
-                  value={form.device_id}
-                  onChange={(event) => setForm({ ...form, device_id: event.target.value })}
-                  disabled={form.scope_mode !== "single_device"}
-                  className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100"
-                >
+                <select value={form.device_id} onChange={(event) => setForm({ ...form, device_id: event.target.value })} disabled={form.scope_mode !== "single_device"} className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100">
                   <option value="">-</option>
-                  {devices.map((device) => (
+                  {branchDevices.map((device) => (
                     <option key={device.id} value={device.id}>
                       {device.device_name || device.device_code}
                     </option>
@@ -621,29 +645,18 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
                 </select>
               </Field>
               <Field label={t.pin}>
-                <input
-                  value={form.pin}
-                  onChange={(event) => setForm({ ...form, pin: event.target.value })}
-                  placeholder={t.pinHint}
-                  className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                />
+                <input value={form.pin} onChange={(event) => setForm({ ...form, pin: event.target.value })} placeholder={t.pinHint} className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+              </Field>
+              <Field label={t.approvalPin}>
+                <input value={form.approval_pin} onChange={(event) => setForm({ ...form, approval_pin: event.target.value })} placeholder={t.approvalPinHint} className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
               </Field>
             </div>
 
             <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
-              <button
-                type="button"
-                onClick={() => setForm(null)}
-                className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
+              <button type="button" onClick={() => setForm(null)} className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                 {t.cancel}
               </button>
-              <button
-                type="button"
-                onClick={() => void saveForm()}
-                disabled={saving}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-              >
+              <button type="button" onClick={() => void saveForm()} disabled={saving} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
                 {saving ? "Saving..." : t.save}
               </button>
             </div>
@@ -670,10 +683,4 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       {children}
     </label>
   );
-}
-
-function getInitials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "");
-  return initials.join("") || "U";
 }
