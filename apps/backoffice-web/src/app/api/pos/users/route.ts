@@ -79,6 +79,17 @@ function deriveEmployeeCode(userId: string) {
   return `EMP-${normalized.slice(-6)}`;
 }
 
+function deriveDemoEmployeeCode(input: { userId: string; email: string; role: BranchRole }) {
+  const email = String(input.email ?? "").toLowerCase();
+  const isDemoUser = email.endsWith(".local") || email.endsWith("@demo.local");
+  if (!isDemoUser) return null;
+  if (input.role === "owner" && (email.startsWith("owner@") || email.startsWith("owner."))) return "182536";
+  const suffix = String(input.userId).replace(/-/g, "").slice(-6).toUpperCase();
+  if (input.role === "manager") return `MGR-${suffix}`;
+  if (input.role === "accountant") return `ACC-${suffix}`;
+  return `STF-${suffix}`;
+}
+
 function normalizeEmployeeCode(value: string) {
   return String(value ?? "")
     .trim()
@@ -270,14 +281,16 @@ export async function GET(request: Request) {
       const scope = scopeByKey.get(`${row.branch_id}:${row.user_id}`);
       const settings = settingsByUser.get(row.user_id);
       const branch = branchById.get(row.branch_id);
-      const employeeCode = normalizeEmployeeCode(settings?.employee_code ?? "") || deriveEmployeeCode(row.user_id);
+      const role = normalizeRole(row.role);
+      const demoEmployeeCode = deriveDemoEmployeeCode({ userId: row.user_id, email: profile?.email ?? "", role });
+      const employeeCode = normalizeEmployeeCode(settings?.employee_code ?? "") || demoEmployeeCode || deriveEmployeeCode(row.user_id);
       return {
         user_id: row.user_id,
         branch_id: row.branch_id,
         branch_name: branch?.name ?? row.branch_id,
         branch_code: branch?.code ?? "",
-        role: normalizeRole(row.role),
-        permission_role: normalizePermissionRole(settings?.permission_role, normalizeRole(row.role)),
+        role,
+        permission_role: normalizePermissionRole(settings?.permission_role, role),
         position_title: settings?.position_title ?? "",
         employee_code: employeeCode,
         is_default: row.is_default,
@@ -288,7 +301,7 @@ export async function GET(request: Request) {
           actorRole: auth.branchRole,
           actorUserId: auth.userId,
           targetUserId: row.user_id,
-          targetRole: normalizeRole(row.role)
+          targetRole: role
         }),
         can_delete: canActorDelete(auth.branchRole) && auth.userId !== row.user_id,
         device_scope: {
@@ -349,7 +362,13 @@ export async function PATCH(request: Request) {
       const email = String(payload.email ?? "").trim().toLowerCase();
       const requestedRole = normalizeRole(String(payload.role ?? targetRole));
       const nextRole = normalizeManagerRoleChange(auth.branchRole, requestedRole, targetRole);
-      const employeeCode = normalizeEmployeeCode(payload.employee_code ?? "") || deriveEmployeeCode(userId);
+      const currentSettings = await loadProfileSettings(auth.tenantId!, [userId]);
+      const { data: profileForCode, error: profileForCodeError } = await supabase.from("users_profiles").select("email").eq("id", userId).maybeSingle<{ email: string | null }>();
+      if (profileForCodeError) return fail("user_profile_lookup_failed", profileForCodeError.message, 500);
+      const demoEmployeeCode = deriveDemoEmployeeCode({ userId, email: profileForCode?.email ?? "", role: targetRole });
+      const currentEmployeeCode = normalizeEmployeeCode(currentSettings.get(userId)?.employee_code ?? "") || demoEmployeeCode || deriveEmployeeCode(userId);
+      const employeeCode = normalizeEmployeeCode(payload.employee_code ?? "") || currentEmployeeCode;
+      const employeeCodeChanged = employeeCode !== currentEmployeeCode;
       const positionTitle = String(payload.position_title ?? "").trim();
       const permissionRole = normalizePermissionRole(payload.permission_role, nextRole);
 
@@ -357,8 +376,8 @@ export async function PATCH(request: Request) {
         return fail("invalid_profile", "Full name and valid email are required.", 422);
       }
 
-      const pinApproval = await requirePinIfProvided({ pin: payload.approval_pin, tenantId: auth.tenantId!, branchId });
-      if (payload.employee_code && !pinApproval.approved) {
+      const pinApproval = employeeCodeChanged ? await requirePinIfProvided({ pin: payload.approval_pin, tenantId: auth.tenantId!, branchId }) : { approved: true };
+      if (employeeCodeChanged && !pinApproval.approved) {
         return fail("approval_pin_required", "PIN approval is required to update employee code.", 403);
       }
 

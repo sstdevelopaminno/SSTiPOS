@@ -34,7 +34,7 @@ type PopupState =
   | { type: "loading"; message: string }
   | { type: "error"; message: string };
 
-const AUTH_REQUEST_TIMEOUT_MS = 15000;
+const AUTH_REQUEST_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 60000 : 15000;
 
 function statusLabel(status: DeviceItem["status"]) {
   if (status === "ready") return "พร้อมใช้งาน";

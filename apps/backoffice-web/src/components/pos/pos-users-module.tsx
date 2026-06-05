@@ -71,12 +71,17 @@ type FormState = {
 };
 
 const roleOptions: BranchRole[] = ["owner", "manager", "staff", "accountant"];
+const USER_ROWS_PER_PAGE = 10;
 
 const copy = {
   th: {
     title: "ผู้ใช้งาน POS",
-    subtitle: "จัดการรายชื่อผู้ใช้งาน รหัสพนักงาน บทบาทสิทธิ์ และสาขาที่ผูกกับระบบ",
+    subtitle: "",
     refresh: "รีเฟรช",
+    filter: "คัดกรอง",
+    filterTitle: "คัดกรองผู้ใช้งาน",
+    previousPage: "ก่อนหน้า",
+    nextPage: "หน้าถัดไป",
     add: "เพิ่มผู้ใช้งาน",
     search: "ค้นหาชื่อ อีเมล หรือรหัสพนักงาน",
     allBranches: "ทุกสาขา",
@@ -120,13 +125,17 @@ const copy = {
     loadError: "โหลดข้อมูลผู้ใช้งานไม่สำเร็จ",
     saveError: "บันทึกข้อมูลไม่สำเร็จ",
     deleteError: "ลบผู้ใช้งานไม่สำเร็จ",
-    accessOwner: "เจ้าของร้าน: เห็นทุกสาขา เพิ่ม แก้ไข และลบได้",
+    accessOwner: "",
     accessManager: "ผู้จัดการ: เห็นทุกสาขา เพิ่มผู้ใช้ได้ แก้ไขพนักงานได้ และลบไม่ได้",
   },
   en: {
     title: "POS users",
-    subtitle: "Manage users, employee codes, permission roles, and branch access.",
+    subtitle: "",
     refresh: "Refresh",
+    filter: "Filter",
+    filterTitle: "Filter users",
+    previousPage: "Previous",
+    nextPage: "Next",
     add: "Add user",
     search: "Search name, email, or employee code",
     allBranches: "All branches",
@@ -170,7 +179,7 @@ const copy = {
     loadError: "Could not load users.",
     saveError: "Could not save user.",
     deleteError: "Could not delete user.",
-    accessOwner: "Owner: all branches, add, edit, and delete.",
+    accessOwner: "",
     accessManager: "Manager: all branches, can add and edit staff, cannot delete.",
   },
 } satisfies Record<Lang, Record<string, string>>;
@@ -215,7 +224,7 @@ function buildEmptyForm(defaultBranchId: string): FormState {
   };
 }
 
-export function PosUsersModule({ lang }: { lang: Lang }) {
+export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang; embedded?: boolean; onBack?: () => void }) {
   const t = copy[lang];
   const [items, setItems] = useState<PosUser[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -230,6 +239,8 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
   const [roleFilter, setRoleFilter] = useState<"all" | BranchRole>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [form, setForm] = useState<FormState | null>(null);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const currentRole = metadata?.role ?? "staff";
   const canAdd = Boolean(metadata?.can_add);
@@ -285,6 +296,24 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
       return matchesQuery && matchesRole && matchesStatus;
     });
   }, [items, query, roleFilter, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / USER_ROWS_PER_PAGE));
+  const paginatedItems = useMemo(() => {
+    const startIndex = (currentPage - 1) * USER_ROWS_PER_PAGE;
+    return filteredItems.slice(startIndex, startIndex + USER_ROWS_PER_PAGE);
+  }, [currentPage, filteredItems]);
+  const pageStart = filteredItems.length ? (currentPage - 1) * USER_ROWS_PER_PAGE + 1 : 0;
+  const pageEnd = Math.min(currentPage * USER_ROWS_PER_PAGE, filteredItems.length);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, branchFilter, roleFilter, statusFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const branchDevices = useMemo(() => {
     if (!form) return [];
@@ -424,16 +453,32 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
   }
 
   return (
-    <section className="min-h-screen bg-slate-50 px-5 py-6 text-slate-950 lg:px-8">
-      <div className="mx-auto max-w-[1440px] space-y-5">
+    <section className={embedded ? "space-y-5 text-slate-950" : "min-h-screen bg-slate-50 px-5 py-6 text-slate-950 lg:px-8"}>
+      <div className={embedded ? "space-y-5" : "mx-auto max-w-[1440px] space-y-5"}>
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-600">SST iPOS</p>
             <h1 className="mt-1 text-2xl font-bold tracking-normal text-slate-950">{t.title}</h1>
-            <p className="mt-2 max-w-3xl text-sm text-slate-600">{t.subtitle}</p>
-            <p className="mt-2 text-xs font-semibold text-slate-500">{currentRole === "owner" ? t.accessOwner : t.accessManager}</p>
+            {t.subtitle ? <p className="mt-2 max-w-3xl text-sm text-slate-600">{t.subtitle}</p> : null}
+            {currentRole !== "owner" ? <p className="mt-2 text-xs font-semibold text-slate-500">{t.accessManager}</p> : null}
           </div>
           <div className="flex items-center gap-2">
+            {onBack ? (
+              <button
+                type="button"
+                onClick={onBack}
+                className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:border-blue-200 hover:text-blue-700"
+              >
+                {lang === "en" ? "Back" : "ย้อนกลับ"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setIsFilterOpen(true)}
+              className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:border-blue-200 hover:text-blue-700"
+            >
+              {t.filter}
+            </button>
             <button
               type="button"
               onClick={() => void loadUsers()}
@@ -458,36 +503,6 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="grid gap-3 border-b border-slate-200 p-4 xl:grid-cols-[1fr_220px_180px_180px]">
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t.search}
-              className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-            />
-            <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)} className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
-              <option value="all">{t.allBranches}</option>
-              {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name} {branch.code ? `(${branch.code})` : ""}
-                </option>
-              ))}
-            </select>
-            <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as "all" | BranchRole)} className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
-              <option value="all">{t.allRoles}</option>
-              {roleOptions.map((role) => (
-                <option key={role} value={role}>
-                  {roleLabels[lang][role]}
-                </option>
-              ))}
-            </select>
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | "active" | "inactive")} className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
-              <option value="all">{t.allStatus}</option>
-              <option value="active">{t.activeOnly}</option>
-              <option value="inactive">{t.inactiveOnly}</option>
-            </select>
-          </div>
-
           {error ? <div className="mx-4 mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div> : null}
           {notice ? <div className="mx-4 mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{notice}</div> : null}
 
@@ -514,7 +529,7 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
                     </td>
                   </tr>
                 ) : filteredItems.length ? (
-                  filteredItems.map((item) => (
+                  paginatedItems.map((item) => (
                     <tr key={`${item.branch_id}:${item.user_id}`} className="bg-white hover:bg-slate-50">
                       <td className="px-4 py-4 font-bold text-slate-900">{item.employee_code}</td>
                       <td className="px-4 py-4">
@@ -570,8 +585,86 @@ export function PosUsersModule({ lang }: { lang: Lang }) {
               </tbody>
             </table>
           </div>
+          {!loading && filteredItems.length > USER_ROWS_PER_PAGE ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600">
+              <span>
+                {lang === "en"
+                  ? `Showing ${pageStart}-${pageEnd} of ${filteredItems.length} users`
+                  : `แสดง ${pageStart}-${pageEnd} จาก ${filteredItems.length} รายการ`}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  disabled={currentPage === 1}
+                  className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {t.previousPage}
+                </button>
+                <span className="min-w-20 text-center text-slate-700">
+                  {lang === "en" ? `Page ${currentPage} / ${totalPages}` : `หน้า ${currentPage} / ${totalPages}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                  disabled={currentPage === totalPages}
+                  className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {t.nextPage}
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
+
+      {isFilterOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6" onClick={() => setIsFilterOpen(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pos-users-filter-title"
+            className="w-full max-w-3xl rounded-lg border border-slate-200 bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+              <h2 id="pos-users-filter-title" className="text-lg font-bold text-slate-950">{t.filterTitle}</h2>
+              <button type="button" onClick={() => setIsFilterOpen(false)} className="rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                {t.close}
+              </button>
+            </div>
+            <div className="grid gap-3 p-5 md:grid-cols-2">
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t.search}
+                className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 md:col-span-2"
+              />
+              <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)} className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+                <option value="all">{t.allBranches}</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name} {branch.code ? `(${branch.code})` : ""}
+                  </option>
+                ))}
+              </select>
+              <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as "all" | BranchRole)} className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+                <option value="all">{t.allRoles}</option>
+                {roleOptions.map((role) => (
+                  <option key={role} value={role}>
+                    {roleLabels[lang][role]}
+                  </option>
+                ))}
+              </select>
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | "active" | "inactive")} className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+                <option value="all">{t.allStatus}</option>
+                <option value="active">{t.activeOnly}</option>
+                <option value="inactive">{t.inactiveOnly}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {form ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6">

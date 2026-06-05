@@ -70,6 +70,8 @@ type Props = {
   quickMode: QuickMode;
   receiptLogoPath: string;
   receiptStoreName: string;
+  receiptStoreAddress: string;
+  receiptStorePhone: string;
   receiptBranchLabel: string;
   takeawayCreatingPreview: TakeawayCreatingPreview | null;
   reviewOrder: CheckoutReviewOrder | null;
@@ -95,6 +97,9 @@ type Props = {
   promptPayQrUrl: string | null;
   promptPayPhone: string;
   promptPayPhoneDisplay: string;
+  promptPayLocked: boolean;
+  promptPayQrMode: "promptpay_link" | "qr_image";
+  paymentAccountLabel: string;
   expectedPayeeName: string;
   transferVerificationHistory: TransferVerification[];
   cashReceivedInput: string;
@@ -150,6 +155,8 @@ export function PosPaymentModals({
   quickMode,
   receiptLogoPath,
   receiptStoreName,
+  receiptStoreAddress,
+  receiptStorePhone,
   receiptBranchLabel,
   takeawayCreatingPreview,
   reviewOrder,
@@ -175,6 +182,9 @@ export function PosPaymentModals({
   promptPayQrUrl,
   promptPayPhone,
   promptPayPhoneDisplay,
+  promptPayLocked,
+  promptPayQrMode,
+  paymentAccountLabel,
   expectedPayeeName,
   transferVerificationHistory,
   cashReceivedInput,
@@ -443,6 +453,7 @@ export function PosPaymentModals({
                 </div>
                 <h4 className="posui-transfer-section-title">{text.transferQrTitle}</h4>
                 <p className="posui-transfer-section-hint">{text.transferQrHint}</p>
+                {paymentAccountLabel ? <p className="posui-transfer-section-hint">{paymentAccountLabel}</p> : null}
                 {promptPayQrUrl ? (
                   <div className="posui-transfer-qr-box">
                     <Image src={promptPayQrUrl} alt="PromptPay QR" className="posui-transfer-qr-image" width={320} height={320} unoptimized />
@@ -450,7 +461,7 @@ export function PosPaymentModals({
                 ) : (
                   <p className="posui-payment-modal__error">{lang === "th" ? "ยังไม่ได้ตั้งค่าเบอร์พร้อมเพย์" : "PromptPay phone is not configured."}</p>
                 )}
-                <label className="posui-payment-modal__input-label" htmlFor="transfer-promptpay-phone">
+                <label className={`posui-payment-modal__input-label ${promptPayQrMode === "qr_image" ? "hidden" : ""}`} htmlFor="transfer-promptpay-phone">
                   {text.transferPromptPayPhoneLabel}
                   <input
                     id="transfer-promptpay-phone"
@@ -459,11 +470,11 @@ export function PosPaymentModals({
                     onChange={(event) => onPromptPayPhoneChange(event.target.value)}
                     placeholder="0843374982"
                     inputMode="numeric"
-                    disabled={transferSubmitting || transferSlipChecking}
+                    disabled={promptPayLocked || transferSubmitting || transferSlipChecking}
                     autoComplete="off"
                   />
                 </label>
-                <p className="posui-transfer-phone-readonly">{promptPayPhoneDisplay || "-"}</p>
+                {promptPayQrMode === "promptpay_link" ? <p className="posui-transfer-phone-readonly">{promptPayPhoneDisplay || "-"}</p> : null}
                 <p className="posui-transfer-mobile-hint">{text.transferScanWithPhone}</p>
               </section>
               <section className="posui-transfer-slip-panel">
@@ -609,8 +620,10 @@ export function PosPaymentModals({
             </header>
             <article className="posui-receipt-card-preview" aria-label={text.receiptTitle}>
               <header className="posui-receipt-card-preview__head">
-                <Image src={receiptLogoPath} alt="System logo" className="posui-receipt-card-preview__logo" width={196} height={78} unoptimized />
+                <Image src={receiptLogoPath} alt="Receipt logo" className="posui-receipt-card-preview__logo" width={196} height={78} unoptimized />
                 <h4>{receiptStoreName}</h4>
+                {receiptStoreAddress ? <p>{receiptStoreAddress}</p> : null}
+                {receiptStorePhone ? <p>{receiptStorePhone}</p> : null}
                 <p>{receiptBranchLabel}</p>
               </header>
               <div className="posui-receipt-card-preview__divider" />

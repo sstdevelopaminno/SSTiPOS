@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-05-28T05:46:09.077Z",
+  "generatedAt": "2026-06-04T19:34:33.729Z",
   "config": {
-    "loginBaseUrl": "http://localhost:3001/login/store",
+    "loginBaseUrl": "http://localhost:3000/login/store",
     "posPreviewUrl": "http://localhost:3000/preview/pos",
-    "storeCode": "NDL-TH-001",
-    "employeeCode": "EMP-000101",
-    "preferredBranch": "",
+    "storeCode": "BBQ-TH-002",
+    "employeeCode": "182536",
+    "preferredBranch": "BBQ Lab Ladprao",
     "preferredDevice": "",
     "headless": true
   },
@@ -15,7 +15,7 @@
       "result": "passed",
       "steps": [
         {
-          "at": "2026-05-28T05:46:18.115Z",
+          "at": "2026-06-04T19:34:33.864Z",
           "name": "api_store_verify_warmup",
           "ok": true,
           "status": 400
@@ -28,133 +28,126 @@
       "result": "passed",
       "steps": [
         {
-          "at": "2026-05-28T05:46:31.725Z",
+          "at": "2026-06-04T19:34:36.158Z",
           "name": "open_login_store",
           "ok": true,
-          "url": "http://localhost:3001/login/store"
+          "url": "http://localhost:3000/login/store"
         },
         {
-          "at": "2026-05-28T05:46:35.572Z",
+          "at": "2026-06-04T19:34:38.175Z",
           "name": "screenshot",
           "ok": true,
           "file": "01-login-store.png"
         },
         {
-          "at": "2026-05-28T05:47:19.486Z",
+          "at": "2026-06-04T19:34:41.021Z",
           "name": "api_store_verify",
           "ok": true,
           "status": 200
         },
         {
-          "at": "2026-05-28T05:47:19.486Z",
+          "at": "2026-06-04T19:34:41.021Z",
           "name": "submit_store_code",
           "ok": true,
-          "storeCode": "NDL-TH-001"
+          "storeCode": "BBQ-TH-002"
         },
         {
-          "at": "2026-05-28T05:47:31.838Z",
+          "at": "2026-06-04T19:34:41.660Z",
           "name": "branch_step_detected",
           "ok": true
         },
         {
-          "at": "2026-05-28T05:48:18.659Z",
+          "at": "2026-06-04T19:34:41.677Z",
+          "name": "select_preferred_branch",
+          "ok": false,
+          "preferredBranch": "BBQ Lab Ladprao",
+          "reason": "not_found"
+        },
+        {
+          "at": "2026-06-04T19:34:43.463Z",
           "name": "confirm_branch_selection",
           "ok": true
         },
         {
-          "at": "2026-05-28T05:48:20.405Z",
+          "at": "2026-06-04T19:34:44.007Z",
           "name": "screenshot",
           "ok": true,
           "file": "02-login-branches.png"
         },
         {
-          "at": "2026-05-28T05:48:21.200Z",
-          "name": "api_branches_context",
-          "ok": true,
-          "status": 200,
-          "selectedBranchId": "00000000-0000-0000-0000-000000000012"
-        },
-        {
-          "at": "2026-05-28T05:48:31.437Z",
-          "name": "api_qr_create",
-          "ok": true,
-          "status": 200,
-          "tokenPrefix": "yso7-pQ5"
-        },
-        {
-          "at": "2026-05-28T05:48:32.510Z",
-          "name": "screenshot",
-          "ok": true,
-          "file": "03-login-qr-scan.png"
-        },
-        {
-          "at": "2026-05-28T05:48:40.204Z",
-          "name": "api_qr_approve",
+          "at": "2026-06-04T19:34:45.059Z",
+          "name": "api_employee_verify",
           "ok": true,
           "status": 200
         },
         {
-          "at": "2026-05-28T05:48:40.204Z",
-          "name": "employee_verified_via_qr_scan",
+          "at": "2026-06-04T19:34:45.059Z",
+          "name": "employee_verified_via_code",
           "ok": true,
-          "employeeCode": "EMP-000101"
+          "employeeCode": "182536"
         },
         {
-          "at": "2026-05-28T05:48:46.184Z",
-          "name": "qr_scan_redirected_to_devices",
+          "at": "2026-06-04T19:34:45.489Z",
+          "name": "screenshot",
           "ok": true,
-          "url": "http://localhost:3001/login/devices?flow=multi"
+          "file": "03-login-employee.png"
         },
         {
-          "at": "2026-05-28T05:48:53.067Z",
-          "name": "api_devices_after_qr_success",
-          "ok": true,
-          "status": 200,
-          "deviceCount": 1
-        },
-        {
-          "at": "2026-05-28T05:49:21.511Z",
-          "name": "api_device_select_after_qr_success",
+          "at": "2026-06-04T19:34:46.595Z",
+          "name": "api_devices_after_employee_success",
           "ok": true,
           "status": 200,
-          "deviceCode": "POS-AR-001"
+          "deviceCount": 2
         },
         {
-          "at": "2026-05-28T05:49:32.330Z",
+          "at": "2026-06-04T19:34:47.779Z",
+          "name": "api_device_select_after_employee_success",
+          "ok": true,
+          "status": 200,
+          "deviceCode": "BBQ-BKK-01-POS-01"
+        },
+        {
+          "at": "2026-06-04T19:34:48.512Z",
           "name": "redirect_to_pos_preview",
           "ok": true,
           "url": "http://localhost:3000/preview/pos"
         },
         {
-          "at": "2026-05-28T05:49:38.265Z",
+          "at": "2026-06-04T19:34:50.427Z",
           "name": "screenshot",
           "ok": true,
           "file": "04-pos-preview-gate.png"
         },
         {
-          "at": "2026-05-28T05:49:44.044Z",
+          "at": "2026-06-04T19:34:50.810Z",
           "name": "api_session_current",
           "ok": true,
           "status": 200
         },
         {
-          "at": "2026-05-28T05:49:45.566Z",
+          "at": "2026-06-04T19:34:51.211Z",
           "name": "api_shift_current_initial",
           "ok": true,
           "status": 200
         },
         {
-          "at": "2026-05-28T05:49:51.283Z",
+          "at": "2026-06-04T19:35:07.019Z",
+          "name": "pos_sales_ready",
+          "ok": true,
+          "elapsedMs": 6061
+        },
+        {
+          "at": "2026-06-04T19:35:07.840Z",
           "name": "screenshot",
           "ok": true,
           "file": "05-pos-sales-ready.png"
         },
         {
-          "at": "2026-05-28T05:49:54.259Z",
+          "at": "2026-06-04T19:35:11.834Z",
           "name": "api_products",
           "ok": true,
           "status": 200,
-          "productCount": 0
+          "productCount": 2
         }
       ],
       "errors": []
@@ -164,38 +157,38 @@
       "result": "passed",
       "steps": [
         {
-          "at": "2026-05-28T05:49:54.273Z",
+          "at": "2026-06-04T19:35:11.916Z",
           "name": "clear_cookies",
           "ok": true
         },
         {
-          "at": "2026-05-28T05:49:56.034Z",
+          "at": "2026-06-04T19:35:14.053Z",
           "name": "open_pos_after_cookie_clear",
           "ok": true,
-          "url": "http://localhost:3000/preview/pos"
+          "url": "http://localhost:3000/login/store"
         },
         {
-          "at": "2026-05-28T05:49:56.290Z",
+          "at": "2026-06-04T19:35:14.104Z",
           "name": "api_session_current_after_expire",
           "ok": true,
           "status": 401,
           "code": "missing_pos_session"
         },
         {
-          "at": "2026-05-28T05:49:56.325Z",
+          "at": "2026-06-04T19:35:14.179Z",
           "name": "api_products_after_expire",
           "ok": true,
           "status": 401,
           "code": "missing_pos_session"
         },
         {
-          "at": "2026-05-28T05:49:56.384Z",
+          "at": "2026-06-04T19:35:14.275Z",
           "name": "ui_gate_blocks_access",
           "ok": true,
           "productsVisibleCount": 0
         },
         {
-          "at": "2026-05-28T05:49:59.866Z",
+          "at": "2026-06-04T19:35:14.654Z",
           "name": "screenshot",
           "ok": true,
           "file": "06-session-expired-gate.png"

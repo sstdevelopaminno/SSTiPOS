@@ -4,9 +4,20 @@ import { PwaBootstrap } from "@/components/pwa/pwa-bootstrap";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "POS Platform Back Office",
+  title: "SSTiPOS",
   description: "Multi-tenant POS back office and IT admin",
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      {
+        url: "/icons/sstipos-browser-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+    shortcut: "/icons/sstipos-browser-icon.png",
+    apple: "/icons/sstipos-browser-icon.png",
+  },
   appleWebApp: {
     capable: true,
     title: "SSTiPOS",

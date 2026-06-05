@@ -11,6 +11,7 @@ type Props = {
   targetId: string;
   onClose: () => void;
   onApproved: (approvalId: string) => void;
+  onPinSubmit?: (pin: string) => Promise<void>;
   lang?: "th" | "en";
   labels?: {
     pinLabel?: string;

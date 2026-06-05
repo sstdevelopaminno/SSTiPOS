@@ -2,6 +2,7 @@ import "server-only";
 
 import { appendAuditLog } from "@/lib/audit-log";
 import type { AuthContext } from "@/lib/auth-context";
+import { enforceQuota } from "@/lib/feature-gate";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 export type StoreSettings = {
@@ -31,7 +32,22 @@ export type PaymentAccountSettings = {
   promptpay_phone: string;
   promptpay_payload: string;
   qr_image_url: string;
+  qr_mode: "promptpay_link" | "qr_image";
+  applies_to_all_branches: boolean;
   is_active: boolean;
+};
+
+export type PosDeviceSettings = {
+  id: string;
+  branch_id: string;
+  device_code: string;
+  device_name: string;
+  device_type: "pos_terminal" | "mobile_scanner" | "kiosk";
+  status: "active" | "inactive" | "maintenance";
+  is_locked: boolean;
+  counter_name: string;
+  location: string;
+  last_seen_at: string | null;
 };
 
 export type PosSettingsSnapshot = {
@@ -80,7 +96,21 @@ type PaymentAccountRow = {
   promptpay_phone: string | null;
   promptpay_payload?: string | null;
   qr_image_url: string | null;
+  qr_mode?: string | null;
+  applies_to_all_branches?: boolean | null;
   is_active: boolean | null;
+};
+
+type PosDeviceRow = {
+  id: string;
+  branch_id: string;
+  device_code: string | null;
+  device_name: string | null;
+  device_type: string | null;
+  status: string | null;
+  is_locked: boolean | null;
+  metadata: Record<string, unknown> | null;
+  last_seen_at: string | null;
 };
 
 export type StoreSettingsInput = {
@@ -106,11 +136,37 @@ export type PaymentAccountInput = {
   account_number?: string;
   promptpay_phone?: string;
   qr_image_url?: string;
+  qr_mode?: "promptpay_link" | "qr_image";
+  applies_to_all_branches?: boolean;
   is_active?: boolean;
+};
+
+export type PosDeviceInput = {
+  id?: string;
+  branch_id?: string;
+  device_code?: string;
+  device_name?: string;
+  device_type?: "pos_terminal" | "mobile_scanner" | "kiosk";
+  status?: "active" | "inactive" | "maintenance";
+  is_locked?: boolean;
+  counter_name?: string;
+  location?: string;
 };
 
 function trimText(value: unknown) {
   return String(value ?? "").trim();
+}
+
+function normalizeStoreLogoUrl(value: unknown) {
+  const logoUrl = trimText(value);
+  if (!logoUrl) return "";
+  if (logoUrl.length > 220_000) {
+    throw new Error("Store logo file is too large. Please upload a smaller image.");
+  }
+  if (logoUrl.startsWith("data:image/") || logoUrl.startsWith("https://") || logoUrl.startsWith("http://") || logoUrl.startsWith("/")) {
+    return logoUrl;
+  }
+  throw new Error("Store logo must be an image upload or image URL.");
 }
 
 function normalizeDigits(value: unknown) {
@@ -130,6 +186,18 @@ function isMissingSchemaError(error: DbError | null | undefined, relationOrColum
     message.includes("does not exist") ||
     message.includes("could not find") ||
     (target ? message.includes(target) : false)
+  );
+}
+
+function isMissingRelationSchemaError(error: DbError | null | undefined, relationName: string) {
+  if (!error) return false;
+  const code = String(error.code ?? "");
+  const message = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  const relation = relationName.toLowerCase();
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    (message.includes(relation) && (message.includes("does not exist") || message.includes("could not find the table")))
   );
 }
 
@@ -169,11 +237,12 @@ function mapBranch(row: BranchRow): BranchSettings {
 
 export function buildPromptPayPayload(phone: unknown) {
   const digits = normalizeDigits(phone);
-  return digits ? `promptpay://phone/${digits}` : "";
+  return digits ? `https://promptpay.io/${digits}` : "";
 }
 
 function mapPaymentAccount(row: PaymentAccountRow): PaymentAccountSettings {
   const promptpayPhone = trimText(row.promptpay_phone);
+  const qrMode = row.qr_mode === "qr_image" ? "qr_image" : "promptpay_link";
   return {
     id: row.id,
     branch_id: row.branch_id,
@@ -183,7 +252,43 @@ function mapPaymentAccount(row: PaymentAccountRow): PaymentAccountSettings {
     promptpay_phone: promptpayPhone,
     promptpay_payload: trimText(row.promptpay_payload) || buildPromptPayPayload(promptpayPhone),
     qr_image_url: trimText(row.qr_image_url),
+    qr_mode: qrMode,
+    applies_to_all_branches: Boolean(row.applies_to_all_branches),
     is_active: row.is_active !== false
+  };
+}
+
+function normalizeDeviceCode(value: unknown) {
+  return trimText(value)
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function normalizeDeviceType(value: unknown): PosDeviceSettings["device_type"] {
+  if (value === "mobile_scanner" || value === "kiosk") return value;
+  return "pos_terminal";
+}
+
+function normalizeDeviceStatus(value: unknown): PosDeviceSettings["status"] {
+  if (value === "inactive" || value === "maintenance") return value;
+  return "active";
+}
+
+function mapDevice(row: PosDeviceRow): PosDeviceSettings {
+  const metadata = row.metadata ?? {};
+  return {
+    id: row.id,
+    branch_id: row.branch_id,
+    device_code: trimText(row.device_code),
+    device_name: trimText(row.device_name),
+    device_type: normalizeDeviceType(row.device_type),
+    status: normalizeDeviceStatus(row.status),
+    is_locked: row.is_locked !== false,
+    counter_name: typeof metadata.counter_name === "string" ? metadata.counter_name : "",
+    location: typeof metadata.location === "string" ? metadata.location : "",
+    last_seen_at: row.last_seen_at ?? null
   };
 }
 
@@ -218,12 +323,29 @@ export async function loadPosSettingsSnapshot(auth: AuthContext): Promise<PosSet
   const [store, branchesResult, paymentResult] = await Promise.all([
     loadStoreSettings(auth.tenantId),
     supabase.from("branches").select("id,code,name,address,is_active").eq("tenant_id", auth.tenantId).order("name", { ascending: true }),
-    supabase
-      .from("tenant_payment_accounts")
-      .select("id,branch_id,bank_name,account_name,account_number,promptpay_phone,promptpay_payload,qr_image_url,is_active")
-      .eq("tenant_id", auth.tenantId)
-      .order("is_active", { ascending: false })
-      .order("bank_name", { ascending: true })
+    (async () => {
+      const fullResult = await supabase
+        .from("tenant_payment_accounts")
+        .select("id,branch_id,bank_name,account_name,account_number,promptpay_phone,promptpay_payload,qr_image_url,qr_mode,applies_to_all_branches,is_active")
+        .eq("tenant_id", auth.tenantId)
+        .order("is_active", { ascending: false })
+        .order("bank_name", { ascending: true });
+
+      if (
+        fullResult.error &&
+        isMissingSchemaError(fullResult.error, "tenant_payment_accounts") &&
+        !isMissingRelationSchemaError(fullResult.error, "tenant_payment_accounts")
+      ) {
+        return supabase
+          .from("tenant_payment_accounts")
+          .select("id,branch_id,bank_name,account_name,account_number,promptpay_phone,promptpay_payload,qr_image_url,is_active")
+          .eq("tenant_id", auth.tenantId)
+          .order("is_active", { ascending: false })
+          .order("bank_name", { ascending: true });
+      }
+
+      return fullResult;
+    })()
   ]);
 
   if (branchesResult.error) throw new Error(branchesResult.error.message);
@@ -246,12 +368,233 @@ export async function loadPosSettingsSnapshot(auth: AuthContext): Promise<PosSet
   };
 }
 
+export async function loadDeviceSettings(auth: AuthContext): Promise<PosDeviceSettings[]> {
+  if (!auth.tenantId) return [];
+  const supabase = getSupabaseServiceClient();
+  let query = supabase
+    .from("branch_devices")
+    .select("id,branch_id,device_code,device_name,device_type,status,is_locked,metadata,last_seen_at")
+    .eq("tenant_id", auth.tenantId)
+    .order("device_code", { ascending: true });
+
+  if (!canManageSettings(auth) && auth.branchId) {
+    query = query.eq("branch_id", auth.branchId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as PosDeviceRow[]).map(mapDevice);
+}
+
+async function syncBranchDevicePolicy(tenantId: string, branchId: string) {
+  const supabase = getSupabaseServiceClient();
+  const [{ count, error: countError }, { data: policy, error: policyError }] = await Promise.all([
+    supabase.from("branch_devices").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("branch_id", branchId).eq("status", "active"),
+    supabase.from("branch_login_policies").select("max_devices").eq("tenant_id", tenantId).eq("branch_id", branchId).maybeSingle<{ max_devices: number | null }>()
+  ]);
+
+  if (countError) throw new Error(countError.message);
+  if (policyError) throw new Error(policyError.message);
+
+  const activeDevices = Math.max(1, Number(count ?? 0));
+  const currentMax = Math.max(1, Number(policy?.max_devices ?? 1));
+  const nextMax = Math.max(activeDevices, currentMax);
+  const { error } = await supabase
+    .from("branch_login_policies")
+    .upsert(
+      {
+        tenant_id: tenantId,
+        branch_id: branchId,
+        max_devices: nextMax
+      },
+      { onConflict: "tenant_id,branch_id" }
+    );
+  if (error) throw new Error(error.message);
+}
+
+export async function saveDeviceSettings(auth: AuthContext, input: PosDeviceInput) {
+  assertCanManageSettings(auth);
+  if (!auth.tenantId) throw new Error("Missing tenant scope.");
+
+  const deviceName = trimText(input.device_name);
+  const deviceCode = normalizeDeviceCode(input.device_code);
+  const counterName = trimText(input.counter_name);
+  const location = trimText(input.location);
+  const deviceType = normalizeDeviceType(input.device_type);
+  const status = normalizeDeviceStatus(input.status);
+  const isLocked = input.is_locked !== false;
+  if (!deviceCode || !deviceName) throw new Error("Device code and device name are required.");
+
+  const supabase = getSupabaseServiceClient();
+  const deviceId = trimText(input.id);
+  const currentDevice = deviceId
+    ? await supabase
+        .from("branch_devices")
+        .select("id,branch_id,device_code,status")
+        .eq("tenant_id", auth.tenantId)
+        .eq("id", deviceId)
+        .maybeSingle<{ id: string; branch_id: string; device_code: string | null; status: string | null }>()
+    : null;
+  if (currentDevice?.error) throw new Error(currentDevice.error.message);
+  if (deviceId && !currentDevice?.data) throw new Error("Cashier device was not found.");
+
+  const previousBranchId = currentDevice?.data?.branch_id ?? null;
+  const branchId = trimText(input.branch_id) || previousBranchId || trimText(auth.branchId);
+  if (!branchId) throw new Error("Branch is required for cashier device.");
+  await assertBranchInTenant(auth.tenantId, branchId);
+
+  const willActivateDevice = status === "active" && (!deviceId || currentDevice?.data?.status !== "active");
+  if (willActivateDevice) {
+    await enforceQuota(auth.tenantId, "devices");
+  }
+
+  const isDeviceIdentityChanged = Boolean(
+    deviceId && currentDevice?.data && (currentDevice.data.branch_id !== branchId || currentDevice.data.device_code !== deviceCode)
+  );
+  if (isDeviceIdentityChanged) {
+    const nowIso = new Date().toISOString();
+    const revokeByDeviceId = await supabase
+      .from("pos_sessions")
+      .update({ status: "revoked", revoked_at: nowIso })
+      .eq("tenant_id", auth.tenantId)
+      .eq("device_id", deviceId)
+      .eq("status", "active");
+    if (revokeByDeviceId.error) throw new Error(revokeByDeviceId.error.message);
+
+    if (currentDevice?.data?.device_code) {
+      const revokeByDeviceCode = await supabase
+        .from("pos_sessions")
+        .update({ status: "revoked", revoked_at: nowIso })
+        .eq("tenant_id", auth.tenantId)
+        .eq("branch_id", currentDevice.data.branch_id)
+        .eq("device_code", currentDevice.data.device_code)
+        .eq("status", "active");
+      if (revokeByDeviceCode.error) throw new Error(revokeByDeviceCode.error.message);
+    }
+  }
+
+  const metadata = {
+    counter_name: counterName || null,
+    location: location || null,
+    provisioned_from: "pos_settings"
+  };
+  const payload = {
+    branch_id: branchId,
+    device_code: deviceCode,
+    device_name: deviceName,
+    device_type: deviceType,
+    status,
+    is_locked: isLocked,
+    metadata
+  };
+
+  const result = deviceId
+    ? await supabase
+        .from("branch_devices")
+        .update(payload)
+        .eq("tenant_id", auth.tenantId)
+        .eq("id", deviceId)
+        .select("id,branch_id,device_code,device_name,device_type,status,is_locked,metadata,last_seen_at")
+        .maybeSingle<PosDeviceRow>()
+    : await supabase
+        .from("branch_devices")
+        .insert({
+          tenant_id: auth.tenantId,
+          ...payload
+        })
+        .select("id,branch_id,device_code,device_name,device_type,status,is_locked,metadata,last_seen_at")
+        .single<PosDeviceRow>();
+
+  if (result.error) throw new Error(result.error.message);
+  if (!result.data) throw new Error("Cashier device was not found.");
+
+  await syncBranchDevicePolicy(auth.tenantId, branchId);
+  if (previousBranchId && previousBranchId !== branchId) {
+    await syncBranchDevicePolicy(auth.tenantId, previousBranchId);
+  }
+  await appendAuditLog({
+    tenantId: auth.tenantId,
+    branchId,
+    actorUserId: auth.userId,
+    actorRole: auth.branchRole ?? "owner",
+    action: deviceId ? "pos_cashier_device_updated" : "pos_cashier_device_created",
+    targetTable: "branch_devices",
+    targetId: result.data.id,
+    metadata: {
+      device_code: deviceCode,
+      device_name: deviceName,
+      status,
+      is_locked: isLocked
+    }
+  });
+
+  return mapDevice(result.data);
+}
+
+export async function deleteDeviceSettings(auth: AuthContext, deviceId: string) {
+  assertCanManageSettings(auth);
+  if (!auth.tenantId) throw new Error("Missing tenant scope.");
+  const normalizedDeviceId = trimText(deviceId);
+  if (!normalizedDeviceId) throw new Error("device_id is required.");
+  const supabase = getSupabaseServiceClient();
+
+  const { data: current, error: currentError } = await supabase
+    .from("branch_devices")
+    .select("id,branch_id,device_code,device_name")
+    .eq("tenant_id", auth.tenantId)
+    .eq("id", normalizedDeviceId)
+    .maybeSingle<{ id: string; branch_id: string; device_code: string | null; device_name: string | null }>();
+  if (currentError) throw new Error(currentError.message);
+  if (!current) throw new Error("Cashier device was not found.");
+
+  const nowIso = new Date().toISOString();
+  const revokeByDeviceId = await supabase
+    .from("pos_sessions")
+    .update({ status: "revoked", revoked_at: nowIso })
+    .eq("tenant_id", auth.tenantId)
+    .eq("branch_id", current.branch_id)
+    .eq("device_id", current.id)
+    .eq("status", "active");
+  if (revokeByDeviceId.error) throw new Error(revokeByDeviceId.error.message);
+
+  if (current.device_code) {
+    const revokeByDeviceCode = await supabase
+      .from("pos_sessions")
+      .update({ status: "revoked", revoked_at: nowIso })
+      .eq("tenant_id", auth.tenantId)
+      .eq("branch_id", current.branch_id)
+      .eq("device_code", current.device_code)
+      .eq("status", "active");
+    if (revokeByDeviceCode.error) throw new Error(revokeByDeviceCode.error.message);
+  }
+
+  const deleteResult = await supabase.from("branch_devices").delete().eq("tenant_id", auth.tenantId).eq("id", normalizedDeviceId);
+  if (deleteResult.error) throw new Error(deleteResult.error.message);
+
+  await syncBranchDevicePolicy(auth.tenantId, current.branch_id);
+  await appendAuditLog({
+    tenantId: auth.tenantId,
+    branchId: current.branch_id,
+    actorUserId: auth.userId,
+    actorRole: auth.branchRole ?? "owner",
+    action: "pos_cashier_device_deleted",
+    targetTable: "branch_devices",
+    targetId: current.id,
+    metadata: {
+      device_code: current.device_code,
+      device_name: current.device_name
+    }
+  });
+
+  return { id: current.id, deleted: true };
+}
+
 export async function updateStoreSettings(auth: AuthContext, input: StoreSettingsInput) {
   assertCanManageSettings(auth);
   if (!auth.tenantId) throw new Error("Missing tenant scope.");
 
   const displayName = trimText(input.display_name);
-  const logoUrl = trimText(input.logo_url);
+  const logoUrl = normalizeStoreLogoUrl(input.logo_url);
   const companyAddress = trimText(input.company_address);
   const contactPhone = trimText(input.contact_phone);
   if (!displayName) throw new Error("Store display name is required.");
@@ -291,7 +634,12 @@ export async function updateStoreSettings(auth: AuthContext, input: StoreSetting
     action: "pos_store_settings_updated",
     targetTable: "tenants",
     targetId: auth.tenantId,
-    metadata: { display_name: displayName }
+    metadata: {
+      display_name: displayName,
+      has_logo: Boolean(logoUrl),
+      has_address: Boolean(companyAddress),
+      has_contact_phone: Boolean(contactPhone)
+    }
   });
 
   return mapStore(updateResult.data);
@@ -393,7 +741,11 @@ export async function savePaymentAccount(auth: AuthContext, input: PaymentAccoun
   const accountNumber = trimText(input.account_number);
   const promptpayPhone = trimText(input.promptpay_phone);
   const qrImageUrl = trimText(input.qr_image_url);
+  const qrMode = input.qr_mode === "qr_image" ? "qr_image" : "promptpay_link";
+  const appliesToAllBranches = input.applies_to_all_branches === true;
   if (!bankName || !accountName) throw new Error("Bank name and account name are required.");
+  if (qrMode === "promptpay_link" && !promptpayPhone) throw new Error("PromptPay phone is required for generated QR mode.");
+  if (qrMode === "qr_image" && !qrImageUrl) throw new Error("QR image is required for image QR mode.");
 
   const payload = {
     tenant_id: auth.tenantId,
@@ -404,6 +756,8 @@ export async function savePaymentAccount(auth: AuthContext, input: PaymentAccoun
     promptpay_phone: promptpayPhone || null,
     promptpay_payload: buildPromptPayPayload(promptpayPhone) || null,
     qr_image_url: qrImageUrl || null,
+    qr_mode: qrMode,
+    applies_to_all_branches: appliesToAllBranches,
     is_active: input.is_active ?? true,
     created_by: auth.userId
   };
@@ -418,21 +772,66 @@ export async function savePaymentAccount(auth: AuthContext, input: PaymentAccoun
     promptpay_phone: promptpayPhone || null,
     promptpay_payload: buildPromptPayPayload(promptpayPhone) || null,
     qr_image_url: qrImageUrl || null,
+    qr_mode: qrMode,
+    applies_to_all_branches: appliesToAllBranches,
     is_active: input.is_active ?? true
   };
-  const result = accountId
+  let result = accountId
     ? await supabase
         .from("tenant_payment_accounts")
         .update(updatePayload)
         .eq("tenant_id", auth.tenantId)
         .eq("id", accountId)
-        .select("id,branch_id,bank_name,account_name,account_number,promptpay_phone,promptpay_payload,qr_image_url,is_active")
+        .select("id,branch_id,bank_name,account_name,account_number,promptpay_phone,promptpay_payload,qr_image_url,qr_mode,applies_to_all_branches,is_active")
         .maybeSingle<PaymentAccountRow>()
     : await supabase
         .from("tenant_payment_accounts")
         .insert(payload)
-        .select("id,branch_id,bank_name,account_name,account_number,promptpay_phone,promptpay_payload,qr_image_url,is_active")
+        .select("id,branch_id,bank_name,account_name,account_number,promptpay_phone,promptpay_payload,qr_image_url,qr_mode,applies_to_all_branches,is_active")
         .single<PaymentAccountRow>();
+
+  if (
+    result.error &&
+    isMissingSchemaError(result.error, "tenant_payment_accounts") &&
+    !isMissingRelationSchemaError(result.error, "tenant_payment_accounts")
+  ) {
+    const legacyPayload = {
+      tenant_id: auth.tenantId,
+      branch_id: branchId,
+      bank_name: bankName,
+      account_name: accountName,
+      account_number: accountNumber,
+      promptpay_phone: promptpayPhone || null,
+      promptpay_payload: buildPromptPayPayload(promptpayPhone) || null,
+      qr_image_url: qrImageUrl || null,
+      is_active: input.is_active ?? true,
+      created_by: auth.userId
+    };
+    const legacyUpdatePayload = {
+      branch_id: branchId,
+      bank_name: bankName,
+      account_name: accountName,
+      account_number: accountNumber,
+      promptpay_phone: promptpayPhone || null,
+      promptpay_payload: buildPromptPayPayload(promptpayPhone) || null,
+      qr_image_url: qrImageUrl || null,
+      is_active: input.is_active ?? true
+    };
+
+    result = accountId
+      ? await supabase
+          .from("tenant_payment_accounts")
+          .update(legacyUpdatePayload)
+          .eq("tenant_id", auth.tenantId)
+          .eq("id", accountId)
+          .select("id,branch_id,bank_name,account_name,account_number,promptpay_phone,promptpay_payload,qr_image_url,is_active")
+          .maybeSingle<PaymentAccountRow>()
+      : await supabase
+          .from("tenant_payment_accounts")
+          .insert(legacyPayload)
+          .select("id,branch_id,bank_name,account_name,account_number,promptpay_phone,promptpay_payload,qr_image_url,is_active")
+          .single<PaymentAccountRow>();
+  }
 
   if (result.error) {
     if (isMissingSchemaError(result.error, "tenant_payment_accounts")) {

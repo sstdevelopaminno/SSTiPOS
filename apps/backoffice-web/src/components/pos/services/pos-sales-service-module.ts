@@ -22,6 +22,14 @@ type CartItem = {
   price: number;
 };
 
+type StoreProfile = {
+  display_name?: string | null;
+  name?: string | null;
+  logo_url?: string | null;
+  company_address?: string | null;
+  contact_phone?: string | null;
+};
+
 type PendingSubmit = {
   idempotencyKey: string;
   payload: {
@@ -199,6 +207,7 @@ export async function submitTransferPaymentWithEffects(args: {
   text: Pick<TextLabels, "receiptSaved" | "transferQueued">;
   transferSlipPreviewUrl: string | null;
   fallbackReceiptItems: CartItem[];
+  storeProfile: StoreProfile | null;
   setIsOnline: (value: boolean) => void;
   dequeuePendingPayment: (idempotencyKey: string) => void;
   setActiveOrder: (updater: (current: ActiveOrder | null) => ActiveOrder | null) => void;
@@ -232,6 +241,7 @@ export async function submitTransferPaymentWithEffects(args: {
     payment_method: "bank_transfer";
     cash_received: number;
     change_amount: number;
+    store_profile?: StoreProfile | null;
   } | null) => void;
   setReceiptSaving: (next: boolean) => void;
   setReceiptSaved: (next: boolean) => void;
@@ -247,6 +257,7 @@ export async function submitTransferPaymentWithEffects(args: {
     text,
     transferSlipPreviewUrl,
     fallbackReceiptItems,
+    storeProfile,
     setIsOnline,
     dequeuePendingPayment,
     setActiveOrder,
@@ -349,7 +360,8 @@ export async function submitTransferPaymentWithEffects(args: {
     discount_amount: pendingPaymentEntry.payload.discount_amount ?? 0,
     payment_method: "bank_transfer",
     cash_received: pendingPaymentEntry.payload.total_amount,
-    change_amount: 0
+    change_amount: 0,
+    store_profile: storeProfile
   });
   setReceiptSaving(false);
   setReceiptSaved(true);

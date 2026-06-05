@@ -11,6 +11,7 @@ import { invalidatePosScopeRuntimeCaches } from "@/lib/pos-cache-invalidation";
 import { POS_GUARDS } from "@/lib/pos-resilience";
 import { invalidatePosSalesListCacheForScope } from "@/lib/services/pos-sales-list-service";
 import { executeCreatePosOrderTransaction } from "@/lib/services/pos-sales-service";
+import { loadReceiptStoreProfile } from "@/lib/services/store-profile-service";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 type PosCreateOrderPayload = {
@@ -57,6 +58,20 @@ type DeliveryConfigRow = {
   order_code_rule: "free_text" | "regex";
   order_code_regex: string | null;
   source_url: string | null;
+};
+
+type PaymentAccountRow = {
+  id: string;
+  branch_id: string;
+  bank_name: string | null;
+  account_name: string | null;
+  account_number: string | null;
+  promptpay_phone: string | null;
+  promptpay_payload: string | null;
+  qr_image_url: string | null;
+  qr_mode: string | null;
+  applies_to_all_branches: boolean | null;
+  is_active: boolean | null;
 };
 
 type PosProductQueryRow = {
@@ -111,6 +126,32 @@ function isMissingDeliveryPricingSchemaError(error: PostgrestLikeError | null | 
   const text = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`.toLowerCase();
   if (code === "42P01" || code === "PGRST205") return true;
   return text.includes("delivery_channel_configs") || text.includes("product_channel_prices");
+}
+
+function isMissingPaymentAccountSchemaError(error: PostgrestLikeError | null | undefined): boolean {
+  if (!error) return false;
+  const code = String(error.code ?? "");
+  const text = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`.toLowerCase();
+  if (code === "42P01" || code === "42703" || code === "PGRST204" || code === "PGRST205") return true;
+  return text.includes("tenant_payment_accounts") || text.includes("qr_mode") || text.includes("applies_to_all_branches");
+}
+
+function mapPaymentAccount(row: PaymentAccountRow | null | undefined) {
+  if (!row) return null;
+  const promptpayPhone = String(row.promptpay_phone ?? "").trim();
+  return {
+    id: row.id,
+    branch_id: row.branch_id,
+    bank_name: String(row.bank_name ?? "").trim(),
+    account_name: String(row.account_name ?? "").trim(),
+    account_number: String(row.account_number ?? "").trim(),
+    promptpay_phone: promptpayPhone,
+    promptpay_payload: String(row.promptpay_payload ?? "").trim(),
+    qr_image_url: String(row.qr_image_url ?? "").trim(),
+    qr_mode: row.qr_mode === "qr_image" ? "qr_image" : "promptpay_link",
+    applies_to_all_branches: Boolean(row.applies_to_all_branches),
+    is_active: row.is_active !== false
+  };
 }
 
 const ORDER_DELIVERY_SNAPSHOT_COLUMNS = [
@@ -593,9 +634,11 @@ export async function GET() {
       { data: productData, error: productError },
       { data: profileData, error: profileError },
       { data: branchData, error: branchError },
+      storeProfile,
       { data: deliveryConfigs, error: deliveryConfigsError },
       { data: deliveryPrices, error: deliveryPricesError },
-      { data: recipeProductRows, error: recipeProductRowsError }
+      { data: recipeProductRows, error: recipeProductRowsError },
+      { data: paymentAccounts, error: paymentAccountsError }
     ] = await Promise.all([
       supabase
         .from("shifts")
@@ -662,6 +705,7 @@ export async function GET() {
         .eq("tenant_id", auth.tenantId!)
         .eq("id", auth.branchId!)
         .maybeSingle(),
+      loadReceiptStoreProfile(auth.tenantId!),
       supabase
         .from("delivery_channel_configs")
         .select("channel,commission_rate_pct,commission_vat_rate_pct,order_code_rule,order_code_regex,source_url")
@@ -678,7 +722,14 @@ export async function GET() {
         .from("recipes")
         .select("product_id")
         .eq("tenant_id", auth.tenantId!)
-        .eq("branch_id", auth.branchId!)
+        .eq("branch_id", auth.branchId!),
+      supabase
+        .from("tenant_payment_accounts")
+        .select("id,branch_id,bank_name,account_name,account_number,promptpay_phone,promptpay_payload,qr_image_url,qr_mode,applies_to_all_branches,is_active")
+        .eq("tenant_id", auth.tenantId!)
+        .eq("is_active", true)
+        .order("applies_to_all_branches", { ascending: false })
+        .order("updated_at", { ascending: false })
     ]);
 
     if (productError) {
@@ -721,6 +772,13 @@ export async function GET() {
     }));
     const activeDeliveryConfigs =
       !missingDeliverySchema && (deliveryConfigs ?? []).length > 0 ? (deliveryConfigs ?? []) : fallbackConfigs;
+    const activePaymentAccount = isMissingPaymentAccountSchemaError(paymentAccountsError)
+      ? null
+      : mapPaymentAccount(
+          ((paymentAccounts ?? []) as PaymentAccountRow[]).find(
+            (account) => account.applies_to_all_branches === true || account.branch_id === auth.branchId
+          )
+        );
     const deliveryPricesByProduct = (missingDeliverySchema ? [] : deliveryPrices ?? []).reduce<Record<string, Record<string, number>>>((acc, row) => {
       const productId = String(row.product_id);
       const channel = String(row.channel);
@@ -739,6 +797,8 @@ export async function GET() {
       products: normalizedProducts,
       operator_name: profileError ? auth.userId : profileData?.full_name ?? auth.userId,
       branch_name: branchError ? auth.branchId : branchData?.name ?? auth.branchId,
+      store_profile: storeProfile,
+      payment_account: activePaymentAccount,
       delivery_configs: activeDeliveryConfigs,
       delivery_prices_by_product: deliveryPricesByProduct
     });

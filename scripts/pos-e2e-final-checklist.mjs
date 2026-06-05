@@ -13,7 +13,7 @@ const API_TIMEOUT_MS = Number(process.env.POS_SMOKE_API_TIMEOUT_MS ?? 120000);
 const ROLE_CASES = [
   { label: "staff", code: String(process.env.POS_STAFF_EMPLOYEE_CODE ?? "EMP-000103").trim().toUpperCase() },
   { label: "manager", code: String(process.env.POS_MANAGER_EMPLOYEE_CODE ?? "EMP-000102").trim().toUpperCase() },
-  { label: "owner", code: String(process.env.POS_OWNER_EMPLOYEE_CODE ?? "EMP-000101").trim().toUpperCase() },
+  { label: "owner", code: String(process.env.POS_OWNER_EMPLOYEE_CODE ?? "182536").trim().toUpperCase() },
   { label: "accountant", code: String(process.env.POS_ACCOUNTANT_EMPLOYEE_CODE ?? "").trim().toUpperCase() }
 ].filter((item) => item.code);
 

@@ -1,8 +1,8 @@
 ﻿import { AddProductPopupButton } from "@/components/pos-preview/add-product-popup-button";
+import type { BranchRole } from "@pos/shared-types";
 import { StockBranchSelector } from "@/components/pos-preview/stock-branch-selector";
 import { StockProductsTable } from "@/components/pos-preview/stock-products-table";
 import { cookies } from "next/headers";
-import { getAuthContext } from "@/lib/auth-context";
 import { DEFAULT_DELIVERY_CHANNEL_CONFIGS } from "@/lib/delivery-pricing";
 import { getCurrentLanguage, t } from "@/lib/i18n";
 import { requirePosPagePermission } from "@/lib/pos-page-guard";
@@ -108,7 +108,7 @@ export default async function PosStockPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requirePosPagePermission("inventory:view");
+  const scope = await requirePosPagePermission("inventory:view");
   const lang = await getCurrentLanguage();
   const th = lang === "th";
 
@@ -133,7 +133,12 @@ export default async function PosStockPage({
     const cookieStore = await cookies();
     const cookieFallback = readBoolCookie(cookieStore.get(POS_ALLOW_NEGATIVE_STOCK_COOKIE)?.value);
     const fallbackAllowNegativeStock = cookieFallback ?? envFallbackAllowNegativeStock();
-    const auth = await getAuthContext({ requireBranchScope: true });
+    const auth = {
+      userId: scope.session.user_id,
+      tenantId: scope.session.tenant_id,
+      branchId: scope.session.branch_id,
+      branchRole: scope.session.role as BranchRole
+    };
     const supabase = getSupabaseServiceClient();
     canManageCatalog = auth.branchRole === "owner" || auth.branchRole === "manager";
 

@@ -21,7 +21,7 @@ type SessionCurrentResponse = {
   error?: { code: string; message: string } | null;
 };
 
-const DEFAULT_LOAD_TIMEOUT_MS = 12000;
+const DEFAULT_LOAD_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 60000 : 12000;
 const DEFAULT_LOAD_RETRIES = 1;
 const POS_DISPLAY_TIMEZONE = "Asia/Bangkok";
 const POS_ROLE_STORAGE_KEY = "pos_session_role_v1";

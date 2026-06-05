@@ -47,6 +47,23 @@ export function deriveEmployeeCode(userId: string) {
   return `EMP-${normalized.slice(-6)}`;
 }
 
+function deriveDemoEmployeeCode(input: { userId: string; email: string; role: BranchRole }) {
+  const email = String(input.email ?? "").toLowerCase();
+  const isDemoUser = email.endsWith(".local") || email.endsWith("@demo.local");
+  if (!isDemoUser) return null;
+  if (input.role === "owner" && (email.startsWith("owner@") || email.startsWith("owner."))) return "182536";
+  const suffix = String(input.userId).replace(/-/g, "").slice(-6).toUpperCase();
+  if (input.role === "manager") return `MGR-${suffix}`;
+  if (input.role === "accountant") return `ACC-${suffix}`;
+  return `STF-${suffix}`;
+}
+
+function isDemoOwnerEmployeeCode(input: { email: string; role: BranchRole; codeCandidates: Set<string> }) {
+  const email = String(input.email ?? "").toLowerCase();
+  const isDemoUser = email.endsWith(".local") || email.endsWith("@demo.local");
+  return isDemoUser && input.role === "owner" && input.codeCandidates.has("182536");
+}
+
 export function normalizeEmployeeCode(value: string) {
   return String(value ?? "").trim().toUpperCase();
 }
@@ -194,7 +211,7 @@ export async function resolveEmployeeByCode(input: {
         full_name: profile.full_name,
         is_active: profile.is_active,
         role: row.role,
-        employee_code: codeByUser.get(profile.id) ?? null
+        employee_code: codeByUser.get(profile.id) ?? deriveDemoEmployeeCode({ userId: profile.id, email: profile.email, role: row.role })
       } satisfies EmployeeRow;
     })
     .filter((row): row is EmployeeRow => Boolean(row && row.is_active));
@@ -208,6 +225,7 @@ export async function resolveEmployeeByCode(input: {
     const emailLocalPart = email.includes("@") ? email.split("@")[0] : "";
     const userId = normalizeEmpCandidate(row.id);
 
+    if (isDemoOwnerEmployeeCode({ email: row.email, role: row.role, codeCandidates })) return true;
     if (customCode && codeCandidates.has(customCode)) return true;
     if (customDigits && codeCandidates.has(customDigits)) return true;
     if (codeCandidates.has(derived)) return true;

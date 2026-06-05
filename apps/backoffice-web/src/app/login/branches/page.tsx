@@ -29,7 +29,7 @@ type PopupState =
   | { type: "loading"; message: string }
   | { type: "error"; message: string };
 
-const AUTH_REQUEST_TIMEOUT_MS = 15000;
+const AUTH_REQUEST_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 60000 : 15000;
 
 function isRetryableRequestError(error: unknown) {
   if (error instanceof DOMException && error.name === "AbortError") return true;
@@ -204,28 +204,37 @@ function LoginBranchesPageContent() {
         <div className="ipos-branch-selector-card">
           <h3 className="ipos-branch-selector-title">เลือกสาขา</h3>
           <div className="ipos-branch-list ipos-branch-list-compact">
-            {branches.map((branch) => (
-              <button
-                key={branch.id}
-                type="button"
-                className={`ipos-branch-card ipos-branch-card-compact ${selectedBranchId === branch.id ? "active" : ""}`}
-                onClick={() => {
-                  setSelectedBranchId(branch.id);
-                  if (error) setError("");
-                  if (popup.type === "error") setPopup({ type: "none" });
-                }}
-              >
-                <div className="ipos-branch-row-left">
-                  <span className="ipos-icon-box ipos-icon-box-branch" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none">
-                      <path d="M4 20h16M6 20V7l6-3 6 3v13M9 10h2M9 13h2M9 16h2M13 10h2M13 13h2M13 16h2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                    </svg>
-                  </span>
-                  <span className="ipos-branch-name">{branch.name ?? branch.code ?? branch.id}</span>
-                </div>
-                <span className={`ipos-select-dot ${selectedBranchId === branch.id ? "active" : ""}`} />
-              </button>
-            ))}
+            {branches.map((branch) => {
+              const branchCode = branch.code?.trim() || "";
+              const branchName = branch.name?.trim() || branchCode || branch.id;
+              const showBranchCode = Boolean(branchCode && branchCode !== branchName);
+
+              return (
+                <button
+                  key={branch.id}
+                  type="button"
+                  className={`ipos-branch-card ipos-branch-card-compact ${selectedBranchId === branch.id ? "active" : ""}`}
+                  onClick={() => {
+                    setSelectedBranchId(branch.id);
+                    if (error) setError("");
+                    if (popup.type === "error") setPopup({ type: "none" });
+                  }}
+                >
+                  <div className="ipos-branch-row-left">
+                    <span className="ipos-icon-box ipos-icon-box-branch" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M4 20h16M6 20V7l6-3 6 3v13M9 10h2M9 13h2M9 16h2M13 10h2M13 13h2M13 16h2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                      </svg>
+                    </span>
+                    <span className="ipos-branch-text">
+                      <span className="ipos-branch-name">{branchName}</span>
+                      {showBranchCode ? <span className="ipos-branch-code">รหัสสาขา: {branchCode}</span> : null}
+                    </span>
+                  </div>
+                  <span className={`ipos-select-dot ${selectedBranchId === branch.id ? "active" : ""}`} />
+                </button>
+              );
+            })}
           </div>
         </div>
       ) : null}

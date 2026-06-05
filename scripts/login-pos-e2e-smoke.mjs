@@ -67,9 +67,36 @@ async function safeJson(response) {
   return response.json().catch(() => null);
 }
 
+function isRetryableApiRequestError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("ECONNRESET") ||
+    message.includes("ECONNREFUSED") ||
+    message.includes("ETIMEDOUT") ||
+    message.includes("Timeout") ||
+    message.includes("socket hang up") ||
+    message.includes("Target page, context or browser has been closed")
+  );
+}
+
+async function apiRequestWithRetry(requestContext, method, url, options = {}, attempts = 3) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await requestContext[method](url, { timeout: API_TIMEOUT_MS, ...options });
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableApiRequestError(error) || attempt === attempts) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+    }
+  }
+  throw lastError ?? new Error(`Failed to ${method.toUpperCase()} ${url}`);
+}
+
 async function warmupLoginApi(context, report) {
-  const warmupResponse = await context.request.post(`${loginApiOrigin}/api/auth/store-code/verify`, {
-    timeout: API_TIMEOUT_MS,
+  const warmupResponse = await apiRequestWithRetry(context.request, "post", `${loginApiOrigin}/api/auth/store-code/verify`, {
     failOnStatusCode: false,
     data: {}
   });
@@ -108,6 +135,10 @@ function addStep(scenario, name, detail = {}) {
   });
 }
 
+function resolveBrowserUrl(value, origin = loginApiOrigin) {
+  return new URL(value, origin).toString();
+}
+
 async function captureScreenshot(page, scenario, fileName) {
   const screenshotPath = path.join(outputDir, fileName);
   try {
@@ -120,6 +151,24 @@ async function captureScreenshot(page, scenario, fileName) {
       reason: error instanceof Error ? error.message : String(error)
     });
   }
+}
+
+async function waitForPosSalesReady(page, scenario, timeoutMs = Number(process.env.POS_SMOKE_SALES_READY_TIMEOUT_MS ?? 150000)) {
+  const startedAt = Date.now();
+  await page.waitForFunction(
+    () => {
+      const runtimeReady = Boolean(globalThis.__posVerification?.source === "PosSalesModule");
+      const loadingOverlayGone = document.querySelector(".table-loading-overlay") === null;
+      const salesControlsReady =
+        document.querySelector(".posui-product-card") !== null ||
+        document.querySelector(".posui-btn--checkout") !== null ||
+        document.body.innerText.includes("Create POS order");
+      return loadingOverlayGone && (runtimeReady || salesControlsReady);
+    },
+    undefined,
+    { timeout: timeoutMs, polling: 500 }
+  );
+  addStep(scenario, "pos_sales_ready", { ok: true, elapsedMs: Date.now() - startedAt });
 }
 
 async function loginStoreBranchEmployeeDevice(page, scenario) {
@@ -188,7 +237,7 @@ async function loginStoreBranchEmployeeDevice(page, scenario) {
   await captureScreenshot(page, scenario, "03-login-employee.png");
   await waitForRoute(page, ["/login/devices"], ROUTE_TIMEOUT_MS);
 
-  const devicesApiResponse = await page.request.get(`${loginApiOrigin}/api/auth/devices`, { timeout: API_TIMEOUT_MS });
+  const devicesApiResponse = await apiRequestWithRetry(page.request, "get", `${loginApiOrigin}/api/auth/devices`);
   const devicesApiBody = await safeJson(devicesApiResponse);
   const deviceItems = Array.isArray(devicesApiBody?.data?.devices) ? devicesApiBody.data.devices : [];
   const canOverrideInUse = Boolean(devicesApiBody?.data?.can_override_in_use);
@@ -208,8 +257,7 @@ async function loginStoreBranchEmployeeDevice(page, scenario) {
       null;
 
     if (selectedDevice?.deviceCode) {
-      const selectResponse = await page.request.post(`${loginApiOrigin}/api/auth/devices/select`, {
-        timeout: API_TIMEOUT_MS,
+      const selectResponse = await apiRequestWithRetry(page.request, "post", `${loginApiOrigin}/api/auth/devices/select`, {
         data: {
           device_code: selectedDevice.deviceCode,
           force_override: selectedDevice.status === "in_use"
@@ -223,7 +271,7 @@ async function loginStoreBranchEmployeeDevice(page, scenario) {
       });
 
       if (selectResponse.ok() && selectBody?.data?.redirect_to) {
-        await page.goto(selectBody.data.redirect_to, { waitUntil: "domcontentloaded", timeout: 120000 });
+        await page.goto(resolveBrowserUrl(selectBody.data.redirect_to, posApiOrigin), { waitUntil: "domcontentloaded", timeout: 120000 });
         await waitForRoute(page, [posTargetPath], 120000);
         addStep(scenario, "redirect_to_pos_preview", { ok: true, url: page.url() });
         await captureScreenshot(page, scenario, "04-pos-preview-gate.png");
@@ -266,14 +314,14 @@ async function loginStoreBranchEmployeeDevice(page, scenario) {
 }
 
 async function ensureShiftAndSalesAccess(context, page, scenario) {
-  const sessionResponse = await context.request.get(`${posApiOrigin}/api/pos/session/current`, { timeout: API_TIMEOUT_MS });
+  const sessionResponse = await apiRequestWithRetry(context.request, "get", `${posApiOrigin}/api/pos/session/current`);
   const sessionBody = await safeJson(sessionResponse);
   addStep(scenario, "api_session_current", { ok: sessionResponse.ok(), status: sessionResponse.status() });
   if (!sessionResponse.ok()) {
     throw new Error(`session_current failed: ${JSON.stringify(sessionBody)}`);
   }
 
-  let shiftResponse = await context.request.get(`${posApiOrigin}/api/pos/shifts/current`, { timeout: API_TIMEOUT_MS });
+  let shiftResponse = await apiRequestWithRetry(context.request, "get", `${posApiOrigin}/api/pos/shifts/current`);
   let shiftBody = await safeJson(shiftResponse);
   addStep(scenario, "api_shift_current_initial", { ok: shiftResponse.ok(), status: shiftResponse.status() });
   if (!shiftResponse.ok()) {
@@ -287,8 +335,7 @@ async function ensureShiftAndSalesAccess(context, page, scenario) {
     if (openShifts.length > 0) {
       const joinTarget =
         (preferredDevice ? openShifts.find((item) => String(item?.device_code ?? "").toUpperCase() === preferredDevice) : null) ?? openShifts[0];
-      const joinResponse = await context.request.post(`${posApiOrigin}/api/pos/shifts/join`, {
-        timeout: API_TIMEOUT_MS,
+      const joinResponse = await apiRequestWithRetry(context.request, "post", `${posApiOrigin}/api/pos/shifts/join`, {
         data: { shift_id: joinTarget.id }
       });
       const joinBody = await safeJson(joinResponse);
@@ -302,8 +349,7 @@ async function ensureShiftAndSalesAccess(context, page, scenario) {
         throw new Error(`shift_join failed: ${JSON.stringify(joinBody)}`);
       }
     } else {
-      const openResponse = await context.request.post(`${posApiOrigin}/api/pos/shifts/open`, {
-        timeout: API_TIMEOUT_MS,
+      const openResponse = await apiRequestWithRetry(context.request, "post", `${posApiOrigin}/api/pos/shifts/open`, {
         data: { opening_cash: 0 }
       });
       const openBody = await safeJson(openResponse);
@@ -313,7 +359,7 @@ async function ensureShiftAndSalesAccess(context, page, scenario) {
       }
     }
 
-    shiftResponse = await context.request.get(`${posApiOrigin}/api/pos/shifts/current`, { timeout: API_TIMEOUT_MS });
+    shiftResponse = await apiRequestWithRetry(context.request, "get", `${posApiOrigin}/api/pos/shifts/current`);
     shiftBody = await safeJson(shiftResponse);
     addStep(scenario, "api_shift_current_after_action", { ok: shiftResponse.ok(), status: shiftResponse.status() });
     if (!shiftResponse.ok()) {
@@ -326,18 +372,17 @@ async function ensureShiftAndSalesAccess(context, page, scenario) {
   }
 
   await page.goto(posPreviewUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForTimeout(1200);
+  await waitForPosSalesReady(page, scenario);
   await captureScreenshot(page, scenario, "05-pos-sales-ready.png");
 
-  const productsResponse = await context.request.get(`${posApiOrigin}/api/pos/products`, { timeout: API_TIMEOUT_MS });
+  const productsResponse = await apiRequestWithRetry(context.request, "get", `${posApiOrigin}/api/pos/products`);
   let productsBody = await safeJson(productsResponse);
   let productsOk = productsResponse.ok();
   let productsStatus = productsResponse.status();
   let productCount = Array.isArray(productsBody?.data?.products) ? productsBody.data.products.length : 0;
 
   if (!productsOk && productsBody?.error?.code === "missing_active_shift") {
-    const openResponse = await context.request.post(`${posApiOrigin}/api/pos/shifts/open`, {
-      timeout: API_TIMEOUT_MS,
+    const openResponse = await apiRequestWithRetry(context.request, "post", `${posApiOrigin}/api/pos/shifts/open`, {
       data: { opening_cash: 0 }
     });
     const openBody = await safeJson(openResponse);
@@ -347,7 +392,7 @@ async function ensureShiftAndSalesAccess(context, page, scenario) {
     });
 
     if (openResponse.ok()) {
-      const retryResponse = await context.request.get(`${posApiOrigin}/api/pos/products`, { timeout: API_TIMEOUT_MS });
+      const retryResponse = await apiRequestWithRetry(context.request, "get", `${posApiOrigin}/api/pos/products`);
       productsBody = await safeJson(retryResponse);
       productsOk = retryResponse.ok();
       productsStatus = retryResponse.status();
@@ -396,7 +441,7 @@ async function runSessionExpiredPath(context, page, report) {
     await page.waitForTimeout(900);
     addStep(scenario, "open_pos_after_cookie_clear", { ok: true, url: page.url() });
 
-    const sessionResponse = await context.request.get(`${posApiOrigin}/api/pos/session/current`, { timeout: API_TIMEOUT_MS });
+    const sessionResponse = await apiRequestWithRetry(context.request, "get", `${posApiOrigin}/api/pos/session/current`);
     const sessionBody = await safeJson(sessionResponse);
     const sessionCode = String(sessionBody?.error?.code ?? "");
     const expectedSessionExpired = !sessionResponse.ok() && SESSION_EXPIRED_CODES.has(sessionCode);
@@ -409,7 +454,7 @@ async function runSessionExpiredPath(context, page, report) {
       throw new Error(`Expected session-expired style response but got: ${JSON.stringify(sessionBody)}`);
     }
 
-    const productsResponse = await context.request.get(`${posApiOrigin}/api/pos/products`, { timeout: API_TIMEOUT_MS });
+    const productsResponse = await apiRequestWithRetry(context.request, "get", `${posApiOrigin}/api/pos/products`);
     const productsBody = await safeJson(productsResponse);
     const productsBlocked = !productsResponse.ok();
     addStep(scenario, "api_products_after_expire", {

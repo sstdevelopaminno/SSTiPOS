@@ -1,18 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { PosManagerApprovalModal } from "@/components/pos-ui/pos-manager-approval-modal";
+import { PosUsersModule } from "@/components/pos/pos-users-module";
 import type {
   BranchSettings,
   PaymentAccountSettings,
+  PosDeviceSettings,
   PosSettingsSnapshot,
   StoreSettings
 } from "@/lib/services/pos-settings-service";
+import type { ActivityAuditItem, ActivityAuditPeriod } from "@/lib/services/activity-audit-service";
 import type { Language } from "@/lib/i18n";
 
-type SettingsView = "menu" | "store" | "branches" | "payments";
-type MenuIconName = "store" | "branch" | "payment" | "users" | "display" | "back" | "edit" | "trash" | "plus";
+type SettingsView = "menu" | "store" | "branches" | "devices" | "activity" | "payments" | "users";
+type MenuIconName = "store" | "branch" | "payment" | "users" | "display" | "terminal" | "activity" | "back" | "edit" | "trash" | "plus";
 
 type StoreForm = {
   display_name: string;
@@ -37,7 +41,33 @@ type PaymentForm = {
   account_number: string;
   promptpay_phone: string;
   qr_image_url: string;
+  qr_mode: "promptpay_link" | "qr_image";
+  applies_to_all_branches: boolean;
   is_active: boolean;
+};
+
+type DeviceForm = {
+  id: string;
+  branch_id: string;
+  device_code: string;
+  device_name: string;
+  device_type: "pos_terminal" | "mobile_scanner" | "kiosk";
+  status: "active" | "inactive" | "maintenance";
+  is_locked: boolean;
+  counter_name: string;
+  location: string;
+};
+
+type ActivityAuditResponse = {
+  items: ActivityAuditItem[];
+  pagination: {
+    page: number;
+    page_size: number;
+    total: number;
+    total_pages: number;
+  };
+  approved_by: string;
+  approver_role: string;
 };
 
 const emptyBranchForm: BranchForm = {
@@ -56,24 +86,71 @@ const emptyPaymentForm: PaymentForm = {
   account_number: "",
   promptpay_phone: "",
   qr_image_url: "",
+  qr_mode: "promptpay_link",
+  applies_to_all_branches: false,
   is_active: true
+};
+
+const emptyDeviceForm: DeviceForm = {
+  id: "",
+  branch_id: "",
+  device_code: "",
+  device_name: "",
+  device_type: "pos_terminal",
+  status: "active",
+  is_locked: true,
+  counter_name: "",
+  location: ""
 };
 
 const TEXT = {
   th: {
     title: "ตั้งค่า",
-    subtitle: "จัดการข้อมูลร้าน สาขา บัญชีชำระเงิน ผู้ใช้งาน และจอลูกค้า",
+    subtitle: "",
     back: "ย้อนกลับ",
     store: "ข้อมูลร้านค้า/บริษัท",
     storeDesc: "รหัสร้าน ชื่อที่แสดง โลโก้ ที่อยู่ และเบอร์ติดต่อ",
     branches: "เพิ่มสาขา",
     branchesDesc: "รายการสาขาที่เปิดใช้งาน เพิ่ม แก้ไข และลบสาขา",
+    devices: "เพิ่มเครื่องแคชเชียร์",
+    devicesDesc: "ผูกเครื่อง POS กับสาขา นโยบายล็อกอิน สิทธิ์ผู้ใช้ และกะขาย",
     payments: "ตั้งค่าชำระเงิน",
     paymentsDesc: "บัญชีธนาคาร พร้อมเพย์ QR และสถานะใช้งาน",
     users: "ผู้ใช้งาน",
     usersDesc: "จัดการพนักงาน สิทธิ์ และ PIN",
     display: "จอลูกค้า",
     displayDesc: "ตั้งค่าหน้าจอลูกค้าและการแสดงผล",
+    activityAudit: "ตรวจสอบพฤติกรรมการใช้งาน",
+    activityAuditDesc: "บันทึกว่าใครทำอะไร เมนูไหน เวลาใด พร้อม PIN และการอนุมัติ",
+    pinConfirmTitle: "ยืนยัน PIN ก่อนเปิดดู",
+    pinConfirmDesc: "เจ้าของร้านหรือผู้จัดการต้องยืนยัน PIN ทุกครั้ง ระบบจะบันทึกการเข้าดูและส่งให้หลังบ้าน IT",
+    pinCode: "รหัส PIN",
+    confirm: "ยืนยัน",
+    search: "ค้นหา",
+    filter: "คัดกรอง",
+    period: "ช่วงเวลา",
+    daily: "รายวัน",
+    monthly: "รายเดือน",
+    yearly: "รายปี",
+    date: "วันที่",
+    month: "เดือน",
+    year: "ปี",
+    module: "เมนู",
+    allMenus: "ทุกเมนู",
+    action: "พฤติกรรม",
+    actor: "ผู้ใช้งาน",
+    employeeCode: "รหัสพนักงาน",
+    approver: "ผู้อนุมัติ",
+    target: "ข้อมูลที่เกี่ยวข้อง",
+    viewedAt: "วันที่ เวลา",
+    previous: "ก่อนหน้า",
+    next: "ถัดไป",
+    totalRecords: "รายการทั้งหมด",
+    deleteRecords: "การลบ/ยกเลิก",
+    pinRecords: "PIN/อนุมัติ",
+    viewRecords: "การเข้าดู",
+    noRecords: "ไม่พบรายการ",
+    checkingSystem: "กำลังตรวจสอบระบบ",
     edit: "แก้ไข",
     save: "บันทึก",
     cancel: "ยกเลิก",
@@ -84,16 +161,43 @@ const TEXT = {
     storeCode: "รหัสร้าน",
     displayName: "การแสดงชื่อร้าน",
     logoUrl: "โลโก้ร้าน",
+    uploadLogo: "อัปโหลดโลโก้",
+    removeLogo: "ลบโลโก้",
+    logoUploadHint: "ระบบจะย่อขนาดรูปก่อนบันทึก และนำไปใช้บนใบเสร็จ POS อัตโนมัติ",
     address: "ที่อยู่",
     phone: "เบอร์ติดต่อ",
     branchCode: "รหัสสาขา",
     branchName: "ชื่อสาขา",
+    deviceCode: "รหัสเครื่อง",
+    deviceName: "ชื่อเครื่องแคชเชียร์",
+    deviceType: "ประเภทเครื่อง",
+    deviceStatus: "สถานะเครื่อง",
+    lockDevice: "ผูกเครื่องกับสาขา",
+    sharedDevice: "ใช้ร่วมกัน",
+    counterName: "ชื่อเคาน์เตอร์",
+    location: "ตำแหน่งติดตั้ง",
+    lastSeen: "เชื่อมต่อล่าสุด",
+    posTerminal: "เครื่อง POS",
+    mobileScanner: "มือถือสแกน",
+    kiosk: "Kiosk",
+    maintenance: "บำรุงรักษา",
     bankName: "ชื่อธนาคาร",
     accountName: "ชื่อบัญชี",
     accountNo: "เลขบัญชี",
     promptpay: "เบอร์พร้อมเพย์",
     qrImage: "ภาพ QR",
+    qrMode: "รูปแบบ QR",
+    qrModePromptPay: "QR ล็อกยอดจากพร้อมเพย์",
+    qrModeImage: "ใช้ภาพ QR ที่อัปโหลด",
+    qrModePromptPayHint: "หน้าขายจะใช้ลิงก์ promptpay.io แล้วเปลี่ยนยอดตามบิลอัตโนมัติ",
+    qrModeImageHint: "หน้าขายจะดึงภาพ QR นี้ไปแสดงแทนการสร้างลิงก์",
+    promptpayLinkPreview: "ลิงก์ที่จะใช้บนหน้าขาย",
+    uploadQr: "อัปโหลด QR",
+    removeQr: "ลบ QR",
+    addPaymentAccount: "เพิ่มบัญชี",
+    confirmDeletePayment: "ยืนยัน PIN ก่อนลบบัญชีชำระเงิน",
     branch: "สาขา",
+    allBranches: "ทุกสาขา",
     qrPayload: "PromptPay payload",
     schemaMissing: "ยังไม่ได้รัน migration สำหรับบัญชีชำระเงิน",
     saved: "บันทึกเรียบร้อย",
@@ -101,18 +205,51 @@ const TEXT = {
   },
   en: {
     title: "Settings",
-    subtitle: "Manage store profile, branches, payment accounts, users, and customer display",
+    subtitle: "",
     back: "Back",
     store: "Store / Company",
     storeDesc: "Store code, display name, logo, address, and contact phone",
     branches: "Branches",
     branchesDesc: "Open branches, add, edit, and delete",
+    devices: "Add Cashier Machine",
+    devicesDesc: "Bind POS devices to branches, login policy, user scope, and shifts",
     payments: "Payment Settings",
     paymentsDesc: "Bank accounts, PromptPay, QR, and active status",
     users: "Users",
     usersDesc: "Manage staff, permissions, and PIN",
     display: "Customer Display",
     displayDesc: "Configure customer-facing display",
+    activityAudit: "Usage Behavior Audit",
+    activityAuditDesc: "Track who did what, which menu, time, PIN, and approvals",
+    pinConfirmTitle: "Confirm PIN before viewing",
+    pinConfirmDesc: "Owner or manager PIN is required. Each view is logged for IT back office review.",
+    pinCode: "PIN",
+    confirm: "Confirm",
+    search: "Search",
+    filter: "Filter",
+    period: "Period",
+    daily: "Daily",
+    monthly: "Monthly",
+    yearly: "Yearly",
+    date: "Date",
+    month: "Month",
+    year: "Year",
+    module: "Menu",
+    allMenus: "All menus",
+    action: "Action",
+    actor: "User",
+    employeeCode: "Employee code",
+    approver: "Approver",
+    target: "Target",
+    viewedAt: "Date time",
+    previous: "Previous",
+    next: "Next",
+    totalRecords: "Total records",
+    deleteRecords: "Delete/cancel",
+    pinRecords: "PIN/approval",
+    viewRecords: "Views",
+    noRecords: "No records",
+    checkingSystem: "Checking system",
     edit: "Edit",
     save: "Save",
     cancel: "Cancel",
@@ -123,16 +260,43 @@ const TEXT = {
     storeCode: "Store code",
     displayName: "Display name",
     logoUrl: "Logo",
+    uploadLogo: "Upload logo",
+    removeLogo: "Remove logo",
+    logoUploadHint: "The image is resized before saving and used on POS receipts automatically",
     address: "Address",
     phone: "Contact phone",
     branchCode: "Branch code",
     branchName: "Branch name",
+    deviceCode: "Device code",
+    deviceName: "Cashier machine name",
+    deviceType: "Device type",
+    deviceStatus: "Device status",
+    lockDevice: "Bind device to branch",
+    sharedDevice: "Shared device",
+    counterName: "Counter name",
+    location: "Install location",
+    lastSeen: "Last connected",
+    posTerminal: "POS terminal",
+    mobileScanner: "Mobile scanner",
+    kiosk: "Kiosk",
+    maintenance: "Maintenance",
     bankName: "Bank name",
     accountName: "Account name",
     accountNo: "Account number",
     promptpay: "PromptPay phone",
     qrImage: "QR image",
+    qrMode: "QR mode",
+    qrModePromptPay: "Amount-locked PromptPay QR",
+    qrModeImage: "Uploaded QR image",
+    qrModePromptPayHint: "The sales screen uses promptpay.io and changes only the bill amount.",
+    qrModeImageHint: "The sales screen shows this uploaded QR image instead of generating a link.",
+    promptpayLinkPreview: "Sales screen link",
+    uploadQr: "Upload QR",
+    removeQr: "Remove QR",
+    addPaymentAccount: "Add account",
+    confirmDeletePayment: "Confirm PIN before deleting payment account",
     branch: "Branch",
+    allBranches: "All branches",
     qrPayload: "PromptPay payload",
     schemaMissing: "Payment account migration has not been applied yet",
     saved: "Saved",
@@ -141,6 +305,7 @@ const TEXT = {
 } as const;
 
 type Labels = Record<keyof typeof TEXT.th, string>;
+type StatusReporter = (message: string, options?: { popup?: boolean }) => void;
 
 function Icon({ name }: { name: MenuIconName }) {
   const common = {
@@ -197,6 +362,29 @@ function Icon({ name }: { name: MenuIconName }) {
         <rect x="3" y="5" width="18" height="12" rx="2" />
         <path d="M8 21h8" />
         <path d="M12 17v4" />
+      </svg>
+    );
+  }
+  if (name === "terminal") {
+    return (
+      <svg {...common}>
+        <rect x="4" y="4" width="16" height="14" rx="2" />
+        <path d="M8 8h8" />
+        <path d="M8 12h3" />
+        <path d="M14 12h2" />
+        <path d="M7 22h10" />
+        <path d="M12 18v4" />
+      </svg>
+    );
+  }
+  if (name === "activity") {
+    return (
+      <svg {...common}>
+        <path d="M9 3h6l1 2h3v16H5V5h3Z" />
+        <path d="M9 9h6" />
+        <path d="M9 13h3" />
+        <path d="M15 13l1.5 1.5L19 12" />
+        <path d="M9 17h6" />
       </svg>
     );
   }
@@ -262,13 +450,240 @@ function paymentToForm(account: PaymentAccountSettings): PaymentForm {
     account_number: account.account_number,
     promptpay_phone: account.promptpay_phone,
     qr_image_url: account.qr_image_url,
+    qr_mode: account.qr_mode,
+    applies_to_all_branches: account.applies_to_all_branches,
     is_active: account.is_active
+  };
+}
+
+function deviceToForm(device: PosDeviceSettings): DeviceForm {
+  return {
+    id: device.id,
+    branch_id: device.branch_id,
+    device_code: device.device_code,
+    device_name: device.device_name,
+    device_type: device.device_type,
+    status: device.status,
+    is_locked: device.is_locked,
+    counter_name: device.counter_name,
+    location: device.location
   };
 }
 
 function buildPromptPayPayload(phone: string) {
   const digits = phone.replace(/[^\d]/g, "");
-  return digits ? `promptpay://phone/${digits}` : "";
+  return digits ? `https://promptpay.io/${digits}/{amount}` : "";
+}
+
+function todayInputValue() {
+  const now = new Date();
+  const offsetMs = now.getTimezoneOffset() * 60_000;
+  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
+}
+
+function periodInputType(period: ActivityAuditPeriod) {
+  if (period === "year") return "number";
+  if (period === "month") return "month";
+  return "date";
+}
+
+function normalizeDateValue(period: ActivityAuditPeriod, value: string) {
+  const today = todayInputValue();
+  if (period === "year") return value || today.slice(0, 4);
+  if (period === "month") return value || today.slice(0, 7);
+  return value || today;
+}
+
+function resizeLogoFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) {
+      reject(new Error("Please choose an image file."));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const image = new window.Image();
+      image.onload = () => {
+        const maxWidth = 360;
+        const maxHeight = 180;
+        const ratio = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
+        const width = Math.max(1, Math.round(image.width * ratio));
+        const height = Math.max(1, Math.round(image.height * ratio));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          reject(new Error("Unable to resize logo."));
+          return;
+        }
+        context.clearRect(0, 0, width, height);
+        context.drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/webp", 0.78));
+      };
+      image.onerror = () => reject(new Error("Unable to read logo image."));
+      image.src = String(reader.result ?? "");
+    };
+    reader.onerror = () => reject(new Error("Unable to read logo image."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function resizeQrFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) {
+      reject(new Error("Please choose an image file."));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const image = new window.Image();
+      image.onload = () => {
+        const maxSize = 520;
+        const ratio = Math.min(maxSize / image.width, maxSize / image.height, 1);
+        const width = Math.max(1, Math.round(image.width * ratio));
+        const height = Math.max(1, Math.round(image.height * ratio));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          reject(new Error("Unable to resize QR image."));
+          return;
+        }
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, width, height);
+        context.drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/webp", 0.86));
+      };
+      image.onerror = () => reject(new Error("Unable to read QR image."));
+      image.src = String(reader.result ?? "");
+    };
+    reader.onerror = () => reject(new Error("Unable to read QR image."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatAuditDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("th-TH", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Bangkok"
+  }).format(date);
+}
+
+function auditMenuLabel(item: ActivityAuditItem, lang: Language) {
+  const key = `${item.module || ""} ${item.target_table || ""} ${item.menu || ""}`.toLowerCase();
+  const labels =
+    lang === "en"
+      ? {
+          sales: "Sales screen",
+          stock: "Product management",
+          shift: "Shift open/close",
+          users: "System users",
+          settings: "Settings",
+          activity: "Usage behavior audit",
+          performance: "System performance",
+          sessions: "POS login sessions",
+          it: "IT back office",
+          general: "System activity"
+        }
+      : {
+          sales: "หน้าขาย",
+          stock: "จัดการสินค้า",
+          shift: "เปิด/ปิดกะ",
+          users: "ผู้ใช้งานระบบ",
+          settings: "ตั้งค่า",
+          activity: "ตรวจสอบพฤติกรรมการใช้งาน",
+          performance: "ตรวจสอบประสิทธิภาพระบบ",
+          sessions: "การเข้าใช้งาน POS",
+          it: "ระบบหลังบ้าน IT",
+          general: "การทำงานของระบบ"
+        };
+
+  if (key.includes("settings_activity_audit")) return labels.activity;
+  if (key.includes("pos_performance") || key.includes("pos_route")) return labels.performance;
+  if (key.includes("pos_session")) return labels.sessions;
+  if (key.includes("pos_sales") || key.includes("orders") || key.includes("payments")) return labels.sales;
+  if (key.includes("stock") || key.includes("ingredient") || key.includes("product")) return labels.stock;
+  if (key.includes("shift")) return labels.shift;
+  if (key.includes("staff") || key.includes("user")) return labels.users;
+  if (key.includes("setting")) return labels.settings;
+  if (key.includes("it_admin")) return labels.it;
+  return labels.general;
+}
+
+function auditActionLabel(item: ActivityAuditItem, lang: Language) {
+  const action = item.action.toLowerCase();
+  const table = item.target_table.toLowerCase();
+  const labels =
+    lang === "en"
+      ? {
+          viewedAudit: "Viewed usage behavior history",
+          pinFailed: "Entered an incorrect PIN",
+          pinGranted: "Approved with PIN",
+          performance: "Checked system performance",
+          login: "Logged in to POS",
+          logout: "Logged out",
+          userUpdated: "Updated a system user",
+          userCreated: "Added a system user",
+          userDeleted: "Deleted a system user",
+          created: "Added new information",
+          updated: "Edited information",
+          deleted: "Deleted information",
+          cancelled: "Cancelled a transaction",
+          viewed: "Viewed information",
+          printed: "Printed a document",
+          paid: "Recorded a payment",
+          opened: "Opened a shift",
+          closed: "Closed a shift",
+          general: "Used the system"
+        }
+      : {
+          viewedAudit: "เปิดดูประวัติพฤติกรรมการใช้งาน",
+          pinFailed: "กรอก PIN ไม่ถูกต้อง",
+          pinGranted: "อนุมัติรายการด้วย PIN",
+          performance: "ตรวจสอบความเร็วและสถานะของระบบ",
+          login: "เข้าสู่ระบบ POS",
+          logout: "ออกจากระบบ",
+          userUpdated: "แก้ไขข้อมูลผู้ใช้งานระบบ",
+          userCreated: "เพิ่มผู้ใช้งานระบบ",
+          userDeleted: "ลบผู้ใช้งานระบบ",
+          created: "เพิ่มข้อมูลใหม่",
+          updated: "แก้ไขข้อมูล",
+          deleted: "ลบข้อมูล",
+          cancelled: "ยกเลิกรายการ",
+          viewed: "เปิดดูข้อมูล",
+          printed: "พิมพ์เอกสาร",
+          paid: "บันทึกการชำระเงิน",
+          opened: "เปิดกะขาย",
+          closed: "ปิดกะขาย",
+          general: "ใช้งานระบบ"
+        };
+
+  if (action === "settings_activity_audit_viewed") return labels.viewedAudit;
+  if (action === "settings_activity_audit_pin_failed" || action === "pin_approval_failed") return labels.pinFailed;
+  if (action === "pin_approval_granted") return labels.pinGranted;
+  if (action === "pos_route_perf" || table === "pos_routes") return labels.performance;
+  if (action === "session_created" || action.includes("login_success")) return labels.login;
+  if (action.includes("logout") || action.includes("session_revoked")) return labels.logout;
+  if (action.includes("user") && (action.includes("updated") || action.includes("edit"))) return labels.userUpdated;
+  if (action.includes("user") && (action.includes("created") || action.includes("added"))) return labels.userCreated;
+  if (action.includes("user") && (action.includes("deleted") || action.includes("delete"))) return labels.userDeleted;
+  if (action.includes("cancel")) return labels.cancelled;
+  if (action.includes("delete") || action.includes("deleted") || action.includes("revoked")) return labels.deleted;
+  if (action.includes("update") || action.includes("updated") || action.includes("edit")) return labels.updated;
+  if (action.includes("create") || action.includes("created") || action.includes("add")) return labels.created;
+  if (action.includes("view") || action.includes("read") || action.includes("opened")) return labels.viewed;
+  if (action.includes("print")) return labels.printed;
+  if (action.includes("pay") || action.includes("payment")) return labels.paid;
+  if (action.includes("shift_open")) return labels.opened;
+  if (action.includes("shift_close")) return labels.closed;
+  return labels.general;
 }
 
 async function readApiData<T>(response: Response): Promise<T> {
@@ -369,6 +784,29 @@ function StatusPill({ active, labels }: { active: boolean; labels: Labels }) {
   );
 }
 
+function SaveSuccessPopup({ labels, message, onClose }: { labels: Labels; message: string; onClose: () => void }) {
+  useEffect(() => {
+    const timeoutId = window.setTimeout(onClose, 2600);
+    return () => window.clearTimeout(timeoutId);
+  }, [onClose]);
+
+  return (
+    <div className="pointer-events-none fixed right-4 top-4 z-[70] flex w-[min(420px,calc(100vw-32px))] justify-end" role="status" aria-live="polite">
+      <div className="pointer-events-auto flex w-full items-start gap-3 rounded-lg border border-emerald-100 bg-white p-4 text-left shadow-xl">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+        </div>
+        <p className="min-w-0 flex-1 text-sm font-black text-slate-950">{message}</p>
+        <button type="button" onClick={onClose} className="shrink-0 rounded-md px-2 py-1 text-xs font-bold text-slate-500 hover:bg-slate-50" aria-label={labels.cancel}>
+          x
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function MenuButton({
   icon,
   title,
@@ -457,11 +895,12 @@ function StorePanel({
   setStore: (store: StoreSettings | null) => void;
   onBack: () => void;
   canManage: boolean;
-  reportStatus: (message: string) => void;
+  reportStatus: StatusReporter;
 }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<StoreForm>(() => storeToForm(store));
   const [isSaving, setIsSaving] = useState(false);
+  const [isLogoBusy, setIsLogoBusy] = useState(false);
 
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -479,11 +918,26 @@ function StorePanel({
         setStore(data.store);
         setForm(storeToForm(data.store));
         setEditing(false);
-        reportStatus(labels.saved);
+        reportStatus(labels.saved, { popup: true });
       } catch (error) {
         reportStatus(error instanceof Error ? error.message : labels.failed);
       } finally {
         setIsSaving(false);
+      }
+    })();
+  }
+
+  function uploadLogo(file: File | undefined) {
+    if (!file) return;
+    setIsLogoBusy(true);
+    void (async () => {
+      try {
+        const logoUrl = await resizeLogoFile(file);
+        setForm((current) => ({ ...current, logo_url: logoUrl }));
+      } catch (error) {
+        reportStatus(error instanceof Error ? error.message : labels.failed);
+      } finally {
+        setIsLogoBusy(false);
       }
     })();
   }
@@ -519,7 +973,7 @@ function StorePanel({
           <div className="flex min-h-40 items-center justify-center rounded-lg border border-slate-200 bg-slate-50">
             {form.logo_url ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={form.logo_url} alt="" className="max-h-32 max-w-[150px] object-contain" />
+              <img src={form.logo_url} alt={labels.logoUrl} className="max-h-32 max-w-[150px] object-contain" />
             ) : (
               <span className="text-sm font-bold text-slate-400">LOGO</span>
             )}
@@ -530,14 +984,31 @@ function StorePanel({
               label={labels.displayName}
               value={form.display_name}
               disabled={!editing}
-              onChange={(value) => setForm((current) => ({ ...current, display_name: value }))}
-            />
-            <Field
-              label={labels.logoUrl}
-              value={form.logo_url}
-              disabled={!editing}
-              onChange={(value) => setForm((current) => ({ ...current, logo_url: value }))}
-            />
+                onChange={(value) => setForm((current) => ({ ...current, display_name: value }))}
+              />
+            <div className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
+              <span>{labels.logoUrl}</span>
+              <div className="flex flex-wrap gap-2">
+                <label className={`inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 transition hover:bg-slate-50 ${!editing || isLogoBusy ? "pointer-events-none opacity-60" : ""}`}>
+                  <Icon name="plus" />
+                  {isLogoBusy ? "..." : labels.uploadLogo}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    disabled={!editing || isLogoBusy}
+                    className="sr-only"
+                    onChange={(event) => {
+                      uploadLogo(event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+                <ActionButton variant="plain" disabled={!editing || !form.logo_url || isLogoBusy} onClick={() => setForm((current) => ({ ...current, logo_url: "" }))}>
+                  {labels.removeLogo}
+                </ActionButton>
+              </div>
+              <p className="text-xs font-medium text-slate-500">{labels.logoUploadHint}</p>
+            </div>
             <Field
               label={labels.phone}
               value={form.contact_phone}
@@ -574,7 +1045,7 @@ function BranchPanel({
   onBack: () => void;
   canManage: boolean;
   activeBranchId: string | null;
-  reportStatus: (message: string) => void;
+  reportStatus: StatusReporter;
 }) {
   const [form, setForm] = useState<BranchForm>(emptyBranchForm);
   const [isBusy, setIsBusy] = useState(false);
@@ -599,9 +1070,9 @@ function BranchPanel({
         );
         setBranches(branches.some((branch) => branch.id === data.branch.id) ? branches.map((branch) => (branch.id === data.branch.id ? data.branch : branch)) : [...branches, data.branch]);
         setForm(emptyBranchForm);
-        reportStatus(labels.saved);
+        reportStatus(labels.saved, { popup: true });
       } catch (error) {
-        reportStatus(error instanceof Error ? error.message : labels.failed);
+        reportStatus(error instanceof Error ? error.message : labels.failed, { popup: true });
       } finally {
         setIsBusy(false);
       }
@@ -688,8 +1159,642 @@ function BranchPanel({
   );
 }
 
+function DevicePanel({
+  labels,
+  devices,
+  setDevices,
+  devicesLoaded,
+  setDevicesLoaded,
+  branches,
+  onBack,
+  canManage,
+  activeBranchId,
+  reportStatus
+}: {
+  labels: Labels;
+  devices: PosDeviceSettings[];
+  setDevices: (devices: PosDeviceSettings[] | ((current: PosDeviceSettings[]) => PosDeviceSettings[])) => void;
+  devicesLoaded: boolean;
+  setDevicesLoaded: (loaded: boolean) => void;
+  branches: BranchSettings[];
+  onBack: () => void;
+  canManage: boolean;
+  activeBranchId: string | null;
+  reportStatus: StatusReporter;
+}) {
+  const initialDeviceForm = { ...emptyDeviceForm, branch_id: activeBranchId ?? branches[0]?.id ?? "" };
+  const [form, setForm] = useState<DeviceForm>(initialDeviceForm);
+  const [branchFilter, setBranchFilter] = useState("all");
+  const [isDeviceFormOpen, setIsDeviceFormOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<PosDeviceSettings | null>(null);
+  const [isLoading, setIsLoading] = useState(!devicesLoaded);
+  const [isMutating, setIsMutating] = useState(false);
+  const [isScrollbarVisible, setIsScrollbarVisible] = useState(false);
+  const scrollbarHideTimeoutRef = useRef<number | null>(null);
+  const branchById = useMemo(() => new Map(branches.map((branch) => [branch.id, branch])), [branches]);
+  const filteredDevices = useMemo(
+    () => (branchFilter === "all" ? devices : devices.filter((device) => device.branch_id === branchFilter)),
+    [branchFilter, devices]
+  );
+  const isBusy = isMutating;
+
+  function revealScrollbarBriefly() {
+    setIsScrollbarVisible(true);
+    if (scrollbarHideTimeoutRef.current !== null) {
+      window.clearTimeout(scrollbarHideTimeoutRef.current);
+    }
+    scrollbarHideTimeoutRef.current = window.setTimeout(() => {
+      setIsScrollbarVisible(false);
+      scrollbarHideTimeoutRef.current = null;
+    }, 1400);
+  }
+
+  useEffect(() => {
+    if (devicesLoaded) {
+      setIsLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsLoading(true);
+    void (async () => {
+      try {
+        const data = await readApiData<{ devices: PosDeviceSettings[] }>(
+          await fetch("/api/pos/settings/devices", { cache: "no-store", signal: controller.signal })
+        );
+        setDevices(data.devices);
+        setDevicesLoaded(true);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          reportStatus(error instanceof Error ? error.message : labels.failed, { popup: true });
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      }
+    })();
+    return () => {
+      controller.abort();
+    };
+  }, [devicesLoaded, labels.failed, reportStatus, setDevices, setDevicesLoaded]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollbarHideTimeoutRef.current !== null) {
+        window.clearTimeout(scrollbarHideTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isBusy) return;
+    const method = form.id ? "PATCH" : "POST";
+    setIsMutating(true);
+    void (async () => {
+      try {
+        const data = await readApiData<{ device: PosDeviceSettings }>(
+          await fetch("/api/pos/settings/devices", {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(form)
+          })
+        );
+        setDevices((current) => (current.some((device) => device.id === data.device.id) ? current.map((device) => (device.id === data.device.id ? data.device : device)) : [...current, data.device]));
+        setForm(initialDeviceForm);
+        setIsDeviceFormOpen(false);
+        reportStatus(labels.saved, { popup: true });
+      } catch (error) {
+        reportStatus(error instanceof Error ? error.message : labels.failed, { popup: true });
+      } finally {
+        setIsMutating(false);
+      }
+    })();
+  }
+
+  function deleteDevice(device: PosDeviceSettings) {
+    if (isBusy) return;
+    setIsMutating(true);
+    void (async () => {
+      try {
+        const data = await readApiData<{ id: string; deleted: boolean }>(
+          await fetch(`/api/pos/settings/devices?device_id=${encodeURIComponent(device.id)}`, { method: "DELETE" })
+        );
+        setDevices((current) => current.filter((item) => item.id !== data.id));
+        setDeleteTarget(null);
+        reportStatus(labels.saved, { popup: true });
+      } catch (error) {
+        reportStatus(error instanceof Error ? error.message : labels.failed, { popup: true });
+      } finally {
+        setIsMutating(false);
+      }
+    })();
+  }
+
+  function openCreateDevice() {
+    setForm(initialDeviceForm);
+    setIsDeviceFormOpen(true);
+  }
+
+  function openEditDevice(device: PosDeviceSettings) {
+    setForm(deviceToForm(device));
+    setIsDeviceFormOpen(true);
+  }
+
+  function closeDeviceForm() {
+    if (isBusy) return;
+    setForm(initialDeviceForm);
+    setIsDeviceFormOpen(false);
+  }
+
+  return (
+    <section>
+      <PanelHeader title={labels.devices} onBack={onBack} labels={labels} />
+      <div className="grid gap-5">
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-100 p-4">
+            <label className="grid max-w-xs gap-1.5 text-[13px] font-semibold text-slate-700">
+              <span>{labels.branch}</span>
+              <select
+                value={branchFilter}
+                onChange={(event) => setBranchFilter(event.target.value)}
+                className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="all">{labels.allBranches}</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <ActionButton onClick={openCreateDevice} disabled={!canManage || isBusy}>
+              <Icon name="terminal" />
+              {labels.devices}
+            </ActionButton>
+          </div>
+          <div className="grid grid-cols-[1fr_140px_130px_120px] gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-black text-slate-500">
+            <span>{labels.deviceName}</span>
+            <span>{labels.branch}</span>
+            <span>{labels.deviceStatus}</span>
+            <span />
+          </div>
+          {isLoading ? (
+            Array.from({ length: 4 }).map((_, index) => (
+              <div key={`device-loading-${index}`} className="grid grid-cols-[1fr_140px_130px_120px] items-center gap-3 border-b border-slate-100 px-4 py-4 last:border-b-0">
+                <div className="grid gap-2">
+                  <span className="h-4 w-44 animate-pulse rounded bg-slate-100" />
+                  <span className="h-3 w-32 animate-pulse rounded bg-slate-100" />
+                  <span className="h-3 w-20 animate-pulse rounded bg-slate-100" />
+                </div>
+                <span className="h-4 w-20 animate-pulse rounded bg-slate-100" />
+                <span className="h-7 w-24 animate-pulse rounded-full bg-slate-100" />
+                <span className="ml-auto h-9 w-20 animate-pulse rounded-lg bg-slate-100" />
+              </div>
+            ))
+          ) : filteredDevices.map((device) => (
+            <div key={device.id} className="grid grid-cols-[1fr_140px_130px_120px] items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black text-slate-950">{device.device_name}</p>
+                <p className="truncate text-xs font-bold text-slate-500">{device.device_code}</p>
+                <p className="truncate text-xs font-medium text-slate-400">{device.counter_name || device.location || "-"}</p>
+              </div>
+              <p className="truncate text-sm font-bold text-slate-700">{branchById.get(device.branch_id)?.name ?? device.branch_id}</p>
+              <div className="grid gap-1">
+                <span
+                  className={`inline-flex min-h-7 items-center rounded-full px-2.5 text-xs font-bold ${
+                    device.status === "active"
+                      ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                      : device.status === "maintenance"
+                        ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
+                        : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"
+                  }`}
+                >
+                  {device.status === "active" ? labels.active : device.status === "maintenance" ? labels.maintenance : labels.inactive}
+                </span>
+                <span className="text-xs font-semibold text-slate-500">{device.is_locked ? labels.lockDevice : labels.sharedDevice}</span>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => openEditDevice(device)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50" title={labels.edit}>
+                  <Icon name="edit" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeleteTarget(device)}
+                  disabled={!canManage || isBusy}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  title={labels.delete}
+                >
+                  <Icon name="trash" />
+                </button>
+              </div>
+            </div>
+          ))}
+          {!isLoading && filteredDevices.length === 0 ? <div className="p-8 text-center text-sm font-bold text-slate-500">-</div> : null}
+        </div>
+      </div>
+      {isDeviceFormOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true" aria-label={form.id ? labels.edit : labels.devices}>
+          <form
+            onSubmit={save}
+            onPointerDown={revealScrollbarBriefly}
+            onScroll={revealScrollbarBriefly}
+            className={`pos-settings-device-modal-scroll grid max-h-[92vh] w-full max-w-xl gap-4 overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-xl ${isScrollbarVisible ? "is-scrollbar-visible" : ""}`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-base font-black text-slate-950">
+                <Icon name="terminal" />
+                {form.id ? labels.edit : labels.devices}
+              </div>
+              <button
+                type="button"
+                onClick={closeDeviceForm}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50"
+                aria-label={labels.cancel}
+                title={labels.cancel}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M18 6 6 18" />
+                  <path d="m6 6 12 12" />
+                </svg>
+              </button>
+            </div>
+            <label className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
+              <span>{labels.branch}</span>
+              <select
+                value={form.branch_id}
+                disabled={!canManage}
+                onChange={(event) => setForm((current) => ({ ...current, branch_id: event.target.value }))}
+                className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+              >
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Field label={labels.deviceCode} value={form.device_code} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, device_code: value.toUpperCase() }))} />
+            <Field label={labels.deviceName} value={form.device_name} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, device_name: value }))} />
+            <Field label={labels.counterName} value={form.counter_name} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, counter_name: value }))} />
+            <Field label={labels.location} value={form.location} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, location: value }))} />
+            <label className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
+              <span>{labels.deviceType}</span>
+              <select
+                value={form.device_type}
+                disabled={!canManage}
+                onChange={(event) => setForm((current) => ({ ...current, device_type: event.target.value as DeviceForm["device_type"] }))}
+                className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="pos_terminal">{labels.posTerminal}</option>
+                <option value="mobile_scanner">{labels.mobileScanner}</option>
+                <option value="kiosk">{labels.kiosk}</option>
+              </select>
+            </label>
+            <label className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
+              <span>{labels.deviceStatus}</span>
+              <select
+                value={form.status}
+                disabled={!canManage}
+                onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as DeviceForm["status"] }))}
+                className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="active">{labels.active}</option>
+                <option value="inactive">{labels.inactive}</option>
+                <option value="maintenance">{labels.maintenance}</option>
+              </select>
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm font-bold text-slate-700">
+              <input type="checkbox" checked={form.is_locked} disabled={!canManage} onChange={(event) => setForm((current) => ({ ...current, is_locked: event.target.checked }))} />
+              {labels.lockDevice}
+            </label>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+              <ActionButton variant="plain" onClick={closeDeviceForm} disabled={isBusy}>
+                {labels.cancel}
+              </ActionButton>
+              <ActionButton type="submit" disabled={!canManage || isBusy}>
+                {labels.save}
+              </ActionButton>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4" role="alertdialog" aria-modal="true" aria-label={labels.delete}>
+          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="flex items-center gap-2 text-base font-black text-slate-950">
+              <Icon name="trash" />
+              {labels.delete}
+            </div>
+            <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">
+              {labels.delete} {deleteTarget.device_name}?
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <ActionButton variant="plain" disabled={isBusy} onClick={() => setDeleteTarget(null)}>
+                {labels.cancel}
+              </ActionButton>
+              <ActionButton variant="danger" disabled={isBusy} onClick={() => deleteDevice(deleteTarget)}>
+                {labels.delete}
+              </ActionButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ActivityAuditPanel({
+  labels,
+  lang,
+  branches,
+  onBack,
+  reportStatus
+}: {
+  labels: Labels;
+  lang: Language;
+  branches: BranchSettings[];
+  onBack: () => void;
+  reportStatus: (message: string) => void;
+}) {
+  const today = todayInputValue();
+  const [pin, setPin] = useState("");
+  const [period, setPeriod] = useState<ActivityAuditPeriod>("day");
+  const [dateValue, setDateValue] = useState(today);
+  const [branchId, setBranchId] = useState("all");
+  const [moduleFilter, setModuleFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState<ActivityAuditResponse | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isCheckingSystem, setIsCheckingSystem] = useState(false);
+
+  const items = data?.items ?? [];
+  const deleteCount = items.filter((item) => item.is_delete_action).length;
+  const pinCount = items.filter((item) => item.is_pin_action).length;
+  const viewCount = items.filter((item) => item.action.includes("view")).length;
+  const pageCount = data?.pagination.total_pages ?? 0;
+
+  function loadAudit(nextPage = 1, closeFilter = false) {
+    if (isBusy) return;
+    setIsBusy(true);
+    setIsCheckingSystem(true);
+    void (async () => {
+      try {
+        const result = await readApiData<ActivityAuditResponse>(
+          await fetch("/api/pos/settings/activity-audit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              manager_pin: pin,
+              period,
+              date: normalizeDateValue(period, dateValue),
+              branch_id: branchId,
+              module: moduleFilter,
+              search,
+              page: nextPage,
+              page_size: 7
+            })
+          })
+        );
+        setData(result);
+        setPage(result.pagination.page);
+        if (closeFilter) setIsFilterOpen(false);
+        reportStatus(labels.saved);
+      } catch (error) {
+        reportStatus(error instanceof Error ? error.message : labels.failed);
+      } finally {
+        setIsBusy(false);
+        setIsCheckingSystem(false);
+      }
+    })();
+  }
+
+  function submitFilters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    loadAudit(1, true);
+  }
+
+  function changePeriod(nextPeriod: ActivityAuditPeriod) {
+    setPeriod(nextPeriod);
+    setDateValue(normalizeDateValue(nextPeriod, ""));
+    setPage(1);
+  }
+
+  return (
+    <section>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50"
+            title={labels.back}
+            aria-label={labels.back}
+          >
+            <Icon name="back" />
+          </button>
+          <h2 className="text-xl font-black text-slate-950">{labels.activityAudit}</h2>
+        </div>
+        <ActionButton onClick={() => setIsFilterOpen(true)}>
+          <Icon name="activity" />
+          {labels.filter}
+        </ActionButton>
+      </div>
+
+      {isFilterOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" role="dialog" aria-modal="true" aria-label={labels.filter}>
+          <div className="w-full max-w-5xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+              <div className="flex items-center gap-2 text-base font-black text-slate-950">
+                <Icon name="activity" />
+                {labels.filter}
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFilterOpen(false)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50"
+                aria-label={labels.cancel}
+                title={labels.cancel}
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={submitFilters} className="grid gap-3 p-4">
+        <div className="grid gap-3 lg:grid-cols-[220px_170px_180px_1fr]">
+          <label className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
+            <span>{labels.pinCode}</span>
+            <input
+              type="password"
+              inputMode="numeric"
+              value={pin}
+              onChange={(event) => setPin(event.target.value)}
+              placeholder={labels.pinConfirmTitle}
+              className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+          </label>
+          <label className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
+            <span>{labels.period}</span>
+            <select
+              value={period}
+              onChange={(event) => changePeriod(event.target.value as ActivityAuditPeriod)}
+              className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            >
+              <option value="day">{labels.daily}</option>
+              <option value="month">{labels.monthly}</option>
+              <option value="year">{labels.yearly}</option>
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
+            <span>{period === "year" ? labels.year : period === "month" ? labels.month : labels.date}</span>
+            <input
+              type={periodInputType(period)}
+              min={period === "year" ? "2024" : undefined}
+              max={period === "year" ? "2099" : undefined}
+              value={dateValue}
+              onChange={(event) => setDateValue(event.target.value)}
+              className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+          </label>
+          <label className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
+            <span>{labels.search}</span>
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+          </label>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-[1fr_1fr_140px]">
+          <label className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
+            <span>{labels.branch}</span>
+            <select
+              value={branchId}
+              onChange={(event) => setBranchId(event.target.value)}
+              className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            >
+              <option value="all">{labels.allBranches}</option>
+              {branches.map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
+            <span>{labels.module}</span>
+            <select
+              value={moduleFilter}
+              onChange={(event) => setModuleFilter(event.target.value)}
+              className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            >
+              <option value="all">{labels.allMenus}</option>
+              <option value="pos_sales">หน้าขาย</option>
+              <option value="stock">จัดการสินค้า</option>
+              <option value="shift">เปิด/ปิดกะ</option>
+              <option value="staff">ผู้ใช้งาน</option>
+              <option value="settings_activity_audit">{labels.activityAudit}</option>
+              <option value="it_admin">ระบบหลังบ้าน IT</option>
+            </select>
+          </label>
+          <ActionButton type="submit" disabled={isBusy || pin.length < 4}>
+            <Icon name="activity" />
+            {labels.confirm}
+          </ActionButton>
+        </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {isCheckingSystem ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4" role="alertdialog" aria-modal="true" aria-label={labels.checkingSystem}>
+          <div className="flex min-h-36 w-full max-w-sm flex-col items-center justify-center gap-4 rounded-lg border border-slate-200 bg-white p-6 text-center shadow-xl">
+            <span className="h-10 w-10 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
+            <p className="text-lg font-black text-slate-950">{labels.checkingSystem}</p>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mb-4 grid gap-3 md:grid-cols-4">
+        {[
+          [labels.totalRecords, String(data?.pagination.total ?? 0)],
+          [labels.deleteRecords, String(deleteCount)],
+          [labels.pinRecords, String(pinCount)],
+          [labels.viewRecords, String(viewCount)]
+        ].map(([title, value]) => (
+          <div key={title} className="rounded-lg border border-slate-200 bg-white p-4">
+            <p className="text-xs font-bold text-slate-500">{title}</p>
+            <p className="mt-2 text-2xl font-black text-slate-950">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="grid grid-cols-[150px_150px_1.2fr_1fr_1fr_120px] gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-black text-slate-500">
+          <span>{labels.viewedAt}</span>
+          <span>{labels.module}</span>
+          <span>{labels.actor}</span>
+          <span>{labels.action}</span>
+          <span>{labels.approver}</span>
+          <span>{labels.branch}</span>
+        </div>
+        {items.map((item) => (
+          <div key={item.id} className="grid grid-cols-[150px_150px_1.2fr_1fr_1fr_120px] items-center gap-3 border-b border-slate-100 px-4 py-3 text-sm last:border-b-0">
+            <span className="text-xs font-bold text-slate-600">{formatAuditDate(item.created_at)}</span>
+            <span className="min-w-0 truncate font-black text-slate-800">{auditMenuLabel(item, lang)}</span>
+            <span className="min-w-0">
+              <span className="block truncate font-black text-slate-950">{item.actor_name}</span>
+              <span className="block truncate text-xs font-semibold text-slate-500">
+                {item.actor_employee_code || item.actor_role || "-"}
+              </span>
+            </span>
+            <span className="min-w-0">
+              <span
+                className={`inline-flex max-w-full items-center rounded-full px-2.5 py-1 text-xs font-bold ${
+                  item.is_delete_action ? "bg-red-50 text-red-700 ring-1 ring-red-200" : item.is_pin_action ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200" : "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
+                }`}
+              >
+                <span className="truncate">{auditActionLabel(item, lang)}</span>
+              </span>
+              <span className="mt-1 block truncate text-xs font-semibold text-slate-500">{auditMenuLabel(item, lang)}</span>
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate font-bold text-slate-800">{item.approver_name}</span>
+              <span className="block truncate text-xs font-semibold text-slate-500">{item.approver_role || "-"}</span>
+            </span>
+            <span className="truncate text-xs font-bold text-slate-600">{item.branch_name}</span>
+          </div>
+        ))}
+        {items.length === 0 ? <div className="p-8 text-center text-sm font-bold text-slate-500">{data ? labels.noRecords : labels.pinConfirmTitle}</div> : null}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm font-bold text-slate-500">
+          {labels.totalRecords}: {data?.pagination.total ?? 0}
+        </p>
+        <div className="flex gap-2">
+          <ActionButton variant="plain" disabled={isBusy || page <= 1} onClick={() => loadAudit(page - 1)}>
+            {labels.previous}
+          </ActionButton>
+          <span className="inline-flex min-h-10 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-black text-slate-700">
+            {page}/{Math.max(1, pageCount || 1)}
+          </span>
+          <ActionButton variant="plain" disabled={isBusy || pageCount === 0 || page >= pageCount} onClick={() => loadAudit(page + 1)}>
+            {labels.next}
+          </ActionButton>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function PaymentPanel({
   labels,
+  lang,
   accounts,
   setAccounts,
   branches,
@@ -700,6 +1805,7 @@ function PaymentPanel({
   reportStatus
 }: {
   labels: Labels;
+  lang: Language;
   accounts: PaymentAccountSettings[];
   setAccounts: (accounts: PaymentAccountSettings[]) => void;
   branches: BranchSettings[];
@@ -707,13 +1813,33 @@ function PaymentPanel({
   canManage: boolean;
   paymentReady: boolean;
   activeBranchId: string | null;
-  reportStatus: (message: string) => void;
+  reportStatus: StatusReporter;
 }) {
   const initialPaymentForm = { ...emptyPaymentForm, branch_id: activeBranchId ?? branches[0]?.id ?? "" };
   const [form, setForm] = useState<PaymentForm>(initialPaymentForm);
+  const [isPaymentFormOpen, setIsPaymentFormOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<PaymentAccountSettings | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [isQrBusy, setIsQrBusy] = useState(false);
+  const warnedSchemaRef = useRef(false);
   const branchById = useMemo(() => new Map(branches.map((branch) => [branch.id, branch])), [branches]);
+  const sortedAccounts = useMemo(
+    () =>
+      [...accounts].sort((left, right) => {
+        const leftBranch = branchById.get(left.branch_id)?.name ?? left.branch_id;
+        const rightBranch = branchById.get(right.branch_id)?.name ?? right.branch_id;
+        return `${leftBranch} ${left.bank_name}`.localeCompare(`${rightBranch} ${right.bank_name}`, "th");
+      }),
+    [accounts, branchById]
+  );
   const promptpayPayload = buildPromptPayPayload(form.promptpay_phone);
+  const promptpayPreviewUrl = promptpayPayload ? promptpayPayload.replace("{amount}", "100") : "";
+
+  useEffect(() => {
+    if (paymentReady || warnedSchemaRef.current) return;
+    warnedSchemaRef.current = true;
+    reportStatus(labels.schemaMissing, { popup: true });
+  }, [labels.schemaMissing, paymentReady, reportStatus]);
 
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -731,6 +1857,7 @@ function PaymentPanel({
         );
         setAccounts(accounts.some((account) => account.id === data.account.id) ? accounts.map((account) => (account.id === data.account.id ? data.account : account)) : [...accounts, data.account]);
         setForm(initialPaymentForm);
+        setIsPaymentFormOpen(false);
         reportStatus(labels.saved);
       } catch (error) {
         reportStatus(error instanceof Error ? error.message : labels.failed);
@@ -740,22 +1867,26 @@ function PaymentPanel({
     })();
   }
 
-  function deleteAccount(account: PaymentAccountSettings) {
+  async function deleteAccount(account: PaymentAccountSettings, managerPin: string) {
     if (isBusy) return;
     setIsBusy(true);
-    void (async () => {
-      try {
-        await readApiData<{ id: string; deleted: boolean }>(
-          await fetch(`/api/pos/settings/payment-accounts?account_id=${encodeURIComponent(account.id)}`, { method: "DELETE" })
-        );
-        setAccounts(accounts.filter((item) => item.id !== account.id));
-        reportStatus(labels.saved);
-      } catch (error) {
-        reportStatus(error instanceof Error ? error.message : labels.failed);
-      } finally {
-        setIsBusy(false);
-      }
-    })();
+    try {
+      await readApiData<{ id: string; deleted: boolean }>(
+        await fetch(`/api/pos/settings/payment-accounts?account_id=${encodeURIComponent(account.id)}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ manager_pin: managerPin })
+        })
+      );
+      setAccounts(accounts.filter((item) => item.id !== account.id));
+      setDeleteTarget(null);
+      reportStatus(labels.saved, { popup: true });
+    } catch (error) {
+      reportStatus(error instanceof Error ? error.message : labels.failed, { popup: true });
+      throw error;
+    } finally {
+      setIsBusy(false);
+    }
   }
 
   function toggleAccount(account: PaymentAccountSettings) {
@@ -773,48 +1904,104 @@ function PaymentPanel({
         );
         setAccounts(accounts.map((item) => (item.id === data.account.id ? data.account : item)));
       } catch (error) {
-        reportStatus(error instanceof Error ? error.message : labels.failed);
+        reportStatus(error instanceof Error ? error.message : labels.failed, { popup: true });
       } finally {
         setIsBusy(false);
       }
     })();
   }
 
+  function uploadQr(file: File | undefined) {
+    if (!file) return;
+    setIsQrBusy(true);
+    void (async () => {
+      try {
+        const qrImageUrl = await resizeQrFile(file);
+        setForm((current) => ({ ...current, qr_image_url: qrImageUrl }));
+      } catch (error) {
+        reportStatus(error instanceof Error ? error.message : labels.failed, { popup: true });
+      } finally {
+        setIsQrBusy(false);
+      }
+    })();
+  }
+
+  function openCreatePayment() {
+    setForm(initialPaymentForm);
+    setIsPaymentFormOpen(true);
+  }
+
+  function openEditPayment(account: PaymentAccountSettings) {
+    setForm(paymentToForm(account));
+    setIsPaymentFormOpen(true);
+  }
+
+  function closePaymentForm() {
+    if (isBusy || isQrBusy) return;
+    setForm(initialPaymentForm);
+    setIsPaymentFormOpen(false);
+  }
+
   return (
     <section>
       <PanelHeader title={labels.payments} onBack={onBack} labels={labels} />
-      {!paymentReady ? <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">{labels.schemaMissing}</div> : null}
-      <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
-        <div className="grid gap-3">
-          {accounts.map((account) => (
-            <div key={account.id} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-[1fr_130px_120px] md:items-center">
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
+          <div>
+            <p className="text-sm font-black text-slate-950">{labels.payments}</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">{accounts.length} {labels.totalRecords}</p>
+          </div>
+          <ActionButton onClick={openCreatePayment} disabled={!canManage || isBusy}>
+            <Icon name="plus" />
+            {labels.addPaymentAccount}
+          </ActionButton>
+        </div>
+        <div className="overflow-x-auto">
+          <div className="min-w-[1260px]">
+            <div className="grid grid-cols-[1.15fr_1fr_1fr_1fr_1fr_140px_120px] gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-black text-slate-500">
+              <span>{labels.bankName}</span>
+              <span>{labels.accountName}</span>
+              <span>{labels.accountNo}</span>
+              <span>{labels.promptpay}</span>
+              <span>{labels.branch}</span>
+              <span>{labels.active}</span>
+              <span className="text-right">{labels.action}</span>
+            </div>
+          {sortedAccounts.map((account) => (
+            <div key={account.id} className="grid grid-cols-[1.15fr_1fr_1fr_1fr_1fr_140px_120px] items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-base font-black text-slate-950">{account.bank_name}</p>
                   <StatusPill active={account.is_active} labels={labels} />
                 </div>
-                <p className="mt-1 text-sm font-bold text-slate-700">{account.account_name}</p>
-                <p className="text-xs font-medium text-slate-500">
+                <p className="hidden text-xs font-medium text-slate-500">
                   {account.account_number || "-"} · {branchById.get(account.branch_id)?.name ?? account.branch_id}
                 </p>
-                {account.promptpay_payload ? <p className="mt-2 break-all text-xs font-semibold text-blue-700">{account.promptpay_payload}</p> : null}
+                {account.promptpay_payload ? <p className="mt-2 hidden break-all text-xs font-semibold text-blue-700">{account.promptpay_payload}</p> : null}
               </div>
+              <p className="min-w-0 truncate text-sm font-bold text-slate-700">{account.account_name || "-"}</p>
+              <p className="min-w-0 truncate text-sm font-semibold text-slate-600">{account.account_number || "-"}</p>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-700">{account.promptpay_phone || "-"}</p>
+                <p className="mt-1 truncate text-xs font-semibold text-blue-700">{account.qr_mode === "qr_image" ? labels.qrModeImage : labels.qrModePromptPay}</p>
+              </div>
+              <p className="min-w-0 truncate text-sm font-semibold text-slate-700">{account.applies_to_all_branches ? labels.allBranches : branchById.get(account.branch_id)?.name ?? account.branch_id}</p>
               <button
                 type="button"
                 onClick={() => toggleAccount(account)}
-                disabled={!canManage || isBusy || !paymentReady}
+                disabled={!canManage || isBusy}
                 className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
               >
                 {account.is_active ? labels.inactive : labels.active}
               </button>
               <div className="flex gap-2 md:justify-end">
-                <button type="button" onClick={() => setForm(paymentToForm(account))} className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50" title={labels.edit}>
+                <button type="button" onClick={() => openEditPayment(account)} className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50" title={labels.edit}>
                   <Icon name="edit" />
                 </button>
                 <button
                   type="button"
-                  onClick={() => deleteAccount(account)}
-                  disabled={!canManage || isBusy || !paymentReady}
+                  onClick={() => setDeleteTarget(account)}
+                  disabled={!canManage || isBusy}
                   className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40"
                   title={labels.delete}
                 >
@@ -824,11 +2011,28 @@ function PaymentPanel({
             </div>
           ))}
           {accounts.length === 0 ? <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500">-</div> : null}
+          </div>
         </div>
-        <form onSubmit={save} className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4">
-          <div className="flex items-center gap-2 text-base font-black text-slate-950">
-            <Icon name="payment" />
-            {form.id ? labels.edit : labels.add}
+        {isPaymentFormOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true" aria-label={form.id ? labels.edit : labels.addPaymentAccount}>
+        <form onSubmit={save} className="grid max-h-[92vh] w-full max-w-xl gap-4 overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-base font-black text-slate-950">
+              <Icon name="payment" />
+              {form.id ? labels.edit : labels.addPaymentAccount}
+            </div>
+            <button
+              type="button"
+              onClick={closePaymentForm}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50"
+              aria-label={labels.cancel}
+              title={labels.cancel}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+              </svg>
+            </button>
           </div>
           <label className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
             <span>{labels.branch}</span>
@@ -845,35 +2049,119 @@ function PaymentPanel({
               ))}
             </select>
           </label>
+          <label className="inline-flex items-center gap-2 text-sm font-bold text-slate-700">
+            <input
+              type="checkbox"
+              checked={form.applies_to_all_branches}
+              disabled={!canManage}
+              onChange={(event) => setForm((current) => ({ ...current, applies_to_all_branches: event.target.checked }))}
+            />
+            {labels.allBranches}
+          </label>
           <Field label={labels.bankName} value={form.bank_name} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, bank_name: value }))} />
           <Field label={labels.accountName} value={form.account_name} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, account_name: value }))} />
           <Field label={labels.accountNo} value={form.account_number} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, account_number: value }))} />
+          <div className="grid gap-2">
+            <span className="text-[13px] font-semibold text-slate-700">{labels.qrMode}</span>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className={`rounded-lg border p-3 text-sm font-bold ${form.qr_mode === "promptpay_link" ? "border-blue-300 bg-blue-50 text-blue-900" : "border-slate-200 bg-white text-slate-700"}`}>
+                <input
+                  type="checkbox"
+                  className="mr-2"
+                  checked={form.qr_mode === "promptpay_link"}
+                  disabled={!canManage}
+                  onChange={() => setForm((current) => ({ ...current, qr_mode: "promptpay_link" }))}
+                />
+                {labels.qrModePromptPay}
+                <span className="mt-1 block text-xs font-semibold text-slate-500">{labels.qrModePromptPayHint}</span>
+              </label>
+              <label className={`rounded-lg border p-3 text-sm font-bold ${form.qr_mode === "qr_image" ? "border-blue-300 bg-blue-50 text-blue-900" : "border-slate-200 bg-white text-slate-700"}`}>
+                <input
+                  type="checkbox"
+                  className="mr-2"
+                  checked={form.qr_mode === "qr_image"}
+                  disabled={!canManage}
+                  onChange={() => setForm((current) => ({ ...current, qr_mode: "qr_image" }))}
+                />
+                {labels.qrModeImage}
+                <span className="mt-1 block text-xs font-semibold text-slate-500">{labels.qrModeImageHint}</span>
+              </label>
+            </div>
+          </div>
           <Field label={labels.promptpay} value={form.promptpay_phone} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, promptpay_phone: value }))} />
-          <Field label={labels.qrImage} value={form.qr_image_url} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, qr_image_url: value }))} />
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            {form.qr_image_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={form.qr_image_url} alt="" className="mx-auto h-36 w-36 rounded-lg object-contain" />
-            ) : (
-              <p className="break-all text-xs font-semibold text-slate-600">
-                {labels.qrPayload}: {promptpayPayload || "-"}
-              </p>
-            )}
+          <div className="grid gap-2">
+            <span className="text-[13px] font-semibold text-slate-700">{labels.qrImage}</span>
+            <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[150px_1fr]">
+              <div className="flex min-h-36 items-center justify-center rounded-lg border border-slate-200 bg-white">
+                {form.qr_mode === "qr_image" && form.qr_image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={form.qr_image_url} alt={labels.qrImage} className="h-32 w-32 object-contain" />
+                ) : form.qr_mode === "promptpay_link" && promptpayPreviewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={promptpayPreviewUrl} alt={labels.qrModePromptPay} className="h-32 w-32 object-contain" />
+                ) : (
+                  <p className="px-3 text-center text-xs font-semibold text-slate-500">
+                    {labels.qrPayload}: {promptpayPayload || "-"}
+                  </p>
+                )}
+              </div>
+              <div className="grid content-start gap-2">
+                <label className={`inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 transition hover:bg-slate-50 ${!canManage || isQrBusy ? "pointer-events-none opacity-60" : ""}`}>
+                  <Icon name="plus" />
+                  {isQrBusy ? "..." : labels.uploadQr}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    disabled={!canManage || isQrBusy}
+                    className="sr-only"
+                    onChange={(event) => {
+                      uploadQr(event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+                <ActionButton variant="plain" disabled={!canManage || !form.qr_image_url || isQrBusy} onClick={() => setForm((current) => ({ ...current, qr_image_url: "" }))}>
+                  {labels.removeQr}
+                </ActionButton>
+                <p className="break-all rounded-lg border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-600">
+                  {labels.promptpayLinkPreview}: {promptpayPayload || "-"}
+                </p>
+              </div>
+            </div>
           </div>
           <label className="inline-flex items-center gap-2 text-sm font-bold text-slate-700">
             <input type="checkbox" checked={form.is_active} disabled={!canManage} onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))} />
             {labels.active}
           </label>
           <div className="flex gap-2">
-            <ActionButton type="submit" disabled={!canManage || isBusy || !paymentReady}>
+            <ActionButton type="submit" disabled={!canManage || isBusy || isQrBusy}>
               {labels.save}
             </ActionButton>
-            <ActionButton variant="plain" onClick={() => setForm(initialPaymentForm)}>
+            <ActionButton variant="plain" onClick={closePaymentForm} disabled={isBusy || isQrBusy}>
               {labels.cancel}
             </ActionButton>
           </div>
         </form>
+        </div>
+        ) : null}
       </div>
+      <PosManagerApprovalModal
+        open={Boolean(deleteTarget)}
+        title={labels.confirmDeletePayment}
+        action="payment_account_delete"
+        targetTable="tenant_payment_accounts"
+        targetId={deleteTarget?.id ?? ""}
+        lang={lang}
+        onClose={() => {
+          if (!isBusy) setDeleteTarget(null);
+        }}
+        onApproved={(approvalId) => {
+          if (deleteTarget) void deleteAccount(deleteTarget, approvalId);
+        }}
+        onPinSubmit={async (pin) => {
+          if (deleteTarget) await deleteAccount(deleteTarget, pin);
+        }}
+      />
     </section>
   );
 }
@@ -884,31 +2172,37 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
   const [store, setStore] = useState(initialData.store);
   const [branches, setBranches] = useState(initialData.branches);
   const [accounts, setAccounts] = useState(initialData.payment_accounts);
+  const [devices, setDevices] = useState<PosDeviceSettings[]>([]);
+  const [devicesLoaded, setDevicesLoaded] = useState(false);
   const [status, setStatus] = useState("");
+  const [savePopup, setSavePopup] = useState("");
   const canManage = initialData.metadata.can_manage;
 
-  function reportStatus(message: string) {
+  const reportStatus = useCallback((message: string, options?: { popup?: boolean }) => {
     setStatus(message);
+    if (options?.popup) {
+      setSavePopup(message);
+    }
     window.setTimeout(() => setStatus(""), 2800);
-  }
+  }, []);
 
   return (
     <main className="min-h-full bg-slate-50 p-3 sm:p-5">
       <section className="min-h-[calc(100vh-40px)] rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-black text-slate-950">{labels.title}</h1>
-            <p className="mt-1 text-sm font-medium text-slate-500">{labels.subtitle}</p>
+        {status ? (
+          <div className="mb-6 flex justify-end">
+            <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700">{status}</div>
           </div>
-          {status ? <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700">{status}</div> : null}
-        </div>
+        ) : null}
 
         {view === "menu" ? (
           <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
             <MenuButton icon="store" title={labels.store} desc={labels.storeDesc} onClick={() => setView("store")} />
             <MenuButton icon="branch" title={labels.branches} desc={labels.branchesDesc} onClick={() => setView("branches")} />
+            <MenuButton icon="terminal" title={labels.devices} desc={labels.devicesDesc} onClick={() => setView("devices")} />
+            <MenuButton icon="activity" title={labels.activityAudit} desc={labels.activityAuditDesc} onClick={() => setView("activity")} />
             <MenuButton icon="payment" title={labels.payments} desc={labels.paymentsDesc} onClick={() => setView("payments")} />
-            <MenuLink icon="users" title={labels.users} desc={labels.usersDesc} href="/preview/pos/users" />
+            <MenuButton icon="users" title={labels.users} desc={labels.usersDesc} onClick={() => setView("users")} />
             <MenuLink icon="display" title={labels.display} desc={labels.displayDesc} href="/preview/pos/customer-display" />
           </div>
         ) : null}
@@ -927,9 +2221,33 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
             reportStatus={reportStatus}
           />
         ) : null}
+        {view === "devices" ? (
+          <DevicePanel
+            labels={labels}
+            devices={devices}
+            setDevices={setDevices}
+            devicesLoaded={devicesLoaded}
+            setDevicesLoaded={setDevicesLoaded}
+            branches={branches}
+            onBack={() => setView("menu")}
+            canManage={canManage}
+            activeBranchId={initialData.metadata.branch_id}
+            reportStatus={reportStatus}
+          />
+        ) : null}
+        {view === "activity" ? (
+          <ActivityAuditPanel
+            labels={labels}
+            lang={lang}
+            branches={branches}
+            onBack={() => setView("menu")}
+            reportStatus={reportStatus}
+          />
+        ) : null}
         {view === "payments" ? (
           <PaymentPanel
             labels={labels}
+            lang={lang}
             accounts={accounts}
             setAccounts={setAccounts}
             branches={branches}
@@ -940,7 +2258,9 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
             reportStatus={reportStatus}
           />
         ) : null}
+        {view === "users" ? <PosUsersModule lang={lang === "en" ? "en" : "th"} embedded onBack={() => setView("menu")} /> : null}
       </section>
+      {savePopup ? <SaveSuccessPopup labels={labels} message={savePopup} onClose={() => setSavePopup("")} /> : null}
     </main>
   );
 }

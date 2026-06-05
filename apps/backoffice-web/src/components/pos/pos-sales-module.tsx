@@ -50,6 +50,28 @@ type DeliveryChannelConfigRow = {
   source_url?: string | null;
 };
 
+type StoreProfile = {
+  display_name?: string | null;
+  name?: string | null;
+  logo_url?: string | null;
+  company_address?: string | null;
+  contact_phone?: string | null;
+};
+
+type PaymentAccountSnapshot = {
+  id: string;
+  branch_id: string;
+  bank_name: string;
+  account_name: string;
+  account_number: string;
+  promptpay_phone: string;
+  promptpay_payload: string;
+  qr_image_url: string;
+  qr_mode: "promptpay_link" | "qr_image";
+  applies_to_all_branches: boolean;
+  is_active: boolean;
+};
+
 type PosSalesSnapshot = {
   tenant_id?: string;
   branch_id?: string;
@@ -58,6 +80,8 @@ type PosSalesSnapshot = {
   shift?: ShiftRow;
   operator_name?: string;
   branch_name?: string;
+  store_profile?: StoreProfile | null;
+  payment_account?: PaymentAccountSnapshot | null;
   delivery_configs?: DeliveryChannelConfigRow[];
   delivery_prices_by_product?: Record<string, Record<string, number>>;
 };
@@ -161,6 +185,7 @@ type ReceiptSession = CheckoutReviewOrder & {
   payment_method: "cash" | "bank_transfer";
   cash_received: number;
   change_amount: number;
+  store_profile?: StoreProfile | null;
 };
 
 type TakeawayCreatingPreview = {
@@ -1357,6 +1382,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [shift, setShift] = useState<ShiftRow>(null);
   const [sellerName, setSellerName] = useState(lang === "th" ? "ไม่ทราบชื่อผู้ขาย" : "Unknown Seller");
   const [branchName, setBranchName] = useState(lang === "th" ? "ไม่ทราบสาขา" : "Unknown Branch");
+  const [storeProfile, setStoreProfile] = useState<StoreProfile | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -1424,6 +1450,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [transferReviewOrder, setTransferReviewOrder] = useState<CheckoutReviewOrder | null>(null);
   const [transferReference, setTransferReference] = useState("");
   const [promptPayPhone, setPromptPayPhone] = useState(DEFAULT_PROMPTPAY_PHONE);
+  const [paymentAccount, setPaymentAccount] = useState<PaymentAccountSnapshot | null>(null);
   const [transferSlipFile, setTransferSlipFile] = useState<File | null>(null);
   const [transferSlipPreviewUrl, setTransferSlipPreviewUrl] = useState<string | null>(null);
   const [transferSlipParsed, setTransferSlipParsed] = useState<SlipExtractPayload | null>(null);
@@ -2215,6 +2242,11 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       setShift((savedSales.shift ?? null) as ShiftRow);
       setSellerName(String(savedSales.operator_name ?? "Unknown Seller"));
       setBranchName(String(savedSales.branch_name ?? "Unknown Branch"));
+      setStoreProfile(savedSales.store_profile ?? null);
+      setPaymentAccount(savedSales.payment_account ?? null);
+      if (savedSales.payment_account?.promptpay_phone) {
+        setPromptPayPhone(sanitizePromptPayPhone(savedSales.payment_account.promptpay_phone));
+      }
       setDeliveryConfigs(Array.isArray(savedSales.delivery_configs) ? savedSales.delivery_configs : []);
       setDeliveryPricesByProduct(savedSales.delivery_prices_by_product ?? {});
       setActiveCategory((current) => current || nextCategories[0] || "");
@@ -2636,6 +2668,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         const nextShift = (salesResponse.body.data?.shift ?? null) as ShiftRow;
         const nextOperatorName = String(salesResponse.body.data?.operator_name ?? (lang === "th" ? "ไม่ทราบชื่อผู้ขาย" : "Unknown Seller"));
         const nextBranchName = String(salesResponse.body.data?.branch_name ?? (lang === "th" ? "ไม่ทราบสาขา" : "Unknown Branch"));
+        const nextStoreProfile = salesResponse.body.data?.store_profile ?? null;
+        const nextPaymentAccount = salesResponse.body.data?.payment_account ?? null;
         const nextDeliveryConfigs = Array.isArray(salesResponse.body.data?.delivery_configs)
           ? salesResponse.body.data.delivery_configs
           : [];
@@ -2675,6 +2709,11 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         setShift(nextShift);
         setSellerName(nextOperatorName);
         setBranchName(nextBranchName);
+        setStoreProfile(nextStoreProfile);
+        setPaymentAccount(nextPaymentAccount);
+        if (nextPaymentAccount?.promptpay_phone) {
+          setPromptPayPhone(sanitizePromptPayPhone(nextPaymentAccount.promptpay_phone));
+        }
         setDeliveryConfigs(nextDeliveryConfigs);
         setDeliveryPricesByProduct(nextDeliveryPricesByProduct);
         setActiveCategory((current) => current || nextCategories[0] || "");
@@ -2691,6 +2730,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
               shift: nextShift,
               operator_name: nextOperatorName,
               branch_name: nextBranchName,
+              store_profile: nextStoreProfile,
+              payment_account: nextPaymentAccount,
               delivery_configs: nextDeliveryConfigs,
               delivery_prices_by_product: nextDeliveryPricesByProduct,
               tenant_id: tenantId,
@@ -2902,10 +2943,15 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const cashHasEnoughAmount = cashHasReceivedAmount && cashReceived + 0.009 >= cashTargetTotal;
   const cashConfirmNeedsAttention = Boolean(cashReviewOrder) && !cashHasEnoughAmount && !cashSubmitting;
   const transferAmountInteger = toPromptPayAmountInteger(transferReviewOrder?.total_amount ?? 0);
-  const promptPayQrUrl = buildPromptPayQrUrl(promptPayPhone, transferAmountInteger);
-  const promptPayPhoneDisplay = formatPromptPayPhoneDisplay(promptPayPhone);
-  const expectedPayeeName = DEFAULT_PROMPTPAY_PAYEE.trim();
-  const currentTransferSlipSignature = `${sanitizePromptPayPhone(promptPayPhone)}:${transferAmountInteger}`;
+  const activePromptPayPhone = paymentAccount?.promptpay_phone ? sanitizePromptPayPhone(paymentAccount.promptpay_phone) : sanitizePromptPayPhone(promptPayPhone);
+  const activePaymentQrMode = paymentAccount?.qr_mode ?? "promptpay_link";
+  const promptPayQrUrl =
+    activePaymentQrMode === "qr_image" && paymentAccount?.qr_image_url
+      ? paymentAccount.qr_image_url
+      : buildPromptPayQrUrl(activePromptPayPhone, transferAmountInteger);
+  const promptPayPhoneDisplay = formatPromptPayPhoneDisplay(activePromptPayPhone);
+  const expectedPayeeName = (paymentAccount?.account_name || DEFAULT_PROMPTPAY_PAYEE).trim();
+  const currentTransferSlipSignature = `${activePaymentQrMode}:${activePaymentQrMode === "qr_image" ? paymentAccount?.qr_image_url ?? "" : activePromptPayPhone}:${transferAmountInteger}`;
   const transferSlipReverifyRequired =
     transferSlipVerified && transferSlipVerifiedAgainst !== null && transferSlipVerifiedAgainst !== currentTransferSlipSignature;
   const transferSlipReadyToSubmit =
@@ -3036,11 +3082,14 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const sidebarPaymentMethod: BillPaymentMethod = receiptSession?.payment_method ?? (transferReviewOrder ? "bank_transfer" : cashReviewOrder ? "cash" : billPaymentMethod);
   const cashQuickAmounts = [500, 1000, 1500];
   const cashKeypadKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "00", "."];
-  const receiptStoreName = lang === "th" ? "ร้านก๋วยเตี๋ยวต้นแบบ" : "Sample Noodle House";
-  const receiptBranchLabel = lang === "th" ? "สาขาอารีย์" : "Ari Branch";
-  const receiptStoreLogoPath: string | null = null;
-  const receiptSystemLogoPath = "/brand/sst-ipos-logo-new.png";
-  const receiptLogoPath = receiptStoreLogoPath ?? receiptSystemLogoPath;
+  const activeReceiptStoreProfile = receiptSession?.store_profile ?? storeProfile;
+  const receiptStoreName = String(activeReceiptStoreProfile?.display_name ?? activeReceiptStoreProfile?.name ?? "").trim() || (lang === "th" ? "ร้านค้า" : "Store");
+  const receiptStoreAddress = String(activeReceiptStoreProfile?.company_address ?? "").trim();
+  const receiptStorePhone = String(activeReceiptStoreProfile?.contact_phone ?? "").trim();
+  const receiptBranchLabel = branchName;
+  const receiptStoreLogoPath = String(activeReceiptStoreProfile?.logo_url ?? "").trim() || null;
+  const receiptFallbackLogoPath = "/brand/sst-ipos-logo-new.png";
+  const receiptLogoPath = receiptStoreLogoPath ?? receiptFallbackLogoPath;
   const showTableBrowser = quickMode === "dine_in" && tableBrowserOpen;
   const showDeliverySetup = quickMode === "delivery" && !deliveryCatalogOpen;
   const isDeliveryMode = quickMode === "delivery" || orderType === "delivery_manual";
@@ -3119,7 +3168,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   useEffect(() => {
     if (!receiptSession) return;
     void primeReceiptPrintFrameRef.current(receiptSession).catch(() => undefined);
-  }, [receiptSession, lang, sellerName, shift?.status, quickMode, receiptLogoPath, receiptBranchLabel, receiptStoreName]);
+  }, [receiptSession, lang, sellerName, shift?.status, quickMode, receiptLogoPath, receiptBranchLabel, receiptStoreName, receiptStoreAddress, receiptStorePhone]);
 
   useEffect(() => {
     return () => {
@@ -4677,7 +4726,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       formData.append("order_id", transferReviewOrder.order_id);
       formData.append("expected_amount", String(transferAmountInteger));
       formData.append("expected_payee_name", expectedPayeeName);
-      formData.append("expected_promptpay_phone", sanitizePromptPayPhone(promptPayPhone));
+      formData.append("expected_promptpay_phone", activePromptPayPhone);
 
       const { response, body } = await fetchJsonWithTimeout<SlipVerifyResponseBody>(
         "/api/pos/payments/slip-verify",
@@ -4724,7 +4773,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     return submitTransferPaymentWithEffects({
       pendingPaymentEntry, applyUiResult, fetchJsonWithTimeout,
       text: { receiptSaved: text.receiptSaved, transferQueued: text.transferQueued },
-      transferSlipPreviewUrl, fallbackReceiptItems: transferReviewOrder?.items ?? [],
+      transferSlipPreviewUrl, fallbackReceiptItems: transferReviewOrder?.items ?? [], storeProfile,
       setIsOnline, dequeuePendingPayment, setActiveOrder, setCart, setTakeawayCreatingPreview, setReviewOrder, setCashReviewOrder,
       setTransferReviewOrder, setTransferReference, setCashReceivedInput, setCashReplaceOnNextKey, setCashError, setTransferError, setTransferSlipFile,
       revokeTransferSlipPreviewUrl: (url) => URL.revokeObjectURL(url),
@@ -4926,7 +4975,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       ...cashReviewOrder,
       payment_method: "cash",
       cash_received: received,
-      change_amount: Math.max(0, received - cashReviewOrder.total_amount)
+      change_amount: Math.max(0, received - cashReviewOrder.total_amount),
+      store_profile: storeProfile
     };
 
     receiptModalClosedRef.current = false;
@@ -4999,7 +5049,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   async function confirmTransferPayment() {
     if (!transferReviewOrder || transferSubmitting || transferSlipChecking || receiptSaving) return;
     if (!promptPayQrUrl) {
-      setTransferError(lang === "th" ? "กรุณาตั้งค่าเบอร์พร้อมเพย์ก่อน" : "Please configure PromptPay phone first.");
+      setTransferError(lang === "th" ? "กรุณาตั้งค่าพร้อมเพย์หรือภาพ QR ก่อน" : "Please configure PromptPay phone or QR image first.");
       return;
     }
     if (!transferSlipFile) {
@@ -5415,6 +5465,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     const externalOrderCodeMeta = session.external_order_code?.trim()
       ? `<div class="meta-line"><span>${escapeHtml(text.externalCode)}</span><span>${escapeHtml(session.external_order_code)}</span></div>`
       : "";
+    const storeAddressLine = receiptStoreAddress ? `<div class="muted">${escapeHtml(receiptStoreAddress)}</div>` : "";
+    const storePhoneLine = receiptStorePhone ? `<div class="muted">${escapeHtml(receiptStorePhone)}</div>` : "";
     const paymentMethodLine = `<div class="summary-line is-heading"><span>${escapeHtml(text.paymentMethod)}</span><strong>${escapeHtml(getReceiptPaymentMethodLabel(session))}</strong></div>`;
     const discountLine = `<div class="summary-line is-muted"><span>${escapeHtml(text.discount)}</span><strong>฿${escapeHtml(formatMoneyPlain(receiptDiscountAmount))}</strong></div>`;
     const cashSummaryLines =
@@ -5479,8 +5531,10 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
 </head>
 <body>
   <main class="receipt58">
-    <div class="logo-wrap"><img src="${escapeHtml(logoUrl)}" alt="logo" /></div>
+    <div class="logo-wrap"><img src="${escapeHtml(logoUrl)}" alt="receipt logo" /></div>
     <div class="head-title">${escapeHtml(receiptStoreName)}</div>
+    ${storeAddressLine}
+    ${storePhoneLine}
     <div class="muted">${escapeHtml(receiptBranchLabel)}</div>
     <div class="hr"></div>
     <div class="meta-line"><span>${escapeHtml(text.sellerName)}</span><span>${escapeHtml(sellerName)}</span></div>
@@ -6367,6 +6421,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           quickMode={quickMode}
           receiptLogoPath={receiptLogoPath}
           receiptStoreName={receiptStoreName}
+          receiptStoreAddress={receiptStoreAddress}
+          receiptStorePhone={receiptStorePhone}
           receiptBranchLabel={receiptBranchLabel}
           takeawayCreatingPreview={takeawayCreatingPreview}
           reviewOrder={reviewOrder}
@@ -6390,8 +6446,15 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           transferReference={transferReference}
           transferAmountInteger={transferAmountInteger}
           promptPayQrUrl={promptPayQrUrl}
-          promptPayPhone={promptPayPhone}
+          promptPayPhone={activePromptPayPhone}
           promptPayPhoneDisplay={promptPayPhoneDisplay}
+          promptPayLocked={Boolean(paymentAccount?.promptpay_phone)}
+          promptPayQrMode={activePaymentQrMode}
+          paymentAccountLabel={
+            paymentAccount
+              ? [paymentAccount.bank_name, paymentAccount.account_name, paymentAccount.account_number].filter(Boolean).join(" / ")
+              : ""
+          }
           expectedPayeeName={expectedPayeeName}
           transferVerificationHistory={transferVerificationHistory}
           cashReceivedInput={cashReceivedInput}
@@ -6540,8 +6603,10 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         <section className="posui-print-receipt-root" aria-hidden="true">
           <article className="posui-print-receipt58">
             <header className="posui-print-receipt58__head">
-              <Image src={receiptLogoPath} alt="System logo" className="posui-print-receipt58__logo" width={196} height={78} unoptimized />
+              <Image src={receiptLogoPath} alt="Receipt logo" className="posui-print-receipt58__logo" width={196} height={78} unoptimized />
               <h1>{receiptStoreName}</h1>
+              {receiptStoreAddress ? <p>{receiptStoreAddress}</p> : null}
+              {receiptStorePhone ? <p>{receiptStorePhone}</p> : null}
               <p>{receiptBranchLabel}</p>
             </header>
             <div className="posui-print-receipt58__divider" />

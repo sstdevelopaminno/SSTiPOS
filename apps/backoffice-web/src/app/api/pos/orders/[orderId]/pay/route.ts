@@ -15,6 +15,7 @@ import {
   normalizePaymentMethod,
   round2
 } from "@/lib/services/pos-sales-mvp-service";
+import { loadReceiptStoreProfile } from "@/lib/services/store-profile-service";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 type PayOrderPayload = {
@@ -195,6 +196,7 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
       branchId: scope.session.branch_id,
       orderId: orderRow.id
     });
+    const storeProfile = await loadReceiptStoreProfile(scope.session.tenant_id);
 
     const response = NextResponse.json({
       data: {
@@ -212,6 +214,7 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
           order_no: orderRow.order_no,
           items,
           payments,
+          store_profile: storeProfile,
           total: round2(orderRow.grand_total ?? orderRow.total_amount ?? paidAmount),
           paid_total: round2((orderRow.paid_total ?? 0) + paidAmount),
           change_total: 0

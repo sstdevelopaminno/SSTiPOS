@@ -1,6 +1,7 @@
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
 import { fail, ok } from "@/lib/http";
 import { buildPaginationMeta, parsePagination } from "@/lib/query-params";
+import { loadReceiptStoreProfile } from "@/lib/services/store-profile-service";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 function toBangkokDate(value: Date) {
@@ -121,7 +122,7 @@ export async function GET(req: Request) {
     const userIds = Array.from(new Set(rows.flatMap((row) => [row.created_by, row.payment_completed_by]).filter((id): id is string => Boolean(id))));
     const tableIds = Array.from(new Set(rows.map((row) => row.table_id).filter((id): id is string => Boolean(id))));
 
-    const [paymentsResult, itemsResult, usersResult, tablesResult, branchResult] = await Promise.all([
+    const [paymentsResult, itemsResult, usersResult, tablesResult, branchResult, storeProfile] = await Promise.all([
       orderIds.length > 0
         ? supabase
             .from("payments")
@@ -144,7 +145,8 @@ export async function GET(req: Request) {
       tableIds.length > 0
         ? supabase.from("dining_tables").select("id,table_code,table_name").eq("tenant_id", auth.tenantId!).in("id", tableIds)
         : Promise.resolve({ data: [], error: null }),
-      supabase.from("branches").select("name").eq("tenant_id", auth.tenantId!).eq("id", auth.branchId!).maybeSingle()
+      supabase.from("branches").select("name").eq("tenant_id", auth.tenantId!).eq("id", auth.branchId!).maybeSingle(),
+      loadReceiptStoreProfile(auth.tenantId!)
     ]);
 
     if (paymentsResult.error) return withTiming(fail("receipt_payments_query_failed", paymentsResult.error.message, 500));
@@ -272,7 +274,7 @@ export async function GET(req: Request) {
     };
 
     return withTiming(ok({
-      branch: { id: auth.branchId, name: String(branchResult.data?.name ?? auth.branchId) },
+      branch: { id: auth.branchId, name: String(branchResult.data?.name ?? auth.branchId), store_profile: storeProfile },
       range: dateWindow,
       records,
       summary,

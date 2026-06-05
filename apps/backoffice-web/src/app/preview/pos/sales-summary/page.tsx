@@ -1,19 +1,18 @@
+import type { BranchRole } from "@pos/shared-types";
 import { PosSalesSummaryDashboard } from "@/components/pos-preview/pos-sales-summary-dashboard";
-import { getAuthContext } from "@/lib/auth-context";
 import { getCurrentLanguage } from "@/lib/i18n";
 import { requirePosPagePermission } from "@/lib/pos-page-guard";
 import { loadPosSalesSummaryData } from "@/lib/services/pos-sales-summary-service";
 
 export default async function PosSalesSummaryPage() {
-  await requirePosPagePermission("reports:view");
+  const scope = await requirePosPagePermission("reports:view");
   const lang = await getCurrentLanguage();
-  const auth = await getAuthContext({ requireBranchScope: false }).catch(() => null);
   const initialPayload = await loadPosSalesSummaryData({
-    userId: auth?.userId ?? null,
-    tenantId: auth?.tenantId ?? null,
-    branchId: auth?.branchId ?? null,
-    branchRole: auth?.branchRole ?? null,
-    platformRole: auth?.platformRole ?? "tenant_user"
+    userId: scope.session.user_id,
+    tenantId: scope.session.tenant_id,
+    branchId: scope.session.branch_id,
+    branchRole: scope.session.role as BranchRole,
+    platformRole: "tenant_user"
   });
 
   return <PosSalesSummaryDashboard lang={lang} initialPayload={initialPayload} />;

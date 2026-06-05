@@ -30,7 +30,7 @@ type PopupState =
   | { type: "loading"; message: string }
   | { type: "error"; message: string };
 
-const AUTH_REQUEST_TIMEOUT_MS = 15000;
+const AUTH_REQUEST_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 60000 : 15000;
 
 function getCopy(lang: AppLanguage) {
   if (lang === "en") {
@@ -38,7 +38,7 @@ function getCopy(lang: AppLanguage) {
       branchPrefix: "Branch",
       loadingContext: "Loading login context...",
       verifyLabel: "Employee code",
-      verifyPlaceholder: "Example: EMP-000103",
+      verifyPlaceholder: "Code set by manager/owner",
       verifyButton: "Verify Employee",
       verifyingButton: "Verifying...",
       backButton: "Back",
@@ -63,7 +63,7 @@ function getCopy(lang: AppLanguage) {
     branchPrefix: "สาขา",
     loadingContext: "กำลังโหลดข้อมูลล็อกอิน...",
     verifyLabel: "รหัสพนักงาน",
-    verifyPlaceholder: "ตัวอย่าง: EMP-000103",
+    verifyPlaceholder: "รหัสที่ตั้งไว้โดยผู้จัดการ/เจ้าของร้าน",
     verifyButton: "ยืนยันพนักงาน",
     verifyingButton: "กำลังยืนยัน...",
     backButton: "ย้อนกลับ",
@@ -257,7 +257,6 @@ function LoginEmployeePageContent() {
           <form className="ipos-form" onSubmit={handleVerifyByCode}>
             <label htmlFor="employeeCode">{copy.verifyLabel}</label>
             <div className="ipos-input-wrap ipos-input-wrap-compact" onClick={() => employeeCodeInputRef.current?.focus()}>
-              <span className="ipos-input-prefix">EMP</span>
               <input
                 ref={employeeCodeInputRef}
                 id="employeeCode"

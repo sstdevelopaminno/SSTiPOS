@@ -457,22 +457,25 @@ export async function requirePosSession(): Promise<PosSessionScope> {
 
   let session: PosSessionRow | null = null;
 
-  if (sessionIdFromCookie) {
-    session = await loadSessionById(sessionIdFromCookie);
-  }
-
-  if (!session && handoffToken) {
+  if (handoffToken) {
     const payload = verifyHandoffToken(handoffToken);
     if (!payload) {
-      throw new PosGuardError("invalid_handoff_token", "POS handoff token is invalid or expired.", 401);
+      if (!sessionIdFromCookie) {
+        throw new PosGuardError("invalid_handoff_token", "POS handoff token is invalid or expired.", 401);
+      }
+    } else {
+      session = await loadSessionById(payload.sid);
+      if (!session) {
+        throw new PosGuardError("session_not_found", "POS session was not found.", 401);
+      }
+      if (session.tenant_id !== payload.tid || session.branch_id !== payload.bid || session.user_id !== payload.uid || session.role !== payload.role) {
+        throw new PosGuardError("session_claim_mismatch", "POS session claims mismatch.", 401);
+      }
     }
-    session = await loadSessionById(payload.sid);
-    if (!session) {
-      throw new PosGuardError("session_not_found", "POS session was not found.", 401);
-    }
-    if (session.tenant_id !== payload.tid || session.branch_id !== payload.bid || session.user_id !== payload.uid || session.role !== payload.role) {
-      throw new PosGuardError("session_claim_mismatch", "POS session claims mismatch.", 401);
-    }
+  }
+
+  if (!session && sessionIdFromCookie) {
+    session = await loadSessionById(sessionIdFromCookie);
   }
 
   if (!session) {

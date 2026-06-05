@@ -1,5 +1,9 @@
 import { execSync, spawn } from "node:child_process";
 
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 function readPort() {
   const raw = String(process.env.PORT ?? "3000").trim();
   const parsed = Number(raw);
@@ -64,10 +68,16 @@ function clearPortIfBusy(port) {
     console.log(`[dev-safe] ${killed ? "Killed" : "Failed to kill"} PID ${pid}`);
   }
 
-  const remainingPids =
-    process.platform === "win32"
-      ? listListeningPidsOnWindows(port).filter((pid) => pid !== process.pid)
-      : listListeningPidsOnUnix(port).filter((pid) => pid !== process.pid);
+  let remainingPids = [];
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    remainingPids =
+      process.platform === "win32"
+        ? listListeningPidsOnWindows(port).filter((pid) => pid !== process.pid)
+        : listListeningPidsOnUnix(port).filter((pid) => pid !== process.pid);
+
+    if (remainingPids.length === 0) break;
+    sleep(250);
+  }
 
   return { occupied: true, remainingPids };
 }
@@ -82,14 +92,24 @@ if (portResult?.remainingPids?.length) {
   process.exit(0);
 }
 
+function resolveDevBundlerArgs() {
+  const bundler = String(process.env.NEXT_DEV_BUNDLER ?? "webpack").trim().toLowerCase();
+  if (bundler === "webpack") return ["--webpack"];
+  if (bundler === "turbo" || bundler === "turbopack") return ["--turbo"];
+  if (bundler === "none" || bundler === "default") return [];
+  return ["--webpack"];
+}
+
+const nextArgs = ["dev", "-p", String(port), ...resolveDevBundlerArgs()];
+const nextBin = process.platform === "win32" ? "node_modules\\.bin\\next.cmd" : "node_modules/.bin/next";
 const child =
   process.platform === "win32"
-    ? spawn("cmd.exe", ["/c", "next", "dev", "-p", String(port), "--webpack"], {
+    ? spawn("cmd.exe", ["/c", nextBin, ...nextArgs], {
         stdio: "inherit",
         shell: false,
         env: process.env
       })
-    : spawn("next", ["dev", "-p", String(port), "--webpack"], {
+    : spawn(nextBin, nextArgs, {
         stdio: "inherit",
         shell: false,
         env: process.env

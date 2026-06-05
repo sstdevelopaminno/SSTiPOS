@@ -17,6 +17,7 @@ export type ApprovalAction =
   | "shift_close_override"
   | "table_move_bill"
   | "transfer_payment_override"
+  | "payment_account_delete"
   | "sales_record_edit"
   | "sales_record_delete";
 export type PrinterConnectionType = "NETWORK_ESC_POS" | "STAR_WEBPRNT" | "LOCAL_BRIDGE" | "BLUETOOTH_BRIDGE";
@@ -383,6 +384,10 @@ export interface PrintJob {
 export interface ReceiptTemplate {
   order_id: UUID;
   order_no: string;
+  store_name?: string;
+  store_logo_url?: string;
+  store_address?: string;
+  store_phone?: string;
   branch_name: string;
   cashier_name: string;
   paid_at_iso: string;

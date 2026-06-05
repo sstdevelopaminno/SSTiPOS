@@ -5,7 +5,7 @@ import { chromium } from "playwright";
 const POS_URL = process.env.POS_UI_QA_URL ?? "http://localhost:3000/preview/pos";
 const ORIGIN = new URL(POS_URL).origin;
 const STORE_CODE = String(process.env.POS_SMOKE_STORE_CODE ?? "NDL-TH-001").trim().toUpperCase();
-const EMPLOYEE_CODE = String(process.env.POS_OWNER_EMPLOYEE_CODE ?? "EMP-000101").trim().toUpperCase();
+const EMPLOYEE_CODE = String(process.env.POS_OWNER_EMPLOYEE_CODE ?? "182536").trim().toUpperCase();
 const OUT_DIR = path.resolve("docs/qa-screenshots/pos-responsive-landscape");
 
 const viewports = [

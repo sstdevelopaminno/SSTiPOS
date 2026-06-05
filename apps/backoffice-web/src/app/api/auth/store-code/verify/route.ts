@@ -4,6 +4,7 @@ import { getRequestMeta, writeAuditLog } from "@/lib/server/audit-log";
 import { AuthTimeoutError, withAuthTimeout } from "@/lib/server/auth-timeout";
 import { buildRateLimitKey, enforceRateLimit, getClientIpAddress, readRateLimitSetting, type RateLimitResult } from "@/lib/server/rate-limit";
 import { clearPreEntryFlowState, createFlowState, writePreEntryFlowState } from "@/lib/server/pre-entry-state";
+import { resolveSessionCookieConfig } from "@/lib/server/pos-session";
 
 type RequestBody = {
   store_code?: string;
@@ -20,6 +21,30 @@ type BranchSummary = {
 function isAutoSkipEnabled() {
   const raw = String(process.env.POS_AUTO_SKIP_SINGLE_BRANCH ?? "true").trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes";
+}
+
+function clearPosSessionCookies(response: NextResponse) {
+  const config = resolveSessionCookieConfig();
+  response.cookies.set({
+    name: config.name,
+    value: "",
+    httpOnly: true,
+    secure: config.secure,
+    sameSite: "lax",
+    path: "/",
+    domain: config.domain,
+    maxAge: 0
+  });
+  response.cookies.set({
+    name: config.sessionIdName,
+    value: "",
+    httpOnly: true,
+    secure: config.secure,
+    sameSite: "lax",
+    path: "/",
+    domain: config.domain,
+    maxAge: 0
+  });
 }
 
 function runInBackground(task: () => Promise<unknown>) {
@@ -189,6 +214,7 @@ export async function POST(request: Request) {
       error: null
     });
     writePreEntryFlowState(response, flowState);
+    clearPosSessionCookies(response);
 
     runInBackground(() =>
       writeAuditLog({

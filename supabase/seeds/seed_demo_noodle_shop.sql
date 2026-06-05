@@ -108,6 +108,17 @@ values
 on conflict (user_id, tenant_id, branch_id) do update
 set role = excluded.role;
 
+insert into pos_user_profiles (tenant_id, user_id, employee_code, position_title, permission_role)
+values
+  ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000101', '182536', 'Owner', 'owner'),
+  ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000102', 'MGR-000102', 'Manager', 'manager'),
+  ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000103', 'STF-000103', 'Staff', 'staff')
+on conflict (tenant_id, user_id) do update
+set
+  employee_code = excluded.employee_code,
+  position_title = excluded.position_title,
+  permission_role = excluded.permission_role;
+
 insert into dine_in_tables (id, tenant_id, branch_id, table_code, seats, is_active)
 values
   ('00000000-0000-0000-0000-000000007001', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000011', 'A01', 4, true),

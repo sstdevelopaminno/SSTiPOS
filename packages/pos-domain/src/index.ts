@@ -7,6 +7,7 @@ const escalationActions: ApprovalAction[] = [
   "shift_close_override",
   "table_move_bill",
   "transfer_payment_override",
+  "payment_account_delete",
   "sales_record_edit",
   "sales_record_delete"
 ];

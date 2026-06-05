@@ -45,15 +45,16 @@ export async function createPosSession(input: {
   const ttlHours = Number.isFinite(ttlHoursRaw) && ttlHoursRaw > 0 && ttlHoursRaw <= 72 ? ttlHoursRaw : 12;
   const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000).toISOString();
 
-  const { error: revokeError } = await supabase
+  const revokePreviousActive = supabase
     .from("pos_sessions")
     .update({ status: "revoked", revoked_at: nowIso })
     .eq("tenant_id", input.tenantId)
     .eq("branch_id", input.branchId)
     .eq("user_id", input.userId)
-    .eq("status", "active")
-    .gt("expires_at", nowIso);
+    .eq("status", "active");
 
+  const previousActiveResult = await revokePreviousActive;
+  const revokeError = previousActiveResult.error;
   if (revokeError) {
     console.error("[pos-session] revoke previous active sessions failed", {
       tenantId: input.tenantId,
@@ -63,23 +64,73 @@ export async function createPosSession(input: {
     });
   }
 
-  const { data, error } = await supabase
-    .from("pos_sessions")
-    .insert({
-      tenant_id: input.tenantId,
-      branch_id: input.branchId,
-      device_id: input.deviceId ?? null,
-      device_code: input.deviceCode ?? null,
-      user_id: input.userId,
-      role: input.role,
-      login_context_id: input.loginContextId,
-      login_method: input.loginMethod,
-      status: "active",
-      expires_at: expiresAt,
-      metadata: input.metadata ?? {}
-    })
-    .select("id,tenant_id,branch_id,device_id,device_code,user_id,role,login_context_id,login_method,status,expires_at")
-    .maybeSingle<PosSessionRow>();
+  async function revokeExpiredDeviceSessions() {
+    const expiredDeviceRevokes = [];
+    if (input.deviceId) {
+      expiredDeviceRevokes.push(
+        supabase
+          .from("pos_sessions")
+          .update({ status: "revoked", revoked_at: nowIso })
+          .eq("tenant_id", input.tenantId)
+          .eq("branch_id", input.branchId)
+          .eq("device_id", input.deviceId)
+          .eq("status", "active")
+          .lte("expires_at", nowIso)
+      );
+    }
+    if (input.deviceCode) {
+      expiredDeviceRevokes.push(
+        supabase
+          .from("pos_sessions")
+          .update({ status: "revoked", revoked_at: nowIso })
+          .eq("tenant_id", input.tenantId)
+          .eq("branch_id", input.branchId)
+          .eq("device_code", input.deviceCode)
+          .eq("status", "active")
+          .lte("expires_at", nowIso)
+      );
+    }
+
+    const expiredDeviceResults = await Promise.all(expiredDeviceRevokes);
+    const expiredDeviceRevokeError = expiredDeviceResults.find((result) => result.error)?.error;
+    if (expiredDeviceRevokeError) {
+      console.error("[pos-session] revoke expired active device sessions failed", {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        deviceId: input.deviceId ?? null,
+        deviceCode: input.deviceCode ?? null,
+        error: expiredDeviceRevokeError.message
+      });
+    }
+  }
+
+  async function insertSession() {
+    return supabase
+      .from("pos_sessions")
+      .insert({
+        tenant_id: input.tenantId,
+        branch_id: input.branchId,
+        device_id: input.deviceId ?? null,
+        device_code: input.deviceCode ?? null,
+        user_id: input.userId,
+        role: input.role,
+        login_context_id: input.loginContextId,
+        login_method: input.loginMethod,
+        status: "active",
+        expires_at: expiresAt,
+        metadata: input.metadata ?? {}
+      })
+      .select("id,tenant_id,branch_id,device_id,device_code,user_id,role,login_context_id,login_method,status,expires_at")
+      .maybeSingle<PosSessionRow>();
+  }
+
+  let { data, error } = await insertSession();
+  if (isUniqueConflictError(error)) {
+    await revokeExpiredDeviceSessions();
+    const retry = await insertSession();
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error || !data) {
     if (isUniqueConflictError(error)) {

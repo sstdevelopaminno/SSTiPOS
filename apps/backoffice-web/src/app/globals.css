@@ -7236,18 +7236,7 @@ a {
 }
 
 .ipos-input-wrap-compact {
-  grid-template-columns: auto minmax(0, 1fr);
-}
-
-.ipos-input-prefix {
-  font-size: 15px;
-  font-weight: 700;
-  color: #466d9f;
-  padding: 0 8px 0 2px;
-  border-right: 1px solid #d7e1f0;
-  line-height: 1;
-  user-select: none;
-  pointer-events: none;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .ipos-input-wrap input,
@@ -7447,10 +7436,23 @@ a {
   gap: 10px;
 }
 
+.ipos-branch-text {
+  display: inline-flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .ipos-branch-name {
   font-size: 14px;
   font-weight: 700;
   color: #1c3c65;
+}
+
+.ipos-branch-code {
+  font-size: 12px;
+  font-weight: 600;
+  color: #5a7393;
 }
 
 .ipos-select-dot {
@@ -8207,4 +8209,35 @@ body:has(.pos-app-root) {
     pointer-events: none;
     user-select: none;
   }
+}
+
+.pos-settings-device-modal-scroll {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.pos-settings-device-modal-scroll.is-scrollbar-visible,
+.pos-settings-device-modal-scroll:active {
+  scrollbar-color: rgba(100, 116, 139, 0.7) transparent;
+}
+
+.pos-settings-device-modal-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.pos-settings-device-modal-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+.pos-settings-device-modal-scroll.is-scrollbar-visible::-webkit-scrollbar-thumb,
+.pos-settings-device-modal-scroll:active::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.7);
+}
+
+.pos-settings-device-modal-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }

@@ -11,6 +11,7 @@ import type {
 import type { AuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { readEnv } from "@/lib/env";
+import { loadReceiptStoreProfile, type ReceiptStoreProfile } from "@/lib/services/store-profile-service";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 import { BluetoothBridgeAdapter } from "@/lib/printing/adapters/bluetooth-bridge-adapter";
 import { LocalBridgeAdapter } from "@/lib/printing/adapters/local-bridge-adapter";
@@ -124,7 +125,13 @@ function row(left: string, right: string, width: number): string {
 
 export function renderReceiptTemplate(template: ReceiptTemplate, paperWidthMm: 58 | 80): string {
   const width = paperWidthMm === 58 ? 32 : 42;
+  const storeName = normalizeText(template.store_name) ?? template.branch_name;
+  const storeAddress = normalizeText(template.store_address);
+  const storePhone = normalizeText(template.store_phone);
   const lines = [
+    center(storeName, width),
+    ...(storeAddress ? [center(storeAddress.slice(0, width * 2), width)] : []),
+    ...(storePhone ? [center(`Tel: ${storePhone}`, width)] : []),
     center(template.branch_name, width),
     center("RECEIPT", width),
     line("-", width),
@@ -152,6 +159,39 @@ export function renderReceiptTemplate(template: ReceiptTemplate, paperWidthMm: 5
   lines.push("");
 
   return lines.join("\n");
+}
+
+function receiptStoreTemplateFields(storeProfile: ReceiptStoreProfile | null) {
+  return {
+    store_name: storeProfile?.display_name || storeProfile?.name,
+    store_logo_url: storeProfile?.logo_url,
+    store_address: storeProfile?.company_address,
+    store_phone: storeProfile?.contact_phone
+  };
+}
+
+function receiptStorePayload(storeProfile: ReceiptStoreProfile | null): JsonRecord {
+  return {
+    store_name: storeProfile?.display_name ?? null,
+    store_logo_url: storeProfile?.logo_url ?? null,
+    store_address: storeProfile?.company_address ?? null,
+    store_phone: storeProfile?.contact_phone ?? null,
+    store_code: storeProfile?.code ?? null
+  };
+}
+
+async function loadReceiptBranchName(auth: AuthContext, fallbackName?: string | null) {
+  const fallback = normalizeText(fallbackName) ?? normalizeText(auth.branchId) ?? "Branch POS";
+  if (!auth.tenantId || !auth.branchId) return fallback;
+  const supabase = getSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("branches")
+    .select("name")
+    .eq("tenant_id", auth.tenantId)
+    .eq("id", auth.branchId)
+    .maybeSingle<{ name: string | null }>();
+  if (error) return fallback;
+  return normalizeText(data?.name) ?? fallback;
 }
 
 export function renderKitchenTicketTemplate(template: KitchenTicketTemplate, paperWidthMm: 58 | 80): string {
@@ -557,15 +597,18 @@ export async function enqueueOrderPrintJobs(args: {
 }) {
   const { auth, orderId, orderNo, paymentMethod, input, includeKitchenTicket = false } = args;
   const queuedJobs: PrintJobRow[] = [];
+  const storeProfile = await loadReceiptStoreProfile(auth.tenantId!);
+  const branchName = await loadReceiptBranchName(auth, storeProfile?.display_name ?? storeProfile?.name);
   const receiptPrinters = await getEnabledPrintersByRole(auth, "receipt");
 
   if (receiptPrinters.length > 0) {
     for (const printer of receiptPrinters) {
       const receiptPayload = renderReceiptTemplate(
         {
+          ...receiptStoreTemplateFields(storeProfile),
           order_id: orderId,
           order_no: orderNo,
-          branch_name: "Branch POS",
+          branch_name: branchName,
           cashier_name: auth.userId,
           paid_at_iso: nowIso(),
           currency: "THB",
@@ -592,6 +635,8 @@ export async function enqueueOrderPrintJobs(args: {
         printerRole: "receipt",
         payloadText: receiptPayload,
         payloadJson: {
+          ...receiptStorePayload(storeProfile),
+          branch_name: branchName,
           order_id: orderId,
           order_no: orderNo
         }
@@ -608,7 +653,7 @@ export async function enqueueOrderPrintJobs(args: {
         {
           order_id: orderId,
           order_no: orderNo,
-          branch_name: "Branch POS",
+          branch_name: branchName,
           ticket_at_iso: nowIso(),
           station: "Main",
           items: input.items.map((item) => ({
@@ -639,6 +684,7 @@ export async function reprintOrderReceipt(auth: AuthContext, orderId: string, de
   ensureManagerOrOwner(auth);
   const processJob = deps.processJob ?? processPrintJob;
   const supabase = getSupabaseServiceClient();
+  const storeProfile = await loadReceiptStoreProfile(auth.tenantId!);
   const { data: failedRows, error: failedError } = await supabase
     .from("print_jobs")
     .select(
@@ -748,9 +794,10 @@ export async function reprintOrderReceipt(auth: AuthContext, orderId: string, de
   for (const printer of receiptPrinters) {
     const payload = renderReceiptTemplate(
       {
+        ...receiptStoreTemplateFields(storeProfile),
         order_id: orderId,
         order_no: String(orderRow.order_no),
-        branch_name: String(branchResult.data?.name ?? "Branch POS"),
+        branch_name: String(branchResult.data?.name ?? storeProfile?.display_name ?? "Branch POS"),
         cashier_name: String(cashierResult.data?.full_name ?? orderRow.created_by ?? auth.userId),
         paid_at_iso: orderRow.payment_completed_at ?? orderRow.created_at ?? nowIso(),
         currency: "THB",
@@ -771,7 +818,8 @@ export async function reprintOrderReceipt(auth: AuthContext, orderId: string, de
       orderId,
       printerRole: "receipt",
       payloadText: payload,
-      metadata: { reprint: true }
+      payloadJson: receiptStorePayload(storeProfile),
+      metadata: { reprint: true, ...receiptStorePayload(storeProfile) }
     });
     createdJobs.push(job);
     await processJob(job.id);
@@ -799,14 +847,17 @@ export async function enqueuePrintJobsForOrderSnapshot(args: {
 }) {
   const { auth, order, items, paymentMethod, includeKitchenTicket } = args;
   const queuedJobs: PrintJobRow[] = [];
+  const storeProfile = await loadReceiptStoreProfile(auth.tenantId!);
+  const branchName = await loadReceiptBranchName(auth, storeProfile?.display_name ?? storeProfile?.name);
   const receiptPrinters = await getEnabledPrintersByRole(auth, "receipt");
 
   for (const printer of receiptPrinters) {
     const receiptPayload = renderReceiptTemplate(
       {
+        ...receiptStoreTemplateFields(storeProfile),
         order_id: order.id,
         order_no: order.order_no,
-        branch_name: "Branch POS",
+        branch_name: branchName,
         cashier_name: auth.userId,
         paid_at_iso: nowIso(),
         currency: "THB",
@@ -832,7 +883,7 @@ export async function enqueuePrintJobsForOrderSnapshot(args: {
       orderId: order.id,
       printerRole: "receipt",
       payloadText: receiptPayload,
-      payloadJson: { order_id: order.id, order_no: order.order_no }
+      payloadJson: { ...receiptStorePayload(storeProfile), branch_name: branchName, order_id: order.id, order_no: order.order_no }
     });
     queuedJobs.push(job);
     await processPrintJob(job.id);
@@ -845,7 +896,7 @@ export async function enqueuePrintJobsForOrderSnapshot(args: {
         {
           order_id: order.id,
           order_no: order.order_no,
-          branch_name: "Branch POS",
+          branch_name: branchName,
           ticket_at_iso: nowIso(),
           station: "Main",
           items: items.map((item) => ({

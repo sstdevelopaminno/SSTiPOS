@@ -22,6 +22,7 @@ type Props = {
   targetId: string;
   onClose: () => void;
   onApproved: (approvalId: string) => void;
+  onPinSubmit?: (pin: string) => Promise<void>;
   lang?: "th" | "en";
   labels?: Partial<ManagerOverrideModalLabels>;
 };
@@ -57,6 +58,7 @@ export function ManagerOverrideModal({
   targetId,
   onClose,
   onApproved,
+  onPinSubmit,
   lang,
   labels
 }: Props) {
@@ -88,6 +90,12 @@ export function ManagerOverrideModal({
       setError(null);
 
       try {
+        if (onPinSubmit) {
+          await onPinSubmit(pinToCheck);
+          setPin("");
+          lastSubmittedPin.current = "";
+          return;
+        }
         const response = await fetch("/api/backoffice/approvals/pin", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -117,14 +125,11 @@ export function ManagerOverrideModal({
         onApproved(approvalId);
       } catch (submitError) {
         setError(submitError instanceof Error ? submitError.message : "Unknown error");
-        if (lastSubmittedPin.current === pinToCheck) {
-          lastSubmittedPin.current = "";
-        }
       } finally {
         setBusy(false);
       }
     },
-    [MIN_PIN_LENGTH, action, onApproved, targetId, targetTable, text.pinLengthError, text.pinRejected]
+    [MIN_PIN_LENGTH, action, onApproved, onPinSubmit, targetId, targetTable, text.pinLengthError, text.pinRejected]
   );
 
   useEffect(() => {

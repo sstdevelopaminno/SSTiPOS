@@ -146,6 +146,17 @@ export async function POST(request: Request) {
       return timedJsonError(403, "device_offline", "เครื่องที่เลือกออฟไลน์หรืออยู่ระหว่างบำรุงรักษา");
     }
 
+    const deviceScopeQueryPromise = withAuthTimeout(
+      supabase
+        .from("pos_user_device_scopes")
+        .select("scope_mode,device_id")
+        .eq("tenant_id", flow.tenantId)
+        .eq("branch_id", flow.branchId)
+        .eq("user_id", employee.userId)
+        .maybeSingle<UserDeviceScopeRow>(),
+      "device_scope_lookup_timeout"
+    );
+
     const [activeSessionById, activeSessionByCode] = await withAuthTimeout(
       Promise.all([
         supabase
@@ -186,41 +197,34 @@ export async function POST(request: Request) {
         return timedJsonError(409, "device_in_use", "เครื่องนี้กำลังถูกใช้งานอยู่");
       }
 
-      const [revokeByDeviceId, revokeByDeviceCode] = await withAuthTimeout(
-        Promise.all([
-          supabase
-            .from("pos_sessions")
-            .update({ status: "revoked", revoked_at: nowIso })
-            .eq("tenant_id", flow.tenantId)
-            .eq("branch_id", flow.branchId)
-            .eq("status", "active")
-            .eq("device_id", device.id),
-          supabase
-            .from("pos_sessions")
-            .update({ status: "revoked", revoked_at: nowIso })
-            .eq("tenant_id", flow.tenantId)
-            .eq("branch_id", flow.branchId)
-            .eq("status", "active")
-            .eq("device_code", selectedDeviceCode)
-        ]),
-        "device_session_revoke_timeout"
-      );
+      if (!isSameEmployee) {
+        const [revokeByDeviceId, revokeByDeviceCode] = await withAuthTimeout(
+          Promise.all([
+            supabase
+              .from("pos_sessions")
+              .update({ status: "revoked", revoked_at: nowIso })
+              .eq("tenant_id", flow.tenantId)
+              .eq("branch_id", flow.branchId)
+              .eq("status", "active")
+              .eq("device_id", device.id),
+            supabase
+              .from("pos_sessions")
+              .update({ status: "revoked", revoked_at: nowIso })
+              .eq("tenant_id", flow.tenantId)
+              .eq("branch_id", flow.branchId)
+              .eq("status", "active")
+              .eq("device_code", selectedDeviceCode)
+          ]),
+          "device_session_revoke_timeout"
+        );
 
-      if (revokeByDeviceId.error || revokeByDeviceCode.error) {
-        return timedJsonError(500, "device_select_failed", "ไม่สามารถปลดล็อกเครื่องที่กำลังใช้งานอยู่ได้");
+        if (revokeByDeviceId.error || revokeByDeviceCode.error) {
+          return timedJsonError(500, "device_select_failed", "ไม่สามารถปลดล็อกเครื่องที่กำลังใช้งานอยู่ได้");
+        }
       }
     }
 
-    const deviceScopeQuery = await withAuthTimeout(
-      supabase
-        .from("pos_user_device_scopes")
-        .select("scope_mode,device_id")
-        .eq("tenant_id", flow.tenantId)
-        .eq("branch_id", flow.branchId)
-        .eq("user_id", employee.userId)
-        .maybeSingle<UserDeviceScopeRow>(),
-      "device_scope_lookup_timeout"
-    );
+    const deviceScopeQuery = await deviceScopeQueryPromise;
 
     if (deviceScopeQuery.error && !isMissingRelationError(deviceScopeQuery.error, "pos_user_device_scopes")) {
       return timedJsonError(500, "device_select_failed", "ไม่สามารถตรวจสอบขอบเขตอุปกรณ์ของผู้ใช้งานได้");

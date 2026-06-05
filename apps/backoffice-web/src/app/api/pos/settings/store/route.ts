@@ -5,7 +5,7 @@ import { loadPosSettingsSnapshot, updateStoreSettings, type StoreSettingsInput }
 function statusFromError(error: unknown) {
   const message = error instanceof Error ? error.message : "Settings request failed.";
   if (message.includes("Only owner")) return { code: "forbidden_role", message, status: 403 };
-  if (message.includes("required")) return { code: "invalid_payload", message, status: 422 };
+  if (message.includes("required") || message.includes("logo") || message.includes("image")) return { code: "invalid_payload", message, status: 422 };
   return { code: "settings_store_failed", message, status: 500 };
 }
 

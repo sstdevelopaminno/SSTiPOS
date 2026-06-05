@@ -12,7 +12,7 @@ Production-oriented monorepo for a noodle shop and small restaurant POS platform
 
 ```text
 pos-platform/
-  - apps/
+  - apps/![alt text](image-1.png)
     - backoffice-web/    # Back Office + IT Admin + POS preview + Unified Store/POS login
     - pos-android/       # Placeholder docs + API contract reference
   - packages/

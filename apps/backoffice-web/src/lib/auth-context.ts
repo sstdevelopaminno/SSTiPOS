@@ -153,22 +153,18 @@ export async function getAuthContext(input: AuthContextInput = {}): Promise<Auth
 
   // Support POS login handoff/session auth for API routes that still rely on auth-context.
   if (!bearerToken && !hasSupabaseSessionCookie && hasPosSessionCookie(cookieHeader)) {
-    try {
-      const posScope = await requirePosSession();
-      const contextFromPos: AuthContext = {
-        userId: posScope.session.user_id,
-        tenantId: posScope.session.tenant_id,
-        branchId: posScope.session.branch_id,
-        branchRole: parseRole(posScope.session.role, branchRoles),
-        platformRole: "tenant_user"
-      };
-      if (requireBranchScope) {
-        assertBranchScope(contextFromPos);
-      }
-      return contextFromPos;
-    } catch {
-      // Fall through to existing auth resolution.
+    const posScope = await requirePosSession();
+    const contextFromPos: AuthContext = {
+      userId: posScope.session.user_id,
+      tenantId: posScope.session.tenant_id,
+      branchId: posScope.session.branch_id,
+      branchRole: parseRole(posScope.session.role, branchRoles),
+      platformRole: "tenant_user"
+    };
+    if (requireBranchScope) {
+      assertBranchScope(contextFromPos);
     }
+    return contextFromPos;
   }
 
   if (!bearerToken && fallback && !hasSupabaseSessionCookie && !requestedBranchIdFromCookie) {

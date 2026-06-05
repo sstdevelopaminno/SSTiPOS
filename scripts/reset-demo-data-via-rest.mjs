@@ -169,8 +169,8 @@ const DEMO_TENANTS = [
 ];
 
 const DEMO_BRANCHES = [
-  { id: "00000000-0000-0000-0000-000000000011", tenant_id: "00000000-0000-0000-0000-000000000001", code: "BKK-01", name: "Noodle BKK 01", address: "Bangkok", is_active: true },
-  { id: "00000000-0000-0000-0000-000000000012", tenant_id: "00000000-0000-0000-0000-000000000001", code: "BKK-02", name: "Noodle BKK 02", address: "Bangkok", is_active: true },
+  { id: "00000000-0000-0000-0000-000000000011", tenant_id: "00000000-0000-0000-0000-000000000001", code: "BKK-01", name: "อ่อนนุช", address: "Bangkok", is_active: true },
+  { id: "00000000-0000-0000-0000-000000000012", tenant_id: "00000000-0000-0000-0000-000000000001", code: "BKK-02", name: "ลาดพร้าว", address: "Bangkok", is_active: true },
   { id: "00000000-0000-0000-0000-000000020011", tenant_id: "00000000-0000-0000-0000-000000010001", code: "CAF-BKK-01", name: "Cafe Atlas Rama9", address: "Bangkok", is_active: true },
   { id: "00000000-0000-0000-0000-000000020012", tenant_id: "00000000-0000-0000-0000-000000010001", code: "CAF-CNX-01", name: "Cafe Atlas Nimman", address: "Chiang Mai", is_active: true },
   { id: "00000000-0000-0000-0000-000000020021", tenant_id: "00000000-0000-0000-0000-000000010002", code: "BBQ-BKK-01", name: "BBQ Lab Ladprao", address: "Bangkok", is_active: true },
@@ -214,6 +214,8 @@ const DEMO_ROLE_ROWS = [
   { id: "20000000-0000-0000-0000-000000000001", user_id: "00000000-0000-0000-0000-000000000101", tenant_id: "00000000-0000-0000-0000-000000000001", branch_id: "00000000-0000-0000-0000-000000000011", role: "owner", is_default: true },
   { id: "20000000-0000-0000-0000-000000000002", user_id: "00000000-0000-0000-0000-000000000102", tenant_id: "00000000-0000-0000-0000-000000000001", branch_id: "00000000-0000-0000-0000-000000000011", role: "manager", is_default: true },
   { id: "20000000-0000-0000-0000-000000000003", user_id: "00000000-0000-0000-0000-000000000103", tenant_id: "00000000-0000-0000-0000-000000000001", branch_id: "00000000-0000-0000-0000-000000000011", role: "staff", is_default: true },
+  { id: "20000000-0000-0000-0000-000000000004", user_id: "00000000-0000-0000-0000-000000000101", tenant_id: "00000000-0000-0000-0000-000000000001", branch_id: "00000000-0000-0000-0000-000000000012", role: "owner", is_default: false },
+  { id: "20000000-0000-0000-0000-000000000005", user_id: "00000000-0000-0000-0000-000000000102", tenant_id: "00000000-0000-0000-0000-000000000001", branch_id: "00000000-0000-0000-0000-000000000012", role: "manager", is_default: false },
   // CAF
   { id: "00000000-0000-0000-0000-000000040001", user_id: "00000000-0000-0000-0000-000000030011", tenant_id: "00000000-0000-0000-0000-000000010001", branch_id: "00000000-0000-0000-0000-000000020011", role: "owner", is_default: true },
   { id: "00000000-0000-0000-0000-000000040002", user_id: "00000000-0000-0000-0000-000000030011", tenant_id: "00000000-0000-0000-0000-000000010001", branch_id: "00000000-0000-0000-0000-000000020012", role: "owner", is_default: false },
@@ -249,6 +251,45 @@ function createAdditionalRoles() {
 }
 
 const DEMO_ROLES_ALL = [...DEMO_ROLE_ROWS, ...createAdditionalRoles()];
+const DEMO_OWNER_EMPLOYEE_CODE = "182536";
+
+function defaultPositionTitle(role) {
+  if (role === "owner") return "Owner";
+  if (role === "manager") return "Manager";
+  if (role === "accountant") return "Accountant";
+  return "Staff";
+}
+
+function demoEmployeeCodeForRole(role, userId) {
+  if (role === "owner") return DEMO_OWNER_EMPLOYEE_CODE;
+  const suffix = String(userId).replace(/-/g, "").slice(-6).toUpperCase();
+  if (role === "manager") return `MGR-${suffix}`;
+  if (role === "accountant") return `ACC-${suffix}`;
+  return `STF-${suffix}`;
+}
+
+function buildDemoPosUserProfiles(roleRows) {
+  const byTenantUser = new Map();
+  for (const row of roleRows) {
+    const key = `${row.tenant_id}:${row.user_id}`;
+    const current = byTenantUser.get(key);
+    if (!current || row.is_default || current.role === "staff") {
+      byTenantUser.set(key, {
+        tenant_id: row.tenant_id,
+        user_id: row.user_id,
+        role: row.role
+      });
+    }
+  }
+
+  return Array.from(byTenantUser.values()).map((row) => ({
+    tenant_id: row.tenant_id,
+    user_id: row.user_id,
+    employee_code: demoEmployeeCodeForRole(row.role, row.user_id),
+    position_title: defaultPositionTitle(row.role),
+    permission_role: row.role
+  }));
+}
 
 const USER_PASSWORDS = {
   "owner@noodle.local": "Owner#1234",
@@ -365,19 +406,21 @@ const CONTRACT_ROWS = DEMO_TENANTS.map((tenant, index) => ({
   auto_renew: true
 }));
 
-const DEVICE_ROWS = DEMO_BRANCHES.map((branch, idx) => ({
-  id: `80000000-0000-0000-0000-00000000${String(idx + 1).padStart(4, "0")}`,
-  tenant_id: branch.tenant_id,
-  branch_id: branch.id,
-  device_code: `${branch.code}-POS-01`,
-  device_name: `${branch.code} POS 01`,
-  device_type: "pos_terminal",
-  status: "active",
-  is_locked: true,
-  allow_morning_shift: true,
-  allow_afternoon_shift: true,
-  metadata: {}
-}));
+const DEVICE_ROWS = DEMO_BRANCHES.flatMap((branch, branchIndex) =>
+  [1, 2].map((deviceNumber) => ({
+    id: `80000000-0000-0000-0000-00000000${String(branchIndex * 2 + deviceNumber).padStart(4, "0")}`,
+    tenant_id: branch.tenant_id,
+    branch_id: branch.id,
+    device_code: `${branch.code}-POS-${String(deviceNumber).padStart(2, "0")}`,
+    device_name: `${branch.code} POS ${String(deviceNumber).padStart(2, "0")}`,
+    device_type: "pos_terminal",
+    status: "active",
+    is_locked: true,
+    allow_morning_shift: true,
+    allow_afternoon_shift: true,
+    metadata: {}
+  }))
+);
 
 const CHANNEL_ROWS = DEMO_BRANCHES.flatMap((branch, idx) => [
   {
@@ -461,6 +504,7 @@ async function main() {
     const authId = authUserIdsByEmail.get(emailKey) ?? r.user_id;
     return { ...r, user_id: authId };
   });
+  const posUserProfilesForUpsert = buildDemoPosUserProfiles(roleRowsForUpsert);
 
   const userIds = usersForUpsert.map((u) => u.id);
 
@@ -486,6 +530,7 @@ async function main() {
     "dining_tables",
     "table_zones",
     "dine_in_tables",
+    "pos_user_profiles",
     "user_branch_roles",
     "tenant_feature_subscriptions",
     "tenant_subscription_contracts"
@@ -577,6 +622,14 @@ async function main() {
     url: `${baseUrl}/rest/v1/user_branch_roles?on_conflict=user_id,tenant_id,branch_id`,
     key,
     body: roleRowsForUpsert,
+    prefer: "resolution=merge-duplicates,return=representation"
+  });
+
+  await restRequest({
+    method: "POST",
+    url: `${baseUrl}/rest/v1/pos_user_profiles?on_conflict=tenant_id,user_id`,
+    key,
+    body: posUserProfilesForUpsert,
     prefer: "resolution=merge-duplicates,return=representation"
   });
 
