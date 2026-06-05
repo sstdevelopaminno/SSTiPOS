@@ -3083,6 +3083,131 @@ a {
   padding: 16px;
 }
 
+.posui-device-blocker {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  display: grid;
+  place-items: center;
+  padding: clamp(16px, 3vw, 32px);
+  background: rgba(15, 23, 42, 0.66);
+  backdrop-filter: blur(4px);
+}
+
+.posui-device-blocker__panel {
+  width: min(620px, 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  background: #ffffff;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.34);
+  padding: clamp(18px, 3vw, 28px);
+  display: grid;
+  gap: 16px;
+  grid-template-columns: auto 1fr;
+  align-items: flex-start;
+}
+
+.posui-device-blocker__icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.posui-device-blocker--inactive .posui-device-blocker__icon {
+  color: #b91c1c;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+}
+
+.posui-device-blocker--maintenance .posui-device-blocker__icon {
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+}
+
+.posui-device-blocker__icon svg {
+  width: 34px;
+  height: 34px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.posui-device-blocker__content {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.posui-device-blocker__eyebrow {
+  margin: 0;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.posui-device-blocker__content h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: clamp(22px, 3vw, 32px);
+  line-height: 1.15;
+  letter-spacing: 0;
+  font-weight: 950;
+}
+
+.posui-device-blocker__content p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.55;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.posui-device-blocker__meta {
+  margin: 2px 0 0;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.posui-device-blocker__meta div {
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 10px 12px;
+}
+
+.posui-device-blocker__meta dt {
+  margin: 0 0 3px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.posui-device-blocker__meta dd {
+  margin: 0;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 900;
+  word-break: break-word;
+}
+
+.posui-device-blocker__hint {
+  color: #334155 !important;
+}
+
+.posui-device-blocker .posui-btn {
+  justify-self: flex-start;
+}
+
 .posui-payment-modal {
   width: min(560px, calc(100vw - 32px));
   max-height: min(88vh, 820px);
@@ -7683,6 +7808,23 @@ a {
   flex: 0 0 auto;
 }
 
+.pos-entry-gate__header-icon--danger {
+  border-color: #fecaca;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.pos-entry-gate__header-icon--warning {
+  border-color: #fde68a;
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.pos-entry-gate__panel--device-blocked {
+  border-color: #f8cfcf;
+  background: #fffafa;
+}
+
 .pos-entry-gate__header h2 {
   margin: 0;
   font-size: clamp(17px, 1.25vw, 22px);
@@ -7848,6 +7990,27 @@ a {
 }
 
 @media (max-width: 760px) {
+  .posui-device-blocker {
+    align-items: stretch;
+    padding: 12px;
+  }
+
+  .posui-device-blocker__panel {
+    grid-template-columns: 1fr;
+    align-content: start;
+    max-height: calc(100vh - 24px);
+    overflow: auto;
+  }
+
+  .posui-device-blocker__icon {
+    width: 54px;
+    height: 54px;
+  }
+
+  .posui-device-blocker__meta {
+    grid-template-columns: 1fr;
+  }
+
   .pos-entry-gate {
     padding: 10px;
   }

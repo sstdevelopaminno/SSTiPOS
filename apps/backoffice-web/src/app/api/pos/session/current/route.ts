@@ -5,6 +5,7 @@ import {
   updateCachedPosSessionShift,
   withPosSessionCookie
 } from "@/lib/pos-session-guard";
+import { loadPosRuntimeDevicePolicyForSession } from "@/lib/pos-device-status";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 async function withQueryTimeout<T>(queryPromise: Promise<T>, timeoutMs: number): Promise<T | null> {
@@ -44,6 +45,7 @@ export async function GET() {
   try {
     const scope = await requirePosSession();
     const supabase = getSupabaseServiceClient();
+    const devicePolicy = await loadPosRuntimeDevicePolicyForSession(scope.session);
 
     const shiftId = scope.session.shift_id;
     let shiftSummary: { id: string; status: string; opened_at: string; closed_at: string | null } | null = null;
@@ -152,7 +154,11 @@ export async function GET() {
         permissions: scope.permissions,
         device: {
           id: scope.session.device_id,
-          code: scope.session.device_code
+          code: scope.session.device_code,
+          name: devicePolicy.name,
+          status: devicePolicy.status,
+          block_sales: devicePolicy.block_sales,
+          reason_code: devicePolicy.reason_code
         },
         shift: shiftSummary,
         has_active_shift: shiftSummary?.status === "open"

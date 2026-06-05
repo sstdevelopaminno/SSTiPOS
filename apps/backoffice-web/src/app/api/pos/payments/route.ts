@@ -1,6 +1,8 @@
 import type { PaymentMethod } from "@pos/shared-types";
 import { appendAuditLog } from "@/lib/audit-log";
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
+import { getDevicePolicyBlockMessage, loadPosRuntimeDevicePolicyForSession } from "@/lib/pos-device-status";
+import { requirePermission, requirePosSession } from "@/lib/pos-session-guard";
 import { fail, ok } from "@/lib/http";
 import { invalidatePosScopeRuntimeCaches } from "@/lib/pos-cache-invalidation";
 import { appendPosDeadLetter, POS_GUARDS } from "@/lib/pos-resilience";
@@ -84,6 +86,15 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const startedAt = Date.now();
   try {
+    const scope = await requirePosSession();
+    requirePermission(scope, "receipts:view");
+    const devicePolicy = await loadPosRuntimeDevicePolicyForSession(scope.session);
+    if (devicePolicy.block_sales) {
+      const response = fail(devicePolicy.reason_code ?? "pos_device_unavailable", getDevicePolicyBlockMessage(devicePolicy), 423);
+      response.headers.set("x-pos-payments-device-status", devicePolicy.status);
+      response.headers.set("x-pos-payments-ms", String(Date.now() - startedAt));
+      return response;
+    }
     const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "receipts:view" });
     const supabase = getSupabaseServiceClient();
     const body = (await req.json()) as CompletePaymentPayload;

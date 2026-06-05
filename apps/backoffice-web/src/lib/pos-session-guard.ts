@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import { readRequiredEnv } from "@/lib/env";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
-type PosSessionRow = {
+export type PosSessionRow = {
   id: string;
   tenant_id: string;
   branch_id: string;

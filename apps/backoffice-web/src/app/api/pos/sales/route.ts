@@ -1,5 +1,7 @@
 import type { OrderType } from "@pos/shared-types";
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
+import { getDevicePolicyBlockMessage, loadPosRuntimeDevicePolicyForSession, type PosRuntimeDevicePolicy } from "@/lib/pos-device-status";
+import { requirePermission, requirePosSession, type PosSessionScope } from "@/lib/pos-session-guard";
 import {
   calculateDeliveryPricingBreakdown,
   DEFAULT_DELIVERY_CHANNEL_CONFIGS,
@@ -73,6 +75,35 @@ type PaymentAccountRow = {
   applies_to_all_branches: boolean | null;
   is_active: boolean | null;
 };
+
+type PosSalesAuthContext = Awaited<ReturnType<typeof getPosApiAuthContext>>;
+
+function normalizePosBranchRole(role: string): PosSalesAuthContext["branchRole"] {
+  if (role === "owner" || role === "manager" || role === "staff" || role === "accountant") return role;
+  return "staff";
+}
+
+function authFromPosScope(scope: PosSessionScope): PosSalesAuthContext {
+  return {
+    userId: scope.session.user_id,
+    tenantId: scope.session.tenant_id,
+    branchId: scope.session.branch_id,
+    branchRole: normalizePosBranchRole(scope.session.role),
+    platformRole: "tenant_user"
+  };
+}
+
+async function requireSalesSessionContext(permission: "sales:enter"): Promise<{
+  auth: PosSalesAuthContext;
+  devicePolicy: PosRuntimeDevicePolicy;
+}> {
+  const scope = await requirePosSession();
+  requirePermission(scope, permission);
+  return {
+    auth: authFromPosScope(scope),
+    devicePolicy: await loadPosRuntimeDevicePolicyForSession(scope.session)
+  };
+}
 
 type PosProductQueryRow = {
   id: string;
@@ -626,7 +657,7 @@ async function updateQueuedPosOrder(args: {
 export async function GET() {
   const startedAt = Date.now();
   try {
-    const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "sales:enter" });
+    const { auth, devicePolicy } = await requireSalesSessionContext("sales:enter");
     const supabase = getSupabaseServiceClient();
 
     const [
@@ -799,6 +830,7 @@ export async function GET() {
       branch_name: branchError ? auth.branchId : branchData?.name ?? auth.branchId,
       store_profile: storeProfile,
       payment_account: activePaymentAccount,
+      device_policy: devicePolicy,
       delivery_configs: activeDeliveryConfigs,
       delivery_prices_by_product: deliveryPricesByProduct
     });
@@ -817,7 +849,13 @@ export async function GET() {
 export async function POST(req: Request) {
   const startedAt = Date.now();
   try {
-    const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "sales:enter" });
+    const { auth, devicePolicy } = await requireSalesSessionContext("sales:enter");
+    if (devicePolicy.block_sales) {
+      const response = fail(devicePolicy.reason_code ?? "pos_device_unavailable", getDevicePolicyBlockMessage(devicePolicy), 423);
+      response.headers.set("x-pos-sales-device-status", devicePolicy.status);
+      response.headers.set("x-pos-sales-post-ms", String(Date.now() - startedAt));
+      return response;
+    }
     const supabase = getSupabaseServiceClient();
     const body = (await req.json()) as PosCreateOrderPayload;
     let usedShiftFallback = false;

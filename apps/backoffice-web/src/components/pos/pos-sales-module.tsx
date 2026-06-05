@@ -72,6 +72,15 @@ type PaymentAccountSnapshot = {
   is_active: boolean;
 };
 
+type PosSalesDevicePolicy = {
+  id: string | null;
+  code: string | null;
+  name: string | null;
+  status: "active" | "inactive" | "maintenance" | "unknown";
+  block_sales: boolean;
+  reason_code: string | null;
+};
+
 type PosSalesSnapshot = {
   tenant_id?: string;
   branch_id?: string;
@@ -82,6 +91,7 @@ type PosSalesSnapshot = {
   branch_name?: string;
   store_profile?: StoreProfile | null;
   payment_account?: PaymentAccountSnapshot | null;
+  device_policy?: PosSalesDevicePolicy | null;
   delivery_configs?: DeliveryChannelConfigRow[];
   delivery_prices_by_product?: Record<string, Record<string, number>>;
 };
@@ -489,6 +499,13 @@ const uiText = {
     previewMode: "หน้าขาย POS",
     shift: "กะ",
     noShift: "ยังไม่เปิดกะ",
+    deviceBlockedInactiveTitle: "เครื่องแคชเชียร์ถูกปิดใช้งาน",
+    deviceBlockedInactiveBody: "สถานะเครื่องนี้ถูกตั้งเป็นปิดใช้งานจากเมนูเพิ่มเครื่องแคชเชียร์ ระบบจึงปิดการกดขายและชำระเงินทั้งหมดบนเครื่องนี้",
+    deviceBlockedMaintenanceTitle: "เครื่องแคชเชียร์อยู่ระหว่างบำรุงรักษา",
+    deviceBlockedMaintenanceBody: "สถานะเครื่องนี้ถูกตั้งเป็นบำรุงรักษา ระบบจึงพักหน้าขายไว้ชั่วคราวจนกว่าผู้ดูแลจะเปิดใช้งานอีกครั้ง",
+    deviceBlockedStatusLabel: "สถานะเครื่อง",
+    deviceBlockedCodeLabel: "รหัสเครื่อง",
+    deviceBlockedActionHint: "กลับไปที่ตั้งค่า > เพิ่มเครื่องแคชเชียร์ เพื่อเปลี่ยนสถานะเครื่อง หรือใช้งานเครื่องอื่น",
     network: "เครือข่าย",
     online: "ออนไลน์",
     offline: "ออฟไลน์",
@@ -784,6 +801,13 @@ const uiText = {
     previewMode: "POS Sales",
     shift: "Shift",
     noShift: "No open shift",
+    deviceBlockedInactiveTitle: "Cashier device is disabled",
+    deviceBlockedInactiveBody: "This device was disabled from cashier device settings. Sales and payment actions are locked on this device.",
+    deviceBlockedMaintenanceTitle: "Cashier device is under maintenance",
+    deviceBlockedMaintenanceBody: "This device is marked for maintenance. The sales screen is paused until an admin switches it back to active.",
+    deviceBlockedStatusLabel: "Device status",
+    deviceBlockedCodeLabel: "Device code",
+    deviceBlockedActionHint: "Go to Settings > Cashier devices to change the device status, or use another active device.",
     network: "Network",
     online: "online",
     offline: "offline",
@@ -1304,6 +1328,83 @@ async function fetchJsonWithTimeout<TBody extends ApiErrorBody>(
   throw new Error("Failed to fetch data.");
 }
 
+function getSalesDeviceStatusLabel(status: PosSalesDevicePolicy["status"] | undefined, lang: Lang) {
+  if (status === "inactive") return lang === "th" ? "ปิดใช้งาน" : "Disabled";
+  if (status === "maintenance") return lang === "th" ? "บำรุงรักษา" : "Maintenance";
+  if (status === "active") return lang === "th" ? "ใช้งาน" : "Active";
+  return lang === "th" ? "ไม่ทราบสถานะ" : "Unknown";
+}
+
+function DeviceBlockIcon({ status }: { status: PosSalesDevicePolicy["status"] }) {
+  if (status === "maintenance") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M14.7 6.3 17.7 3.3l3 3-3 3" />
+        <path d="m16.9 8.1-8.8 8.8-3.4.8.8-3.4 8.8-8.8" />
+        <path d="M13 19h8" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3v9" />
+      <path d="M7.1 6.2a8 8 0 1 0 9.8 0" />
+    </svg>
+  );
+}
+
+function PosDeviceBlockedOverlay({
+  devicePolicy,
+  lang,
+  text,
+  onRetry
+}: {
+  devicePolicy: PosSalesDevicePolicy;
+  lang: Lang;
+  text: (typeof uiText)[Lang];
+  onRetry: () => void;
+}) {
+  const isMaintenance = devicePolicy.status === "maintenance";
+  const title = isMaintenance ? text.deviceBlockedMaintenanceTitle : text.deviceBlockedInactiveTitle;
+  const body = isMaintenance ? text.deviceBlockedMaintenanceBody : text.deviceBlockedInactiveBody;
+  const statusLabel = getSalesDeviceStatusLabel(devicePolicy.status, lang);
+  const deviceCode = devicePolicy.code || devicePolicy.name || "-";
+  return (
+    <div
+      className={`posui-device-blocker ${isMaintenance ? "posui-device-blocker--maintenance" : "posui-device-blocker--inactive"}`}
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="pos-device-blocker-title"
+      aria-describedby="pos-device-blocker-body"
+    >
+      <section className="posui-device-blocker__panel">
+        <div className="posui-device-blocker__icon">
+          <DeviceBlockIcon status={devicePolicy.status} />
+        </div>
+        <div className="posui-device-blocker__content">
+          <p className="posui-device-blocker__eyebrow">SST iPOS</p>
+          <h2 id="pos-device-blocker-title">{title}</h2>
+          <p id="pos-device-blocker-body">{body}</p>
+          <dl className="posui-device-blocker__meta">
+            <div>
+              <dt>{text.deviceBlockedStatusLabel}</dt>
+              <dd>{statusLabel}</dd>
+            </div>
+            <div>
+              <dt>{text.deviceBlockedCodeLabel}</dt>
+              <dd>{deviceCode}</dd>
+            </div>
+          </dl>
+          <p className="posui-device-blocker__hint">{text.deviceBlockedActionHint}</p>
+          <button type="button" className="posui-btn posui-btn--primary" onClick={onRetry}>
+            {text.retryLoad}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function formatHeldAt(value: string, lang: Lang): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
@@ -1451,6 +1552,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [transferReference, setTransferReference] = useState("");
   const [promptPayPhone, setPromptPayPhone] = useState(DEFAULT_PROMPTPAY_PHONE);
   const [paymentAccount, setPaymentAccount] = useState<PaymentAccountSnapshot | null>(null);
+  const [devicePolicy, setDevicePolicy] = useState<PosSalesDevicePolicy | null>(null);
   const [transferSlipFile, setTransferSlipFile] = useState<File | null>(null);
   const [transferSlipPreviewUrl, setTransferSlipPreviewUrl] = useState<string | null>(null);
   const [transferSlipParsed, setTransferSlipParsed] = useState<SlipExtractPayload | null>(null);
@@ -1496,6 +1598,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   });
   const pending = pendingQueue[0] ?? null;
   const pendingPayment = pendingPaymentQueue[0] ?? null;
+  const deviceSalesBlocked = devicePolicy?.block_sales === true;
   const hasRenderableDataRef = useRef(false);
   const idAppLoginUrl = "/login/store";
   const errorText = error ?? "";
@@ -2244,6 +2347,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       setBranchName(String(savedSales.branch_name ?? "Unknown Branch"));
       setStoreProfile(savedSales.store_profile ?? null);
       setPaymentAccount(savedSales.payment_account ?? null);
+      setDevicePolicy(savedSales.device_policy ?? null);
       if (savedSales.payment_account?.promptpay_phone) {
         setPromptPayPhone(sanitizePromptPayPhone(savedSales.payment_account.promptpay_phone));
       }
@@ -2544,6 +2648,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   });
 
   useEffect(() => {
+    if (deviceSalesBlocked) return;
     if (!isHydrated || !isOnline || pendingQueue.length === 0 || replayingPendingRef.current) return;
     if (submitting || cancelBillSubmitting || cashSubmitting || receiptSaving || stockAdjusting) return;
     const nextPending = pendingQueue[0];
@@ -2591,12 +2696,14 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     submitting,
     cancelBillSubmitting,
     cashSubmitting,
+    deviceSalesBlocked,
     receiptSaving,
     stockAdjusting,
     text.retryFailed
   ]);
 
   useEffect(() => {
+    if (deviceSalesBlocked) return;
     if (!isHydrated || !isOnline || pendingPaymentQueue.length === 0 || replayingPendingPaymentRef.current) return;
     if (submitting || cancelBillSubmitting || cashSubmitting || transferSubmitting || receiptSaving || stockAdjusting) return;
     const nextPending = pendingPaymentQueue[0];
@@ -2629,6 +2736,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     submitting,
     cancelBillSubmitting,
     cashSubmitting,
+    deviceSalesBlocked,
     transferSubmitting,
     receiptSaving,
     stockAdjusting,
@@ -2670,6 +2778,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         const nextBranchName = String(salesResponse.body.data?.branch_name ?? (lang === "th" ? "ไม่ทราบสาขา" : "Unknown Branch"));
         const nextStoreProfile = salesResponse.body.data?.store_profile ?? null;
         const nextPaymentAccount = salesResponse.body.data?.payment_account ?? null;
+        const nextDevicePolicy = salesResponse.body.data?.device_policy ?? null;
         const nextDeliveryConfigs = Array.isArray(salesResponse.body.data?.delivery_configs)
           ? salesResponse.body.data.delivery_configs
           : [];
@@ -2711,6 +2820,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         setBranchName(nextBranchName);
         setStoreProfile(nextStoreProfile);
         setPaymentAccount(nextPaymentAccount);
+        setDevicePolicy(nextDevicePolicy);
         if (nextPaymentAccount?.promptpay_phone) {
           setPromptPayPhone(sanitizePromptPayPhone(nextPaymentAccount.promptpay_phone));
         }
@@ -2732,6 +2842,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
               branch_name: nextBranchName,
               store_profile: nextStoreProfile,
               payment_account: nextPaymentAccount,
+              device_policy: nextDevicePolicy,
               delivery_configs: nextDeliveryConfigs,
               delivery_prices_by_product: nextDeliveryPricesByProduct,
               tenant_id: tenantId,
@@ -6134,6 +6245,15 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           </PosCartDrawer>
         }
       />
+
+      {devicePolicy && deviceSalesBlocked ? (
+        <PosDeviceBlockedOverlay
+          devicePolicy={devicePolicy}
+          lang={lang}
+          text={text}
+          onRetry={() => setReloadToken((current) => current + 1)}
+        />
+      ) : null}
 
       {discountModalOpen ? (
         <div className="posui-payment-modal-backdrop" role="dialog" aria-modal="true" aria-label={text.discountPopupTitle}>

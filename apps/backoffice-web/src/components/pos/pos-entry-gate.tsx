@@ -14,7 +14,14 @@ type SessionCurrentResponse = {
     user: { id: string; full_name: string };
     role: string;
     permissions: string[];
-    device: { id: string | null; code: string | null };
+    device: {
+      id: string | null;
+      code: string | null;
+      name?: string | null;
+      status?: "active" | "inactive" | "maintenance" | "unknown";
+      block_sales?: boolean;
+      reason_code?: string | null;
+    };
     shift: { id: string; status: string; opened_at: string; closed_at: string | null } | null;
     has_active_shift: boolean;
   } | null;
@@ -114,7 +121,7 @@ function formatDateTime(value: string, lang: Lang) {
   });
 }
 
-function SummaryIcon({ type }: { type: "store" | "branch" | "user" | "role" | "device" | "session" }) {
+function SummaryIcon({ type }: { type: "store" | "branch" | "user" | "role" | "device" | "session" | "power" | "maintenance" }) {
   if (type === "store") {
     return (
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
@@ -155,12 +162,38 @@ function SummaryIcon({ type }: { type: "store" | "branch" | "user" | "role" | "d
       </svg>
     );
   }
+  if (type === "power") {
+    return (
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+        <path d="M12 3v9" />
+        <path d="M7.1 6.2a8 8 0 1 0 9.8 0" />
+      </svg>
+    );
+  }
+  if (type === "maintenance") {
+    return (
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+        <path d="M14.7 6.3 17.7 3.3l3 3-3 3" />
+        <path d="m16.9 8.1-8.8 8.8-3.4.8.8-3.4 8.8-8.8" />
+        <path d="M13 19h8" />
+      </svg>
+    );
+  }
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
       <circle cx="12" cy="12" r="8" />
       <path d="M12 8v4l2.8 1.8" />
     </svg>
   );
+}
+
+type DeviceRuntimeStatus = NonNullable<SessionCurrentResponse["data"]>["device"]["status"];
+
+function getDeviceStatusLabel(status: DeviceRuntimeStatus | undefined, lang: Lang) {
+  if (status === "inactive") return lang === "th" ? "ปิดใช้งาน" : "Disabled";
+  if (status === "maintenance") return lang === "th" ? "บำรุงรักษา" : "Maintenance";
+  if (status === "active") return lang === "th" ? "ใช้งาน" : "Active";
+  return lang === "th" ? "ไม่ทราบสถานะ" : "Unknown";
 }
 
 export function PosEntryGate({ lang }: { lang: Lang }) {
@@ -173,6 +206,8 @@ export function PosEntryGate({ lang }: { lang: Lang }) {
 
   const hasActiveShift = Boolean(session?.has_active_shift && session.shift?.status === "open");
   const canEnterSales = Boolean(session?.permissions.includes("sales:enter"));
+  const deviceBlocksSales = Boolean(session?.device.block_sales);
+  const blockedDeviceStatus = session?.device.status;
   const loginUrl = "/login/store";
   const shiftMenuUrl = "/preview/pos/shift";
   const reloginNowLabel = lang === "th" ? "เข้าสู่ระบบใหม่ตอนนี้" : "Sign in again now";
@@ -191,6 +226,11 @@ export function PosEntryGate({ lang }: { lang: Lang }) {
             timeoutBody: "ระบบใช้เวลานานเกินไปในการโหลด session POS กรุณาตรวจสอบอีกครั้ง หรือเข้าสู่ระบบใหม่",
             permissionDeniedTitle: "ไม่มีสิทธิ์เข้าหน้าขาย",
             permissionDeniedBody: "บัญชีนี้ยังไม่มีสิทธิ์ sales:enter สำหรับเข้าหน้าขาย กรุณาใช้รหัสพนักงานที่มีสิทธิ์ หรือให้ผู้ดูแลปรับสิทธิ์",
+            deviceInactiveTitle: "เครื่องแคชเชียร์ถูกปิดใช้งาน",
+            deviceInactiveBody: "เครื่องนี้ถูกปิดใช้งานจากเมนูเพิ่มเครื่องแคชเชียร์ จึงยังไม่สามารถเข้าหน้าขายได้ กรุณาให้ผู้ดูแลเปิดใช้งานเครื่องอีกครั้ง",
+            deviceMaintenanceTitle: "เครื่องแคชเชียร์อยู่ระหว่างบำรุงรักษา",
+            deviceMaintenanceBody: "เครื่องนี้ถูกตั้งเป็นบำรุงรักษา จึงพักการขายไว้ชั่วคราว กรุณาใช้งานเครื่องอื่น หรือให้ผู้ดูแลเปลี่ยนสถานะเมื่อพร้อมใช้งาน",
+            deviceStatusLabel: "สถานะเครื่อง",
             shiftRequiredTitle: "กรุณาเปิดกะก่อนทุกครั้ง",
             summaryTitle: "สรุปก่อนเข้า POS",
             tenantLabel: "ร้าน",
@@ -214,6 +254,11 @@ export function PosEntryGate({ lang }: { lang: Lang }) {
             timeoutBody: "Loading the current POS session took too long. Please retry or sign in again.",
             permissionDeniedTitle: "Sales access denied",
             permissionDeniedBody: "This account does not have the sales:enter permission required for the sales screen. Use an authorized employee code or update permissions.",
+            deviceInactiveTitle: "Cashier device is disabled",
+            deviceInactiveBody: "This cashier device was disabled from cashier device settings, so the sales screen is locked. Ask an admin to enable it again.",
+            deviceMaintenanceTitle: "Cashier device is under maintenance",
+            deviceMaintenanceBody: "This cashier device is marked for maintenance. Use another device or ask an admin to switch it back to active when ready.",
+            deviceStatusLabel: "Device status",
             shiftRequiredTitle: "Please open shift before entering sales",
             summaryTitle: "POS Access Summary",
             tenantLabel: "Store",
@@ -296,6 +341,7 @@ export function PosEntryGate({ lang }: { lang: Lang }) {
     const tenantName = session.tenant.name ?? session.tenant.code ?? session.tenant.id;
     const branchName = session.branch.name ?? session.branch.code ?? session.branch.id;
     const deviceCode = session.device.code ?? "-";
+    const deviceStatus = getDeviceStatusLabel(session.device.status, lang);
     const roleLabel = normalizeRoleLabel(session.role, lang);
     return [
       { label: text.tenantLabel, value: tenantName, icon: "store" as const },
@@ -303,9 +349,10 @@ export function PosEntryGate({ lang }: { lang: Lang }) {
       { label: text.userLabel, value: session.user.full_name, icon: "user" as const },
       { label: text.roleLabel, value: roleLabel, icon: "role" as const },
       { label: text.deviceLabel, value: deviceCode, icon: "device" as const },
+      { label: text.deviceStatusLabel, value: deviceStatus, icon: session.device.status === "maintenance" ? "maintenance" as const : session.device.status === "inactive" ? "power" as const : "device" as const },
       { label: text.expiresLabel, value: formatDateTime(session.session.expires_at, lang), icon: "session" as const }
     ];
-  }, [lang, session, text.branchLabel, text.deviceLabel, text.expiresLabel, text.roleLabel, text.tenantLabel, text.userLabel]);
+  }, [lang, session, text.branchLabel, text.deviceLabel, text.deviceStatusLabel, text.expiresLabel, text.roleLabel, text.tenantLabel, text.userLabel]);
 
   async function resetSessionAndGoLogin() {
     publishSessionRole(null);
@@ -412,7 +459,7 @@ export function PosEntryGate({ lang }: { lang: Lang }) {
     );
   }
 
-  if (session && !canEnterSales) {
+  if (session && !canEnterSales && !deviceBlocksSales) {
     return (
       <section className="pos-entry-gate">
         <div className="pos-entry-gate__overlay" />
@@ -451,6 +498,52 @@ export function PosEntryGate({ lang }: { lang: Lang }) {
             <button type="button" className="pos-entry-gate__secondary-btn" onClick={() => void load()}>
             {text.retry}
           </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (session && deviceBlocksSales) {
+    const isMaintenance = blockedDeviceStatus === "maintenance";
+    return (
+      <section className="pos-entry-gate">
+        <div className="pos-entry-gate__overlay" />
+        <div role="alertdialog" aria-modal="true" className="pos-entry-gate__panel pos-entry-gate__panel--device-blocked">
+          <header className="pos-entry-gate__header">
+            <div className={`pos-entry-gate__header-icon ${isMaintenance ? "pos-entry-gate__header-icon--warning" : "pos-entry-gate__header-icon--danger"}`}>
+              <SummaryIcon type={isMaintenance ? "maintenance" : "power"} />
+            </div>
+            <div>
+              <h2>{isMaintenance ? text.deviceMaintenanceTitle : text.deviceInactiveTitle}</h2>
+              <p>{isMaintenance ? text.deviceMaintenanceBody : text.deviceInactiveBody}</p>
+            </div>
+          </header>
+
+          <section className="pos-entry-gate__summary">
+            <h3>{text.summaryTitle}</h3>
+            <div className="pos-entry-gate__summary-grid">
+              {summaryItems.map((item) => (
+                <article key={item.label} className="pos-entry-gate__summary-card">
+                  <div className="pos-entry-gate__summary-icon">
+                    <SummaryIcon type={item.icon} />
+                  </div>
+                  <div>
+                    <p>{item.label}</p>
+                    <strong>{item.value}</strong>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <div className="pos-entry-gate__button-row">
+            <button type="button" className="pos-entry-gate__secondary-btn" onClick={() => void load()}>
+              {text.retry}
+            </button>
+            <button type="button" className="pos-entry-gate__ghost-btn" onClick={() => void resetSessionAndGoLogin()}>
+              {text.goLogin}
+            </button>
           </div>
         </div>
       </section>
