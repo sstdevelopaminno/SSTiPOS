@@ -1,7 +1,8 @@
 import type { OrderType } from "@pos/shared-types";
+import { FeatureGateError, requireTenantFeature } from "@/lib/feature-gate";
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
 import { getDevicePolicyBlockMessage, loadPosRuntimeDevicePolicyForSession, type PosRuntimeDevicePolicy } from "@/lib/pos-device-status";
-import { requirePermission, requirePosSession, type PosSessionScope } from "@/lib/pos-session-guard";
+import { PosGuardError, requirePermission, requirePosSession, type PosSessionScope } from "@/lib/pos-session-guard";
 import {
   calculateDeliveryPricingBreakdown,
   DEFAULT_DELIVERY_CHANNEL_CONFIGS,
@@ -13,6 +14,7 @@ import { invalidatePosScopeRuntimeCaches } from "@/lib/pos-cache-invalidation";
 import { POS_GUARDS } from "@/lib/pos-resilience";
 import { invalidatePosSalesListCacheForScope } from "@/lib/services/pos-sales-list-service";
 import { executeCreatePosOrderTransaction } from "@/lib/services/pos-sales-service";
+import { calculateTaxBreakdown, loadTaxSettings } from "@/lib/services/pos-settings-service";
 import { loadReceiptStoreProfile } from "@/lib/services/store-profile-service";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
@@ -28,6 +30,9 @@ type PosCreateOrderPayload = {
   app_total_amount: number;
   discount_amount?: number;
   gp_amount?: number;
+  tax_total?: number;
+  grand_total?: number;
+  tax_lines?: ReturnType<typeof calculateTaxBreakdown>["lines"];
   delivery_pricing_channel?: string | null;
   delivery_app_subtotal?: number | null;
   delivery_commission_rate_pct?: number | null;
@@ -96,13 +101,26 @@ function authFromPosScope(scope: PosSessionScope): PosSalesAuthContext {
 async function requireSalesSessionContext(permission: "sales:enter"): Promise<{
   auth: PosSalesAuthContext;
   devicePolicy: PosRuntimeDevicePolicy;
+  scope: PosSessionScope;
 }> {
   const scope = await requirePosSession();
   requirePermission(scope, permission);
+  await requireTenantFeature(scope.session.tenant_id, "core_pos_sales", scope.session.branch_id);
   return {
     auth: authFromPosScope(scope),
-    devicePolicy: await loadPosRuntimeDevicePolicyForSession(scope.session)
+    devicePolicy: await loadPosRuntimeDevicePolicyForSession(scope.session),
+    scope
   };
+}
+
+function failFromSalesError(error: unknown, fallbackCode: string, fallbackStatus: number) {
+  if (error instanceof FeatureGateError) {
+    return fail(error.code, error.message, error.status);
+  }
+  if (error instanceof PosGuardError) {
+    return fail(error.code, error.message, error.status);
+  }
+  return fail(fallbackCode, error instanceof Error ? error.message : "Unknown error", fallbackStatus);
 }
 
 type PosProductQueryRow = {
@@ -126,6 +144,9 @@ type ResolvedOrderPricingResult =
         discountAmount: number;
         gpAmount: number;
         totalAmount: number;
+        taxTotal: number;
+        grandTotal: number;
+        taxLines: ReturnType<typeof calculateTaxBreakdown>["lines"];
         delivery_pricing_channel: string | null;
         delivery_app_subtotal: number | null;
         delivery_commission_rate_pct: number | null;
@@ -294,6 +315,7 @@ async function resolveOrderPricing(args: {
 }): Promise<ResolvedOrderPricingResult> {
   const { auth, body } = args;
   const supabase = getSupabaseServiceClient();
+  const taxSettings = await loadTaxSettings(auth);
 
   const normalizedItems = body.items.map((item) => ({
     product_id: String(item.product_id ?? "").trim(),
@@ -338,7 +360,9 @@ async function resolveOrderPricing(args: {
     });
     const subtotal = roundMoney(pricedItems.reduce((sum, item) => sum + item.unit_price * item.quantity, 0));
     const gpAmount = roundMoney(Math.max(0, Number(body.gp_amount ?? 0)));
-    const totalAmount = roundMoney(subtotal - discountAmount - gpAmount);
+    const baseTotalAmount = roundMoney(subtotal - discountAmount - gpAmount);
+    const taxBreakdown = calculateTaxBreakdown(baseTotalAmount, taxSettings);
+    const totalAmount = taxBreakdown.grand_total;
     if (totalAmount < 0) {
       return { ok: false, code: "invalid_total", status: 422, message: "Order total cannot be negative." };
     }
@@ -351,6 +375,9 @@ async function resolveOrderPricing(args: {
         discountAmount,
         gpAmount,
         totalAmount,
+        taxTotal: taxBreakdown.tax_total,
+        grandTotal: taxBreakdown.grand_total,
+        taxLines: taxBreakdown.lines,
         delivery_pricing_channel: null,
         delivery_app_subtotal: null,
         delivery_commission_rate_pct: null,
@@ -451,7 +478,9 @@ async function resolveOrderPricing(args: {
     commissionVatRatePct: deliveryConfig.commissionVatRatePct
   });
   const gpAmount = 0;
-  const totalAmount = roundMoney(subtotal - discountAmount);
+  const baseTotalAmount = roundMoney(subtotal - discountAmount);
+  const taxBreakdown = calculateTaxBreakdown(baseTotalAmount, taxSettings);
+  const totalAmount = taxBreakdown.grand_total;
   if (totalAmount < 0) {
     return { ok: false, code: "invalid_total", status: 422, message: "Order total cannot be negative." };
   }
@@ -464,6 +493,9 @@ async function resolveOrderPricing(args: {
       discountAmount,
       gpAmount,
       totalAmount,
+      taxTotal: taxBreakdown.tax_total,
+      grandTotal: taxBreakdown.grand_total,
+      taxLines: taxBreakdown.lines,
       delivery_pricing_channel: deliveryChannel,
       delivery_app_subtotal: pricingBreakdown.appSubtotal,
       delivery_commission_rate_pct: pricingBreakdown.commissionRatePct,
@@ -565,6 +597,8 @@ async function updateQueuedPosOrder(args: {
   }
 
   const totalAmount = roundMoney(body.app_total_amount - Number(body.discount_amount ?? 0) - Number(body.gp_amount ?? 0));
+  const taxTotal = roundMoney(Number(body.tax_total ?? 0));
+  const grandTotal = roundMoney(Number(body.grand_total ?? totalAmount + taxTotal));
   const orderUpdatePayload = {
     shift_id: body.shift_id,
     order_type: body.order_type,
@@ -576,7 +610,12 @@ async function updateQueuedPosOrder(args: {
     subtotal: body.app_total_amount,
     discount_amount: body.discount_amount ?? 0,
     gp_amount: body.gp_amount ?? 0,
-    total_amount: totalAmount,
+    total_amount: grandTotal,
+    tax_total: taxTotal,
+    grand_total: grandTotal,
+    metadata: {
+      tax_lines: body.tax_lines ?? []
+    },
     delivery_pricing_channel: body.delivery_pricing_channel ?? null,
     delivery_app_subtotal: body.delivery_app_subtotal ?? null,
     delivery_commission_rate_pct: body.delivery_commission_rate_pct ?? null,
@@ -599,7 +638,12 @@ async function updateQueuedPosOrder(args: {
     subtotal: body.app_total_amount,
     discount_amount: body.discount_amount ?? 0,
     gp_amount: body.gp_amount ?? 0,
-    total_amount: totalAmount
+    total_amount: grandTotal,
+    tax_total: taxTotal,
+    grand_total: grandTotal,
+    metadata: {
+      tax_lines: body.tax_lines ?? []
+    }
   };
 
   let orderUpdateQuery = supabase
@@ -609,8 +653,8 @@ async function updateQueuedPosOrder(args: {
     .eq("branch_id", auth.branchId!)
     .eq("id", targetOrderId)
     .eq("status", "queued")
-    .select("id,order_no,status,created_at")
-    .maybeSingle<{ id: string; order_no: string; status: string; created_at: string }>();
+    .select("id,order_no,status,created_at,total_amount")
+    .maybeSingle<{ id: string; order_no: string; status: string; created_at: string; total_amount: number }>();
   let { data: updatedOrder, error: updateOrderError } = await orderUpdateQuery;
   if (updateOrderError && isMissingOrderDeliverySnapshotColumnError(updateOrderError)) {
     const legacyUpdateQuery = supabase
@@ -620,8 +664,8 @@ async function updateQueuedPosOrder(args: {
       .eq("branch_id", auth.branchId!)
       .eq("id", targetOrderId)
       .eq("status", "queued")
-      .select("id,order_no,status,created_at")
-      .maybeSingle<{ id: string; order_no: string; status: string; created_at: string }>();
+      .select("id,order_no,status,created_at,total_amount")
+      .maybeSingle<{ id: string; order_no: string; status: string; created_at: string; total_amount: number }>();
     ({ data: updatedOrder, error: updateOrderError } = await legacyUpdateQuery);
   }
 
@@ -647,6 +691,7 @@ async function updateQueuedPosOrder(args: {
       id: updatedOrder.id,
       order_no: updatedOrder.order_no,
       status: updatedOrder.status,
+      total_amount: updatedOrder.total_amount,
       created_at: updatedOrder.created_at,
       duplicate_request: false,
       updated_existing: true
@@ -657,19 +702,18 @@ async function updateQueuedPosOrder(args: {
 export async function GET() {
   const startedAt = Date.now();
   try {
-    const { auth, devicePolicy } = await requireSalesSessionContext("sales:enter");
+    const { auth, devicePolicy, scope } = await requireSalesSessionContext("sales:enter");
     const supabase = getSupabaseServiceClient();
 
     const [
       { data: shiftData, error: shiftError },
       { data: productData, error: productError },
-      { data: profileData, error: profileError },
-      { data: branchData, error: branchError },
       storeProfile,
       { data: deliveryConfigs, error: deliveryConfigsError },
       { data: deliveryPrices, error: deliveryPricesError },
       { data: recipeProductRows, error: recipeProductRowsError },
-      { data: paymentAccounts, error: paymentAccountsError }
+      { data: paymentAccounts, error: paymentAccountsError },
+      taxSettings
     ] = await Promise.all([
       supabase
         .from("shifts")
@@ -729,13 +773,6 @@ export async function GET() {
 
         return lastResult;
       })(),
-      supabase.from("users_profiles").select("full_name").eq("id", auth.userId).maybeSingle(),
-      supabase
-        .from("branches")
-        .select("name")
-        .eq("tenant_id", auth.tenantId!)
-        .eq("id", auth.branchId!)
-        .maybeSingle(),
       loadReceiptStoreProfile(auth.tenantId!),
       supabase
         .from("delivery_channel_configs")
@@ -759,8 +796,10 @@ export async function GET() {
         .select("id,branch_id,bank_name,account_name,account_number,promptpay_phone,promptpay_payload,qr_image_url,qr_mode,applies_to_all_branches,is_active")
         .eq("tenant_id", auth.tenantId!)
         .eq("is_active", true)
-        .order("applies_to_all_branches", { ascending: false })
-        .order("updated_at", { ascending: false })
+        .or(`branch_id.eq.${auth.branchId!},applies_to_all_branches.eq.true`)
+        .order("applies_to_all_branches", { ascending: true })
+        .order("updated_at", { ascending: false }),
+      loadTaxSettings(auth)
     ]);
 
     if (productError) {
@@ -803,13 +842,14 @@ export async function GET() {
     }));
     const activeDeliveryConfigs =
       !missingDeliverySchema && (deliveryConfigs ?? []).length > 0 ? (deliveryConfigs ?? []) : fallbackConfigs;
+    const activePaymentAccountRows = ((paymentAccounts ?? []) as PaymentAccountRow[]);
+    const branchPaymentAccount = activePaymentAccountRows.find(
+      (account) => account.branch_id === auth.branchId && account.applies_to_all_branches !== true
+    );
+    const tenantWidePaymentAccount = activePaymentAccountRows.find((account) => account.applies_to_all_branches === true);
     const activePaymentAccount = isMissingPaymentAccountSchemaError(paymentAccountsError)
       ? null
-      : mapPaymentAccount(
-          ((paymentAccounts ?? []) as PaymentAccountRow[]).find(
-            (account) => account.applies_to_all_branches === true || account.branch_id === auth.branchId
-          )
-        );
+      : mapPaymentAccount(branchPaymentAccount ?? tenantWidePaymentAccount);
     const deliveryPricesByProduct = (missingDeliverySchema ? [] : deliveryPrices ?? []).reduce<Record<string, Record<string, number>>>((acc, row) => {
       const productId = String(row.product_id);
       const channel = String(row.channel);
@@ -826,10 +866,11 @@ export async function GET() {
       shift: shiftError ? null : shiftData ?? null,
       categories,
       products: normalizedProducts,
-      operator_name: profileError ? auth.userId : profileData?.full_name ?? auth.userId,
-      branch_name: branchError ? auth.branchId : branchData?.name ?? auth.branchId,
+      operator_name: scope.user.full_name ?? auth.userId,
+      branch_name: scope.branch?.name ?? auth.branchId,
       store_profile: storeProfile,
       payment_account: activePaymentAccount,
+      tax_settings: taxSettings,
       device_policy: devicePolicy,
       delivery_configs: activeDeliveryConfigs,
       delivery_prices_by_product: deliveryPricesByProduct
@@ -840,7 +881,7 @@ export async function GET() {
     response.headers.set("x-pos-sales-ms", String(Date.now() - startedAt));
     return response;
   } catch (error) {
-    const response = fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
+    const response = failFromSalesError(error, "unauthorized", 401);
     response.headers.set("x-pos-sales-ms", String(Date.now() - startedAt));
     return response;
   }
@@ -935,6 +976,9 @@ export async function POST(req: Request) {
       app_total_amount: pricing.data.subtotal,
       discount_amount: pricing.data.discountAmount,
       gp_amount: pricing.data.gpAmount,
+      tax_total: pricing.data.taxTotal,
+      grand_total: pricing.data.grandTotal,
+      tax_lines: pricing.data.taxLines,
       delivery_pricing_channel: pricing.data.delivery_pricing_channel,
       delivery_app_subtotal: pricing.data.delivery_app_subtotal,
       delivery_commission_rate_pct: pricing.data.delivery_commission_rate_pct,
@@ -1012,7 +1056,7 @@ export async function POST(req: Request) {
     response.headers.set("x-pos-sales-post-ms", String(Date.now() - startedAt));
     return response;
   } catch (error) {
-    const response = fail("pos_sales_create_failed", error instanceof Error ? error.message : "Unknown error", 400);
+    const response = failFromSalesError(error, "pos_sales_create_failed", 400);
     response.headers.set("x-pos-sales-post-ms", String(Date.now() - startedAt));
     return response;
   }

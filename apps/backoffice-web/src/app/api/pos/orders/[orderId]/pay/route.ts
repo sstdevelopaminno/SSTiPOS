@@ -108,7 +108,7 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
     });
 
     if (paymentRpcError) {
-      await appendAuditLog({
+      void appendAuditLog({
         tenantId: scope.session.tenant_id,
         branchId: scope.session.branch_id,
         actorUserId: scope.session.user_id,
@@ -155,7 +155,7 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
       .eq("branch_id", scope.session.branch_id)
       .eq("id", orderRow.id);
 
-    await appendAuditLog({
+    void appendAuditLog({
       tenantId: scope.session.tenant_id,
       branchId: scope.session.branch_id,
       actorUserId: scope.session.user_id,
@@ -172,7 +172,7 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
       }
     });
 
-    await appendAuditLog({
+    void appendAuditLog({
       tenantId: scope.session.tenant_id,
       branchId: scope.session.branch_id,
       actorUserId: scope.session.user_id,

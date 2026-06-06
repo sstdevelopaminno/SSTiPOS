@@ -123,7 +123,7 @@ export async function POST(request: Request) {
 
   const writeOrderFailedAudit = async (reason: string, metadata?: Record<string, unknown>) => {
     if (!scopeForAudit) return;
-    await appendAuditLog({
+    void appendAuditLog({
       tenantId: scopeForAudit.tenantId,
       branchId: scopeForAudit.branchId,
       actorUserId: scopeForAudit.userId,
@@ -264,7 +264,7 @@ export async function POST(request: Request) {
       return fail("order_create_failed", orderError?.message ?? "Cannot load created order.", 500);
     }
 
-    await appendAuditLog({
+    void appendAuditLog({
       tenantId: scope.session.tenant_id,
       branchId: scope.session.branch_id,
       actorUserId: scope.session.user_id,

@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PreEntryShell } from "@/components/pre-entry/pre-entry-shell";
+import { clearPreEntryClientCache, warmRoute } from "@/lib/pre-entry-client-cache";
 
 type DeviceItem = {
   deviceCode: string;
@@ -241,7 +242,9 @@ function LoginDevicesPageContent() {
       setSubmitting(false);
       if (redirectTo) {
         setPopup({ type: "none" });
-        window.location.href = redirectTo;
+        clearPreEntryClientCache();
+        warmRoute(router, redirectTo);
+        router.push(redirectTo);
       } else if (!hasFailure) {
         setPopup({ type: "none" });
       }

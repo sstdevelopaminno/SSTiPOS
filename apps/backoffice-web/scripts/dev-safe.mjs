@@ -1,4 +1,5 @@
 import { execSync, spawn } from "node:child_process";
+import { setupLocalNextCache } from "./setup-local-next-cache.mjs";
 
 function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -93,7 +94,8 @@ if (portResult?.remainingPids?.length) {
 }
 
 function resolveDevBundlerArgs() {
-  const bundler = String(process.env.NEXT_DEV_BUNDLER ?? "webpack").trim().toLowerCase();
+  const defaultBundler = process.platform === "win32" ? "webpack" : "turbopack";
+  const bundler = String(process.env.NEXT_DEV_BUNDLER ?? defaultBundler).trim().toLowerCase();
   if (bundler === "webpack") return ["--webpack"];
   if (bundler === "turbo" || bundler === "turbopack") return ["--turbo"];
   if (bundler === "none" || bundler === "default") return [];
@@ -102,17 +104,19 @@ function resolveDevBundlerArgs() {
 
 const nextArgs = ["dev", "-p", String(port), ...resolveDevBundlerArgs()];
 const nextBin = process.platform === "win32" ? "node_modules\\.bin\\next.cmd" : "node_modules/.bin/next";
+const localDistDir = setupLocalNextCache();
+const childEnv = localDistDir ? { ...process.env, NEXT_DIST_DIR: localDistDir } : process.env;
 const child =
   process.platform === "win32"
     ? spawn("cmd.exe", ["/c", nextBin, ...nextArgs], {
         stdio: "inherit",
         shell: false,
-        env: process.env
+        env: childEnv
       })
     : spawn(nextBin, nextArgs, {
         stdio: "inherit",
         shell: false,
-        env: process.env
+        env: childEnv
       });
 
 child.on("exit", (code, signal) => {

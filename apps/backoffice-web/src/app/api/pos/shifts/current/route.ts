@@ -41,7 +41,7 @@ function pickActiveShift(params: {
     const deviceShift = rows.find((row) => row.device_code === deviceCode);
     if (deviceShift) return deviceShift;
   }
-  return rows[0] ?? null;
+  return null;
 }
 
 export async function GET() {
@@ -93,9 +93,14 @@ export async function GET() {
     const role = scope.session.role;
     const isStaffRole = role !== "owner" && role !== "manager" && role !== "accountant";
     const openShiftsAll = (rows ?? []) as ShiftRow[];
-    const openShifts = isStaffRole
+    const roleScopedShifts = isStaffRole
       ? openShiftsAll.filter((shift) => shift.opened_by === scope.session.user_id)
       : openShiftsAll;
+    const openShifts = scope.session.device_code
+      ? roleScopedShifts.filter(
+          (shift) => !shift.device_code || shift.device_code === scope.session.device_code
+        )
+      : roleScopedShifts.filter((shift) => !shift.device_code);
     const activeShift = pickActiveShift({
       sessionShiftId: scope.session.shift_id,
       deviceCode: scope.session.device_code,

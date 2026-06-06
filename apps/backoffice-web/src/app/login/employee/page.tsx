@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { PreEntryShell } from "@/components/pre-entry/pre-entry-shell";
 import { AppLanguageSwitcher } from "@/components/i18n/app-language-switcher";
 import { useAppLanguage, type AppLanguage } from "@/lib/app-language-client";
+import { readCachedSelectedBranch, warmRoute } from "@/lib/pre-entry-client-cache";
 
 type FlowMode = "single" | "multi";
 
@@ -146,6 +147,12 @@ function LoginEmployeePageContent() {
 
   useEffect(() => {
     let mounted = true;
+    const cachedBranch = readCachedSelectedBranch();
+    if (cachedBranch) {
+      setBranchName(cachedBranch.name ?? cachedBranch.code ?? cachedBranch.id);
+      setContextLoading(false);
+    }
+    warmRoute(router, `/login/devices?flow=${flow}`);
 
     void (async () => {
       try {
@@ -208,6 +215,7 @@ function LoginEmployeePageContent() {
         return;
       }
       setPopup({ type: "loading", message: copy.popupEnteringPos });
+      warmRoute(router, `/login/devices?flow=${flow}`);
       router.push(`/login/devices?flow=${flow}`);
     } catch (requestError) {
       const message = requestError instanceof DOMException && requestError.name === "AbortError" ? copy.verifyFailed : copy.connectError;

@@ -227,3 +227,215 @@ Before go-live, complete:
 - Modal behavior: POS dialogs and drawers now have viewport-safe max-height, internal scrolling, safe-area padding, and sticky action zones where possible.
 - Files changed for this layer: `app/preview/pos/layout.tsx`, `components/pos-preview/pos-viewport-guard.tsx`, `lib/viewport-hooks.ts`, `components/pos-preview/pos-shell-sidebar.tsx`, and `app/globals.css`.
 - Target checklist: verify 1024x768, 1180x820, 1194x834, 1366x1024, 1280x720, 1366x768, 1440x900, 1536x864, 1600x900, 1920x1080, 2560x1440, plus portrait/narrow warning states.
+
+## Development Guardrails / บันทึกกันพลาด (2026-06-05)
+
+This section is the quick handoff for future development. It was added after a lightweight whole-project check of README/package scripts, app route groups, component folders, service modules, and timeout/error patterns.
+
+### Current system map
+- Main app: `apps/backoffice-web` using Next.js App Router.
+- Route groups: `(backoffice)`, `(it-admin)`, `api`, `login`, and `preview`.
+- Main component areas: `backoffice`, `it-admin`, `pos`, `pos-preview`, `pos-ui`, `pre-entry`, `pwa`, and `tables`.
+- Main service layer: `activity-audit-service`, `approval-service`, `attendance-service`, `customer-display-policy-service`, `pos-sales-*`, `pos-settings-service`, `shift-close-service`, `stock-transaction-service`, `store-profile-service`, `subscription-package-service`, and `table-service`.
+- Database/auth boundary: Supabase service-role access must stay server-only. Client code must not trust or submit authoritative `tenant_id`, `branch_id`, `store_code`, `device_code`, role, or permission state.
+
+### Critical development rules
+- Always resolve tenant, branch, user, role, permissions, and POS session on the server before reading or mutating business data.
+- Keep business writes fast. Do not block UI/API success on audit logs, telemetry, policy sync, perf logs, or other best-effort background work unless the feature explicitly requires it.
+- Add explicit timeouts for user-facing save/login/checkout flows. If a request can hang, the UI must restore buttons and show a clear Thai/English error.
+- When changing Supabase schema, update migrations, seed data, service selectors, compatibility fallbacks, and README/docs together.
+- After migration changes, restart `next dev`; the first request may compile slowly and should not be treated as runtime slowness.
+- Avoid broad refactors in `pos-sales-service`, `pos-settings-service`, and API auth/session routes unless covered by typecheck plus targeted manual flow tests.
+- Keep route/API contracts stable for Android handoff: shared payload shapes belong in `packages/shared-types` when reused externally.
+- Preserve POS landscape behavior. Any POS UI edit should be checked at tablet landscape and laptop sizes, plus portrait warning state.
+
+### Recent cashier device settings fix
+- UI file: `apps/backoffice-web/src/components/pos-preview/pos-settings-workspace.tsx`.
+- Service file: `apps/backoffice-web/src/lib/services/pos-settings-service.ts`.
+- Cashier device add/edit now shows `กำลังบันทึก...` immediately and uses a 10-second client timeout so the popup cannot stay stuck forever.
+- `saveDeviceSettings` returns after the `branch_devices` write succeeds. `syncBranchDevicePolicy` and `appendAuditLog` run as background best-effort tasks to prevent slow audit/policy writes from freezing the save popup.
+- If this flow is edited again, verify duplicate device code, missing branch, inactive/maintenance status, edit existing device, and create new device.
+
+### Minimum verification before handoff
+- `cmd /c pnpm --filter backoffice-web exec tsc -p tsconfig.json --noEmit --pretty false`
+- `cmd /c pnpm --filter backoffice-web exec eslint <changed-files>`
+- For POS settings/device edits: open `/preview/pos/settings`, add/edit a cashier machine, confirm popup closes, list updates, and timeout/error state does not trap the user.
+- For login/session edits: test `/login/store -> /login/branches -> /login/employee -> /login/devices -> /preview/pos`.
+- For sales/payment edits: test order create, payment, receipt, shift guard, and relevant stock deduction behavior.
+
+### Known risk areas to inspect first
+- `audit_logs` schema compatibility can cause retry loops; keep audit writes non-blocking unless required.
+- Auth and device selection already use timeout helpers; match that pattern for new pre-entry APIs.
+- `tenant_payment_accounts` has schema fallback logic; payment setting changes must verify both current and fallback column sets.
+- Rate limiting can fail closed when configured with an unavailable backend; verify env vars before blaming UI code.
+- Menu scan/slip verification routes depend on external AI/OCR config; keep clear mock/fallback modes for local testing.
+
+## POS Settings Handoff (2026-06-06)
+
+Use this section as the current source of truth before changing the Payment Settings or Tax Settings submenus.
+
+### Supabase migration status
+- `supabase db push` completed successfully against linked project ref `deejlitaivfnsbwqdugy` on 2026-06-06.
+- Applied migrations:
+  - `202606050001_add_payment_account_delete_approval_action.sql`
+  - `202606050002_payment_account_qr_modes.sql`
+  - `202606050003_branch_devices_settings_perf.sql`
+  - `202606050004_tax_settings.sql`
+- Do not show a permanent "migration has not been applied" banner in Payment Settings. The required migrations are now applied.
+- Never place Supabase access tokens, database passwords, service-role keys, or other secrets in README, source files, commits, screenshots, or client-side code.
+- If migration access fails later, verify the linked project, CLI account permissions, and `SUPABASE_DB_PASSWORD` outside source control.
+
+### Payment Settings behavior
+- Main UI: `apps/backoffice-web/src/components/pos-preview/pos-settings-workspace.tsx`.
+- API: `apps/backoffice-web/src/app/api/pos/settings/payment-accounts/route.ts`.
+- Service: `apps/backoffice-web/src/lib/services/pos-settings-service.ts`.
+- PostgreSQL table: `tenant_payment_accounts`.
+- The database/API is the authoritative source when available.
+- Browser `localStorage` is only a POS preview resilience fallback for schema/network/timeout failures. Do not treat it as production persistence and do not move this fallback into normal back-office production workflows.
+- Opening Payment Settings loads any preview fallback immediately, then refreshes from the API without clearing a valid visible list when the API is temporarily unavailable.
+- Create/edit save must:
+  - show the `กำลังบันทึก...` popup clearly;
+  - prevent duplicate submissions while saving;
+  - use a bounded request timeout;
+  - update the visible list immediately after success;
+  - show the saved-success popup;
+  - preserve the item in preview fallback storage if the API is temporarily unavailable.
+- Delete and active/inactive changes must update both the visible list and preview fallback consistently.
+- Do not disable the Add Account button merely because a stale initial snapshot reports that the payment schema is unavailable.
+- Runtime QR selection rule: an active branch-specific payment account wins over an active tenant-wide/all-branches account. The tenant-wide account is only the fallback when the current branch has no active branch-specific account.
+- Active duplicate guard: there can be only one active branch-specific payment account per `tenant_id + branch_id`, and only one active all-branches payment account per `tenant_id`. Migration `202606060001_payment_account_active_scope_uniqueness.sql` deactivates older duplicates and adds partial unique indexes.
+- The duplicate-scope migration is present in the repo but must be applied to the intended Supabase project before database-level uniqueness is guaranteed in production.
+
+### Tax Settings behavior
+- UI/API/service files:
+  - `apps/backoffice-web/src/components/pos-preview/pos-settings-workspace.tsx`
+  - `apps/backoffice-web/src/app/api/pos/settings/tax/route.ts`
+  - `apps/backoffice-web/src/lib/services/pos-settings-service.ts`
+- Migration: `supabase/migrations/202606050004_tax_settings.sql`.
+- Tax settings are connected to the POS sales/payment summary through `tax_settings`, `tax_total`, and `tax_lines`.
+- Preview calculation and sales calculation must follow the same rule: only active tax lines are calculated when the main tax switch is enabled.
+- Enabling an individual tax line may enable the main tax switch automatically so the preview responds immediately.
+- Tax save must show `กำลังบันทึก...`, enforce a timeout, update local state from the API response, and show a saved-success popup.
+
+## POS Transfer Payment Modal Handoff (2026-06-06)
+
+### What changed
+- The bank-transfer payment popup now uses a compact QR-only layout.
+- The modal shows only the title, close button, visually prominent amount, QR code, short scan helper text, any transfer error, and the `ยืนยันเงินโอน` confirm button.
+- Slip upload, slip OCR/read button, reference input, transfer account detail cards, long helper text, internal cancel-bill action, and the old two-column layout were removed from the transfer modal UI.
+
+### Files/routes/components affected
+- POS sales route: `/preview/pos`.
+- Modal component: `apps/backoffice-web/src/components/pos/pos-payment-modals.tsx`.
+- Transfer labels and payment confirmation caller: `apps/backoffice-web/src/components/pos/pos-sales-module.tsx`.
+- Styling: `apps/backoffice-web/src/app/globals.css`.
+- Payment Settings source for QR/PromptPay remains `apps/backoffice-web/src/components/pos-preview/pos-settings-workspace.tsx` through the existing payment account state.
+
+### UI behavior notes
+- Amount label is `ยอดชำระ`; QR label is `สแกน QR เพื่อชำระเงิน`.
+- The QR card is centered in a single-column modal and the confirm button remains clearly visible at the bottom.
+- If no PromptPay phone or uploaded QR image is configured, the modal shows an error and disables confirmation until a QR source exists.
+
+### Payment flow safety notes
+- Payment calculation, order totals, QR generation, tenant/branch/session/shift guards, and payment API confirmation flow were not moved into the client.
+- The modal continues to display `transferReviewOrder.total_amount`, which is prepared by the existing POS order/payment flow.
+- Confirm still calls the existing transfer confirmation handler; it does not trust user-entered amount values and does not introduce a new client-side payment total.
+
+### Responsive notes
+- Desktop/tablet modal width is capped around 560px, with the QR card centered at about 468px max width and QR image up to 300px.
+- Mobile uses `calc(100vw - 24px)`, scales the QR image down to about 252px, keeps the amount large without horizontal overflow, and makes the footer button full width.
+- The modal avoids internal scrolling in normal viewports and only allows vertical scrolling when the viewport is very small.
+
+### Required regression checks
+- Payment Settings: add an account, leave the submenu, reopen it, and confirm the account remains visible.
+- Payment Settings: edit, toggle active status, and delete an account; confirm no duplicate or disappearing rows.
+- Payment Settings: confirm the saving popup appears and closes on both success and timeout/error paths.
+- Tax Settings: use base amount 1,000; verify VAT 7% produces 1,070 and withholding 3% deducts 30 when enabled.
+- POS Sales: reload settings, add an item, and verify the payment summary matches the saved tax configuration.
+- POS Sales transfer: open `/preview/pos`, choose bank transfer, verify the QR-only modal at tablet landscape/desktop/mobile widths, and confirm payment still completes through the existing API flow.
+- Run:
+  - `cmd /c pnpm --filter backoffice-web exec tsc -p tsconfig.json --noEmit --pretty false`
+  - `cmd /c pnpm --filter backoffice-web exec eslint <changed-files> --no-cache`
+
+## POS Stability / Performance Handoff (2026-06-06)
+
+### What changed
+- Added a shared client-side bounded fetch helper at `apps/backoffice-web/src/lib/client-fetch.ts`.
+- POS users, shift, payments, and orders modules now use request timeouts on key load/save/cancel/payment actions so buttons do not stay busy forever when an API request stalls.
+- POS order create, direct pay, shift open/join, and POS user management no longer block the HTTP response on audit-log writes. The business write still completes before success is returned; audit logging is now fire-and-forget like other POS routes.
+- Backoffice lint no longer runs as `eslint .`; it is scoped to source/config/test paths and uses `.eslintcache`.
+- Generated/build/cache outputs are ignored in ESLint and git: `.next`, `.next-local`, `.open-next`, coverage, `.eslintcache`, logs, and `tsconfig.tsbuildinfo`.
+- Windows dev startup defaults to webpack and validates the local Next cache junction target before using `.next-local`; if the cache target is not writable, dev falls back instead of hanging on a bad cache path.
+
+### Files/routes/components affected
+- Client fetch helper: `apps/backoffice-web/src/lib/client-fetch.ts`.
+- POS UI modules: `pos-users-module.tsx`, `pos-shift-module.tsx`, `pos-payments-module.tsx`, `pos-orders-module.tsx`.
+- POS API routes: `api/pos/orders`, `api/pos/orders/[orderId]/pay`, `api/pos/shifts/open`, `api/pos/shifts/join`, `api/pos/users`.
+- Tooling/config: `apps/backoffice-web/package.json`, `eslint.config.mjs`, `.gitignore`, `scripts/dev-safe.mjs`, `scripts/setup-local-next-cache.mjs`.
+
+### Behavior notes
+- Timeout failures now surface through the existing error state instead of leaving loading/busy states stuck.
+- Payment/order/shift calculation and write logic was not moved or trusted from the client.
+- Audit log failures should not slow cashier-facing responses, but they may be recorded slightly after the API response.
+- `api/pos/perf` still awaits audit logging intentionally because that route reports persistence status for performance telemetry.
+
+### Performance notes
+- Current local checks are still slow on this Windows workspace, suggesting filesystem/cache I/O is a real bottleneck.
+- `npm run typecheck` passed in about 184 seconds.
+- `npm run lint` passed in about 245 seconds after scoping lint and enabling `.eslintcache`.
+- `npm run build` passed in about 368 seconds; production compile itself took about 117 seconds and TypeScript during build about 102 seconds.
+- First full lint run can still be slow; subsequent runs should benefit from `.eslintcache`.
+
+### Checks run
+- `npm run typecheck`
+- `cmd /c pnpm --filter backoffice-web exec eslint src/lib/client-fetch.ts src/components/pos/pos-shift-module.tsx src/components/pos/pos-payments-module.tsx src/components/pos/pos-orders-module.tsx src/components/pos/pos-users-module.tsx src/app/api/pos/orders/route.ts src/app/api/pos/orders/[orderId]/pay/route.ts src/app/api/pos/shifts/open/route.ts src/app/api/pos/shifts/join/route.ts src/app/api/pos/users/route.ts --no-cache`
+- `npm run lint`
+- `npm run build`
+
+## Multi-Tenant / Package Release Handoff (2026-06-06)
+
+### Production targets
+- GitHub remote: `https://github.com/sstdevelopaminno/POS-Preview.git`.
+- Vercel project link: `sstipos`, project id `prj_FA0nK7DoGU1Se6olw48a4wjZlaDi`, org/team id `team_ZKmv6uQSU9QUyP08mxAr2YDI`.
+- Supabase linked project ref: `deejlitaivfnsbwqdugy`.
+- Supabase migration deploy requires a CLI account with database privileges and `SUPABASE_DB_PASSWORD` set outside source control.
+- Never commit `.env.local`, Supabase access tokens, DB passwords, Vercel tokens, service-role keys, or production secrets.
+
+### Multi-tenant model
+- One tenant represents one shop owner/business account.
+- One tenant can own multiple branches.
+- Runtime POS APIs must always resolve scope from the POS session or authenticated branch context, then query by `tenant_id` and `branch_id`.
+- IT admin APIs may operate across tenants, but tenant-scoped admin endpoints must keep `tenantId` from the URL and not trust client-submitted tenant scope.
+- Branch-specific settings must win over tenant-wide/all-branches settings when both exist. This rule is currently enforced for transfer payment account selection in POS sales.
+
+### Package and feature gating
+- Package defaults are read from `subscription_package_features`.
+- Tenant-level overrides are read from `tenant_feature_subscriptions` where `branch_id is null`.
+- Branch-level overrides are read from `tenant_feature_subscriptions` where `branch_id = current branch`.
+- Effective rule: package default -> tenant override -> branch override.
+- POS sales now checks `core_pos_sales` in the `/api/pos/sales` runtime path before returning sales data or creating orders.
+- Feature decisions are cached for a short TTL in `apps/backoffice-web/src/lib/feature-gate.ts` to reduce DB fan-out under concurrent POS traffic.
+- IT admin contract/feature updates invalidate the feature gate cache for the changed tenant.
+
+### Quota and bottleneck notes
+- Quotas are enforced through `enforceQuota` for branches, devices, and users.
+- Branch/device/user provisioning must stay behind package feature checks and quota checks.
+- Feature gate checks are intentionally cached for 15 seconds only; do not increase this without adding cross-instance invalidation, because Vercel serverless instances do not share in-memory cache.
+- Cashier-facing API routes should not block on audit logging unless the route explicitly returns audit persistence status.
+- Keep performance-critical list endpoints cached by tenant/branch scope, and invalidate by scope after writes.
+
+### Database readiness
+- Apply pending migrations to the linked Supabase project before production verification.
+- If `supabase migration list` or `supabase db push` returns privilege errors, set `SUPABASE_DB_PASSWORD` in the shell/session or run from a Supabase account with the correct project database privileges.
+- `202606060001_payment_account_active_scope_uniqueness.sql` is required to guarantee one active branch-specific payment account per branch and one active all-branches account per tenant at the database level.
+- `202606050004_tax_settings.sql` is required for branch tax settings and POS tax summary consistency.
+- After migration push, verify Supabase schema cache if a route reports missing column/table errors.
+
+### Release checklist
+- Run `npm run typecheck`.
+- Run `npm run lint`.
+- Run `npm run build`.
+- Run `supabase db push` against the intended project ref only after confirming the linked project.
+- Commit and push to `main`.
+- Deploy Vercel production from the same commit.
+- Smoke test `/login/store`, `/preview/pos/settings`, `/preview/pos`, `/api/pos/sales`, and one bank-transfer payment flow.

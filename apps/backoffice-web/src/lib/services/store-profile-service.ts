@@ -43,12 +43,16 @@ export function mapReceiptStoreProfile(row: TenantStoreProfileRow): ReceiptStore
 export async function loadReceiptStoreProfile(tenantId: string): Promise<ReceiptStoreProfile | null> {
   const normalizedTenantId = trimText(tenantId);
   if (!normalizedTenantId) return null;
-  const supabase = getSupabaseServiceClient();
-  const { data, error } = await supabase
-    .from("tenants")
-    .select("id,code,name,display_name,logo_url,company_address,contact_phone,owner_phone")
-    .eq("id", normalizedTenantId)
-    .maybeSingle<TenantStoreProfileRow>();
-  if (error) throw new Error(error.message);
-  return data ? mapReceiptStoreProfile(data) : null;
+  try {
+    const supabase = getSupabaseServiceClient();
+    const { data, error } = await supabase
+      .from("tenants")
+      .select("id,code,name,display_name,logo_url,company_address,contact_phone,owner_phone")
+      .eq("id", normalizedTenantId)
+      .maybeSingle<TenantStoreProfileRow>();
+    if (error) return null;
+    return data ? mapReceiptStoreProfile(data) : null;
+  } catch {
+    return null;
+  }
 }

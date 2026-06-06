@@ -9,7 +9,7 @@
     "cf:build": "opennextjs-cloudflare build",
     "cf:preview": "opennextjs-cloudflare build && wrangler dev",
     "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "lint": "eslint .",
+    "lint": "eslint src scripts tests next.config.ts eslint.config.mjs --cache --cache-location .eslintcache --no-error-on-unmatched-pattern",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },

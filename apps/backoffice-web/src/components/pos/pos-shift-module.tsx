@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { ErrorState, LoadingState } from "@/components/backoffice/list-state";
 import { ManagerOverrideModal } from "@/components/pos/manager-override-modal";
+import { fetchWithTimeout } from "@/lib/client-fetch";
 
 type ShiftResponse = {
   current_shift: {
@@ -39,7 +40,7 @@ export function PosShiftModule() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/pos/shift", { cache: "no-store" });
+      const response = await fetchWithTimeout("/api/pos/shift", { cache: "no-store" }, 10000);
       const body = await response.json();
       if (!response.ok || body.error) {
         throw new Error(body.error?.message ?? "Shift load failed.");
@@ -68,11 +69,11 @@ export function PosShiftModule() {
     setMessage(null);
     setError(null);
     try {
-      const response = await fetch("/api/pos/shift", {
+      const response = await fetchWithTimeout("/api/pos/shift", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "open", opening_cash: Number(openCash) })
-      });
+      }, 15000);
       const body = await response.json();
       if (!response.ok || body.error) {
         throw new Error(body.error?.message ?? "Open shift failed.");
@@ -92,11 +93,11 @@ export function PosShiftModule() {
     actual_cash: number;
     manager_override_approval_id?: string;
   }) {
-    const response = await fetch("/api/pos/shift", {
+    const response = await fetchWithTimeout("/api/pos/shift", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "close", ...payload })
-    });
+    }, 15000);
     const body = await response.json();
     if (!response.ok || body.error) {
       const code = body?.error?.code;

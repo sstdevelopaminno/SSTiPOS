@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { fetchWithTimeout } from "@/lib/client-fetch";
 
 type BranchRole = "owner" | "manager" | "staff" | "accountant";
 type ScopeMode = "all_devices" | "single_device";
@@ -252,7 +253,7 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
     try {
       const params = new URLSearchParams();
       if (branchFilter !== "all") params.set("branch_id", branchFilter);
-      const response = await fetch(`/api/pos/users?${params.toString()}`, { cache: "no-store" });
+      const response = await fetchWithTimeout(`/api/pos/users?${params.toString()}`, { cache: "no-store" }, 10000);
       const payload = (await response.json()) as { data?: UsersResponse; error?: { message?: string } };
       if (!response.ok || !payload.data) throw new Error(payload.error?.message || t.loadError);
       setItems(payload.data.items ?? []);
@@ -349,10 +350,10 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
   }
 
   async function requestJson(url: string, init: RequestInit) {
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       ...init,
       headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
-    });
+    }, 15000);
     const payload = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
     if (!response.ok) throw new Error(payload.error?.message || t.saveError);
   }

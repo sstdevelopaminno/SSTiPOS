@@ -1,4 +1,5 @@
 import { appendAuditLog } from "@/lib/audit-log";
+import { invalidateTenantFeatureGateCache } from "@/lib/feature-gate";
 import { fail, ok } from "@/lib/http";
 import { guardItAdminError, parseTenantParam, requireItAdmin } from "@/lib/it-admin-guard";
 
@@ -216,6 +217,8 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
       }
       updated = data;
     }
+
+    invalidateTenantFeatureGateCache(tenantId);
 
     await appendAuditLog({
       tenantId,

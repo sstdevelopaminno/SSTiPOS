@@ -193,7 +193,7 @@ export async function POST(request: Request) {
     const bindErrorResponse = await bindSessionToShift(createdShift.id);
     if (bindErrorResponse) return bindErrorResponse;
 
-    await appendAuditLog({
+    void appendAuditLog({
       tenantId: sessionScope.tenantId,
       branchId: sessionScope.branchId,
       actorUserId: sessionScope.userId,

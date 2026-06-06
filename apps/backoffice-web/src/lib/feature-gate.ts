@@ -44,6 +44,13 @@ type FeatureSubscriptionRow = {
   updated_at: string;
 };
 
+type FeatureDecisionCacheEntry = {
+  enabled: boolean;
+  expiresAt: number;
+};
+
+const FEATURE_DECISION_CACHE_TTL_MS = 15_000;
+
 export class FeatureGateError extends Error {
   code: string;
   status: number;
@@ -53,6 +60,47 @@ export class FeatureGateError extends Error {
     this.name = "FeatureGateError";
     this.code = code;
     this.status = status;
+  }
+}
+
+function getFeatureDecisionCache() {
+  const scopedGlobal = globalThis as typeof globalThis & {
+    __featureDecisionCache?: Map<string, FeatureDecisionCacheEntry>;
+  };
+  if (!scopedGlobal.__featureDecisionCache) {
+    scopedGlobal.__featureDecisionCache = new Map<string, FeatureDecisionCacheEntry>();
+  }
+  return scopedGlobal.__featureDecisionCache;
+}
+
+function readFeatureDecisionCache(cacheKey: string): boolean | null {
+  const cache = getFeatureDecisionCache();
+  const entry = cache.get(cacheKey);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    cache.delete(cacheKey);
+    return null;
+  }
+  return entry.enabled;
+}
+
+function writeFeatureDecisionCache(cacheKey: string, enabled: boolean) {
+  const cache = getFeatureDecisionCache();
+  cache.set(cacheKey, {
+    enabled,
+    expiresAt: Date.now() + FEATURE_DECISION_CACHE_TTL_MS
+  });
+}
+
+export function invalidateTenantFeatureGateCache(tenantId?: string | null) {
+  const cache = getFeatureDecisionCache();
+  if (!tenantId) {
+    cache.clear();
+    return;
+  }
+  const prefix = `${tenantId}:`;
+  for (const key of cache.keys()) {
+    if (key.startsWith(prefix)) cache.delete(key);
   }
 }
 
@@ -99,9 +147,14 @@ async function getLatestContract(tenantId: string): Promise<ContractRow | null> 
 export async function hasBranchFeature(tenantId: string, branchId: string | null, featureKey: string): Promise<boolean> {
   const featureCode = String(featureKey).trim();
   if (!tenantId || !featureCode) return false;
+  const normalizedBranchId = branchId || "tenant";
+  const cacheKey = `${tenantId}:${normalizedBranchId}:${featureCode}`;
+  const cached = readFeatureDecisionCache(cacheKey);
+  if (cached !== null) return cached;
 
   const contract = await getLatestContract(tenantId);
   if (!contractAllowsAccess(contract)) {
+    writeFeatureDecisionCache(cacheKey, false);
     return false;
   }
 
@@ -151,6 +204,7 @@ export async function hasBranchFeature(tenantId: string, branchId: string | null
     enabled = branchOverride.is_enabled;
   }
 
+  writeFeatureDecisionCache(cacheKey, enabled);
   return enabled;
 }
 

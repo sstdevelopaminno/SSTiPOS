@@ -406,7 +406,7 @@ export async function PATCH(request: Request) {
         return fail("pos_user_profile_update_failed", error instanceof Error ? error.message : "Unable to update POS user profile.", 500);
       }
 
-      await appendAuditLog({
+      void appendAuditLog({
         tenantId: auth.tenantId!,
         branchId,
         actorUserId: auth.userId,
@@ -561,7 +561,7 @@ export async function POST(request: Request) {
       return fail("pos_user_scope_create_failed", scopeWrite.error.message, 500);
     }
 
-    await appendAuditLog({
+    void appendAuditLog({
       tenantId: auth.tenantId!,
       branchId,
       actorUserId: auth.userId,
@@ -615,7 +615,7 @@ export async function DELETE(request: Request) {
     const { count } = await supabase.from("user_branch_roles").select("id", { count: "exact", head: true }).eq("user_id", userId);
     if ((count ?? 0) === 0) await supabase.from("users_profiles").update({ is_active: false }).eq("id", userId);
 
-    await appendAuditLog({
+    void appendAuditLog({
       tenantId: auth.tenantId!,
       branchId,
       actorUserId: auth.userId,

@@ -20,6 +20,7 @@ type Props = {
   subtotal: number;
   total: number;
   taxAmount?: number;
+  taxLines?: Array<{ id: string; label: string; amount: number }>;
   onCheckout: () => void;
   onRetry?: () => void;
   onManagerOverride?: () => void;
@@ -56,6 +57,7 @@ export function PosPaymentPanel({
   subtotal,
   total,
   taxAmount,
+  taxLines = [],
   onCheckout,
   onRetry,
   onManagerOverride,
@@ -104,7 +106,12 @@ export function PosPaymentPanel({
           <span>{text.subtotal}</span>
           <strong>{formatMoney(Math.max(0, subtotal))}</strong>
         </p>
-        {text.tax ? (
+        {taxLines.length > 0 ? taxLines.map((line) => (
+          <p key={line.id}>
+            <span>{line.label}</span>
+            <strong>{line.amount < 0 ? "-" : "+"}{formatMoney(Math.abs(line.amount))}</strong>
+          </p>
+        )) : text.tax ? (
           <p>
             <span>{text.tax}</span>
             <strong>{formatMoney(Math.max(0, taxAmount ?? 0))}</strong>

@@ -28,14 +28,16 @@ type SessionCurrentResponse = {
   error?: { code: string; message: string } | null;
 };
 
-const DEFAULT_LOAD_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 60000 : 12000;
-const DEFAULT_LOAD_RETRIES = 1;
+const DEFAULT_LOAD_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 30000 : 12000;
+const DEFAULT_LOAD_RETRIES = 0;
 const POS_DISPLAY_TIMEZONE = "Asia/Bangkok";
 const POS_ROLE_STORAGE_KEY = "pos_session_role_v1";
 const POS_ROLE_EVENT_NAME = "pos-session-role-updated";
+const POS_SESSION_EVENT_NAME = "pos-session-current-updated";
 const POS_SKIP_ENTRY_GATE_SPLASH_KEY = "pos_skip_entry_gate_overlay_once_v1";
+const loadPosSalesModule = () => import("@/components/pos/pos-sales-module");
 const PosSalesModule = dynamic(
-  () => import("@/components/pos/pos-sales-module").then((module) => module.PosSalesModule),
+  () => loadPosSalesModule().then((module) => module.PosSalesModule),
   {
     ssr: false,
     loading: () => (
@@ -274,6 +276,10 @@ export function PosEntryGate({ lang }: { lang: Lang }) {
   );
 
   useEffect(() => {
+    void loadPosSalesModule();
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const flagged = window.sessionStorage.getItem(POS_SKIP_ENTRY_GATE_SPLASH_KEY) === "1";
     if (flagged) {
@@ -320,6 +326,7 @@ export function PosEntryGate({ lang }: { lang: Lang }) {
 
       setSession(sessionBody.data);
       publishSessionRole(sessionBody.data.role);
+      window.dispatchEvent(new CustomEvent(POS_SESSION_EVENT_NAME, { detail: sessionBody.data }));
       const totalMs = Math.round(performance.now() - startedAt);
       if (totalMs > 1000) {
         console.info("[pos-entry-gate] load timing", { sessionMs, totalMs });

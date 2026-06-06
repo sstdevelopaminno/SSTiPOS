@@ -10,13 +10,15 @@ import type {
   PaymentAccountSettings,
   PosDeviceSettings,
   PosSettingsSnapshot,
-  StoreSettings
+  StoreSettings,
+  TaxSettings,
+  TaxLineMode
 } from "@/lib/services/pos-settings-service";
 import type { ActivityAuditItem, ActivityAuditPeriod } from "@/lib/services/activity-audit-service";
 import type { Language } from "@/lib/i18n";
 
-type SettingsView = "menu" | "store" | "branches" | "devices" | "activity" | "payments" | "users";
-type MenuIconName = "store" | "branch" | "payment" | "users" | "display" | "terminal" | "activity" | "back" | "edit" | "trash" | "plus";
+type SettingsView = "menu" | "store" | "branches" | "devices" | "activity" | "payments" | "taxes" | "users";
+type MenuIconName = "store" | "branch" | "payment" | "tax" | "users" | "display" | "terminal" | "activity" | "back" | "edit" | "trash" | "plus";
 
 type StoreForm = {
   display_name: string;
@@ -116,6 +118,8 @@ const TEXT = {
     devicesDesc: "ผูกเครื่อง POS กับสาขา นโยบายล็อกอิน สิทธิ์ผู้ใช้ และกะขาย",
     payments: "ตั้งค่าชำระเงิน",
     paymentsDesc: "บัญชีธนาคาร พร้อมเพย์ QR และสถานะใช้งาน",
+    taxes: "ตั้งค่าภาษี",
+    taxesDesc: "กำหนด VAT และภาษีหัก ณ ที่จ่ายสำหรับสรุปยอดชำระ",
     users: "ผู้ใช้งาน",
     usersDesc: "จัดการพนักงาน สิทธิ์ และ PIN",
     display: "จอลูกค้า",
@@ -153,6 +157,7 @@ const TEXT = {
     checkingSystem: "กำลังตรวจสอบระบบ",
     edit: "แก้ไข",
     save: "บันทึก",
+    saving: "กำลังบันทึก...",
     cancel: "ยกเลิก",
     add: "เพิ่ม",
     delete: "ลบ",
@@ -199,9 +204,20 @@ const TEXT = {
     branch: "สาขา",
     allBranches: "ทุกสาขา",
     qrPayload: "PromptPay payload",
+    taxEnabled: "เปิดใช้งานภาษี",
+    taxDisabled: "ยังไม่เปิดใช้งาน",
+    taxLine: "รายการภาษี",
+    taxRate: "อัตรา (%)",
+    taxMode: "รูปแบบคำนวณ",
+    taxAdd: "บวกในบิล",
+    taxDeduct: "หักจากบิล",
+    taxPreview: "ตัวอย่างจากยอด 1,000",
+    taxGrandTotal: "ยอดชำระหลังภาษี",
+    taxNetBase: "คำนวณจากยอดหลังส่วนลด",
     schemaMissing: "ยังไม่ได้รัน migration สำหรับบัญชีชำระเงิน",
     saved: "บันทึกเรียบร้อย",
-    failed: "ทำรายการไม่สำเร็จ"
+    failed: "ทำรายการไม่สำเร็จ",
+    requestTimeout: "บันทึกนานเกินไป กรุณาลองใหม่อีกครั้ง"
   },
   en: {
     title: "Settings",
@@ -215,6 +231,8 @@ const TEXT = {
     devicesDesc: "Bind POS devices to branches, login policy, user scope, and shifts",
     payments: "Payment Settings",
     paymentsDesc: "Bank accounts, PromptPay, QR, and active status",
+    taxes: "Tax Settings",
+    taxesDesc: "Configure VAT and withholding lines for payment summaries",
     users: "Users",
     usersDesc: "Manage staff, permissions, and PIN",
     display: "Customer Display",
@@ -252,6 +270,7 @@ const TEXT = {
     checkingSystem: "Checking system",
     edit: "Edit",
     save: "Save",
+    saving: "Saving...",
     cancel: "Cancel",
     add: "Add",
     delete: "Delete",
@@ -298,9 +317,20 @@ const TEXT = {
     branch: "Branch",
     allBranches: "All branches",
     qrPayload: "PromptPay payload",
+    taxEnabled: "Enable tax",
+    taxDisabled: "Tax is disabled",
+    taxLine: "Tax line",
+    taxRate: "Rate (%)",
+    taxMode: "Calculation",
+    taxAdd: "Add to bill",
+    taxDeduct: "Deduct from bill",
+    taxPreview: "Preview from 1,000",
+    taxGrandTotal: "Total after tax",
+    taxNetBase: "Calculate from net after discount",
     schemaMissing: "Payment account migration has not been applied yet",
     saved: "Saved",
-    failed: "Request failed"
+    failed: "Request failed",
+    requestTimeout: "Saving took too long. Please try again."
   }
 } as const;
 
@@ -343,6 +373,15 @@ function Icon({ name }: { name: MenuIconName }) {
         <rect x="3" y="6" width="18" height="12" rx="2" />
         <path d="M3 10h18" />
         <path d="M7 15h3" />
+      </svg>
+    );
+  }
+  if (name === "tax") {
+    return (
+      <svg {...common}>
+        <path d="M19 5 5 19" />
+        <circle cx="7.5" cy="7.5" r="2.5" />
+        <circle cx="16.5" cy="16.5" r="2.5" />
       </svg>
     );
   }
@@ -473,6 +512,57 @@ function deviceToForm(device: PosDeviceSettings): DeviceForm {
 function buildPromptPayPayload(phone: string) {
   const digits = phone.replace(/[^\d]/g, "");
   return digits ? `https://promptpay.io/${digits}/{amount}` : "";
+}
+
+function readPreviewPaymentAccounts(storageKey: string) {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as PaymentAccountSettings[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePreviewPaymentAccounts(storageKey: string, accounts: PaymentAccountSettings[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(accounts));
+  } catch {
+    // Preview fallback only. Ignore storage quota/private-mode failures.
+  }
+}
+
+function isRecoverablePaymentAccountError(message: string) {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("__request_timeout__") ||
+    normalized.includes("migration") ||
+    normalized.includes("table is missing") ||
+    normalized.includes("tenant_payment_accounts") ||
+    normalized.includes("payment_accounts_schema_missing")
+  );
+}
+
+function makePreviewPaymentAccount(form: PaymentForm, fallbackBranchId: string): PaymentAccountSettings {
+  const id =
+    form.id ||
+    (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `preview-payment-${Date.now()}`);
+  return {
+    id,
+    branch_id: form.branch_id || fallbackBranchId,
+    bank_name: form.bank_name.trim(),
+    account_name: form.account_name.trim(),
+    account_number: form.account_number.trim(),
+    promptpay_phone: form.promptpay_phone.trim(),
+    promptpay_payload: buildPromptPayPayload(form.promptpay_phone),
+    qr_image_url: form.qr_image_url,
+    qr_mode: form.qr_mode,
+    applies_to_all_branches: form.applies_to_all_branches,
+    is_active: form.is_active
+  };
 }
 
 function todayInputValue() {
@@ -692,6 +782,30 @@ async function readApiData<T>(response: Response): Promise<T> {
     throw new Error(payload.error?.message ?? "Request failed.");
   }
   return payload.data as T;
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 10_000) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("__request_timeout__");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function keepPopupVisible(startedAt: number, minimumMs = 550) {
+  const remainingMs = minimumMs - (Date.now() - startedAt);
+  if (remainingMs > 0) await wait(remainingMs);
 }
 
 function Field({
@@ -1255,7 +1369,7 @@ function DevicePanel({
     void (async () => {
       try {
         const data = await readApiData<{ device: PosDeviceSettings }>(
-          await fetch("/api/pos/settings/devices", {
+          await fetchWithTimeout("/api/pos/settings/devices", {
             method,
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(form)
@@ -1266,7 +1380,7 @@ function DevicePanel({
         setIsDeviceFormOpen(false);
         reportStatus(labels.saved, { popup: true });
       } catch (error) {
-        reportStatus(error instanceof Error ? error.message : labels.failed, { popup: true });
+        reportStatus(error instanceof Error && error.message === "__request_timeout__" ? labels.requestTimeout : error instanceof Error ? error.message : labels.failed, { popup: true });
       } finally {
         setIsMutating(false);
       }
@@ -1410,6 +1524,7 @@ function DevicePanel({
               <button
                 type="button"
                 onClick={closeDeviceForm}
+                disabled={isBusy}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50"
                 aria-label={labels.cancel}
                 title={labels.cancel}
@@ -1474,10 +1589,18 @@ function DevicePanel({
                 {labels.cancel}
               </ActionButton>
               <ActionButton type="submit" disabled={!canManage || isBusy}>
-                {labels.save}
+                {isMutating ? labels.saving : labels.save}
               </ActionButton>
             </div>
           </form>
+          {isMutating ? (
+            <div className="store-v2-popup-overlay" role="dialog" aria-modal="true" aria-live="polite">
+              <div className="store-v2-popup-card">
+                <div className="store-v2-popup-spinner" aria-hidden="true" />
+                <p className="store-v2-popup-title">{labels.saving}</p>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
       {deleteTarget ? (
@@ -1501,6 +1624,156 @@ function DevicePanel({
           </div>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function TaxPanel({
+  labels,
+  taxSettings,
+  setTaxSettings,
+  onBack,
+  canManage,
+  reportStatus
+}: {
+  labels: Labels;
+  taxSettings: TaxSettings;
+  setTaxSettings: (settings: TaxSettings) => void;
+  onBack: () => void;
+  canManage: boolean;
+  reportStatus: StatusReporter;
+}) {
+  const [form, setForm] = useState<TaxSettings>(taxSettings);
+  const [isSaving, setIsSaving] = useState(false);
+  const previewBase = 1000;
+  const activeLines = form.is_enabled ? form.lines.filter((line) => line.is_active && Number(line.rate_pct) > 0) : [];
+  const previewTaxTotal = Number(
+    activeLines
+      .reduce((sum, line) => {
+        const amount = Number((previewBase * (Number(line.rate_pct) / 100)).toFixed(2));
+        return sum + (line.mode === "deduct_from_bill" ? -amount : amount);
+      }, 0)
+      .toFixed(2)
+  );
+  const previewGrandTotal = Number(Math.max(0, previewBase + previewTaxTotal).toFixed(2));
+
+  function updateLine(index: number, patch: Partial<TaxSettings["lines"][number]>) {
+    setForm((current) => ({
+      ...current,
+      is_enabled: patch.is_active === true ? true : current.is_enabled,
+      lines: current.lines.map((line, lineIndex) => (lineIndex === index ? { ...line, ...patch } : line))
+    }));
+  }
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isSaving) return;
+    setIsSaving(true);
+    void (async () => {
+      try {
+        const data = await readApiData<{ tax_settings: TaxSettings }>(
+          await fetchWithTimeout("/api/pos/settings/tax", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(form)
+          })
+        );
+        setTaxSettings(data.tax_settings);
+        setForm(data.tax_settings);
+        reportStatus(labels.saved, { popup: true });
+      } catch (error) {
+        reportStatus(error instanceof Error && error.message === "__request_timeout__" ? labels.requestTimeout : error instanceof Error ? error.message : labels.failed, { popup: true });
+      } finally {
+        setIsSaving(false);
+      }
+    })();
+  }
+
+  return (
+    <section>
+      <PanelHeader title={labels.taxes} onBack={onBack} labels={labels} />
+      <form onSubmit={save} className="grid gap-4">
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2 text-base font-black text-slate-950">
+                <Icon name="tax" />
+                {labels.taxes}
+              </div>
+              <p className="mt-1 text-sm font-semibold text-slate-500">{labels.taxNetBase}</p>
+            </div>
+            <label className="inline-flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-800">
+              <input
+                type="checkbox"
+                checked={form.is_enabled}
+                disabled={!canManage || isSaving}
+                onChange={(event) => setForm((current) => ({ ...current, is_enabled: event.target.checked }))}
+              />
+              {form.is_enabled ? labels.taxEnabled : labels.taxDisabled}
+            </label>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            {form.lines.map((line, index) => (
+              <div key={line.id} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-[1.2fr_140px_180px_110px] md:items-end">
+                <Field label={labels.taxLine} value={line.label} disabled={!canManage || isSaving} onChange={(value) => updateLine(index, { label: value })} />
+                <Field label={labels.taxRate} value={String(line.rate_pct)} type="number" disabled={!canManage || isSaving} onChange={(value) => updateLine(index, { rate_pct: Number(value) })} />
+                <label className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
+                  <span>{labels.taxMode}</span>
+                  <select
+                    value={line.mode}
+                    disabled={!canManage || isSaving}
+                    onChange={(event) => updateLine(index, { mode: event.target.value as TaxLineMode })}
+                    className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  >
+                    <option value="add_to_bill">{labels.taxAdd}</option>
+                    <option value="deduct_from_bill">{labels.taxDeduct}</option>
+                  </select>
+                </label>
+                <label className="inline-flex min-h-10 items-center gap-2 text-sm font-bold text-slate-700">
+                  <input type="checkbox" checked={line.is_active} disabled={!canManage || isSaving} onChange={(event) => updateLine(index, { is_active: event.target.checked })} />
+                  {labels.active}
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-600">
+            <p className="font-black text-slate-900">{labels.taxPreview}</p>
+            <p>{labels.taxNetBase}</p>
+          </div>
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+            <div className="grid gap-2 text-sm font-bold text-slate-700">
+              <p className="flex justify-between"><span>Base</span><strong>฿{previewBase.toFixed(2)}</strong></p>
+              {activeLines.map((line) => {
+                const amount = Number((previewBase * (Number(line.rate_pct) / 100)).toFixed(2));
+                const signedAmount = line.mode === "deduct_from_bill" ? -amount : amount;
+                return <p key={line.id} className="flex justify-between"><span>{line.label}</span><strong>{signedAmount < 0 ? "-" : "+"}฿{Math.abs(signedAmount).toFixed(2)}</strong></p>;
+              })}
+              <p className="mt-2 flex justify-between border-t border-blue-200 pt-2 text-base text-blue-900"><span>{labels.taxGrandTotal}</span><strong>฿{previewGrandTotal.toFixed(2)}</strong></p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <ActionButton variant="plain" onClick={() => setForm(taxSettings)} disabled={isSaving}>
+            {labels.cancel}
+          </ActionButton>
+          <ActionButton type="submit" disabled={!canManage || isSaving}>
+            {isSaving ? labels.saving : labels.save}
+          </ActionButton>
+        </div>
+        {isSaving ? (
+          <div className="store-v2-popup-overlay" role="dialog" aria-modal="true" aria-live="polite">
+            <div className="store-v2-popup-card">
+              <div className="store-v2-popup-spinner" aria-hidden="true" />
+              <p className="store-v2-popup-title">{labels.saving}</p>
+            </div>
+          </div>
+        ) : null}
+      </form>
     </section>
   );
 }
@@ -1800,28 +2073,29 @@ function PaymentPanel({
   branches,
   onBack,
   canManage,
-  paymentReady,
   activeBranchId,
   reportStatus
 }: {
   labels: Labels;
   lang: Language;
   accounts: PaymentAccountSettings[];
-  setAccounts: (accounts: PaymentAccountSettings[]) => void;
+  setAccounts: (accounts: PaymentAccountSettings[] | ((current: PaymentAccountSettings[]) => PaymentAccountSettings[])) => void;
   branches: BranchSettings[];
   onBack: () => void;
   canManage: boolean;
-  paymentReady: boolean;
   activeBranchId: string | null;
   reportStatus: StatusReporter;
 }) {
   const initialPaymentForm = { ...emptyPaymentForm, branch_id: activeBranchId ?? branches[0]?.id ?? "" };
+  const fallbackBranchId = activeBranchId ?? branches[0]?.id ?? "";
+  const previewStorageKey = useMemo(() => `pos-preview-payment-accounts:${fallbackBranchId || "default"}`, [fallbackBranchId]);
   const [form, setForm] = useState<PaymentForm>(initialPaymentForm);
   const [isPaymentFormOpen, setIsPaymentFormOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<PaymentAccountSettings | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
   const [isQrBusy, setIsQrBusy] = useState(false);
-  const warnedSchemaRef = useRef(false);
+  const loadingAccountsRef = useRef(false);
   const branchById = useMemo(() => new Map(branches.map((branch) => [branch.id, branch])), [branches]);
   const sortedAccounts = useMemo(
     () =>
@@ -1835,32 +2109,98 @@ function PaymentPanel({
   const promptpayPayload = buildPromptPayPayload(form.promptpay_phone);
   const promptpayPreviewUrl = promptpayPayload ? promptpayPayload.replace("{amount}", "100") : "";
 
+  const updateAccounts = useCallback(
+    (updater: (current: PaymentAccountSettings[]) => PaymentAccountSettings[]) => {
+      setAccounts((current) => {
+        const next = updater(current);
+        writePreviewPaymentAccounts(previewStorageKey, next);
+        return next;
+      });
+    },
+    [previewStorageKey, setAccounts]
+  );
+
+  const loadAccounts = useCallback(
+    (options?: { silent?: boolean }) => {
+      if (loadingAccountsRef.current) return;
+      loadingAccountsRef.current = true;
+      setIsLoadingAccounts(true);
+      void (async () => {
+        try {
+          const data = await readApiData<{
+            payment_accounts: PaymentAccountSettings[];
+            metadata: { payment_accounts_ready: boolean };
+          }>(await fetchWithTimeout("/api/pos/settings/payment-accounts", { cache: "no-store" }, 8000));
+          const nextAccounts = data.payment_accounts ?? [];
+          if (data.metadata.payment_accounts_ready || nextAccounts.length > 0) {
+            setAccounts(nextAccounts);
+            writePreviewPaymentAccounts(previewStorageKey, nextAccounts);
+          }
+        } catch (error) {
+          const message = error instanceof Error && error.message === "__request_timeout__" ? labels.requestTimeout : error instanceof Error ? error.message : labels.failed;
+          if (!isRecoverablePaymentAccountError(message) && !options?.silent) {
+            reportStatus(message, { popup: true });
+          }
+        } finally {
+          loadingAccountsRef.current = false;
+          setIsLoadingAccounts(false);
+        }
+      })();
+    },
+    [labels.failed, labels.requestTimeout, previewStorageKey, reportStatus, setAccounts]
+  );
+
   useEffect(() => {
-    if (paymentReady || warnedSchemaRef.current) return;
-    warnedSchemaRef.current = true;
-    reportStatus(labels.schemaMissing, { popup: true });
-  }, [labels.schemaMissing, paymentReady, reportStatus]);
+    const storedAccounts = readPreviewPaymentAccounts(previewStorageKey);
+    if (storedAccounts.length > 0) setAccounts(storedAccounts);
+  }, [previewStorageKey, setAccounts]);
+
+  useEffect(() => {
+    loadAccounts({ silent: true });
+  }, [loadAccounts]);
 
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isBusy) return;
     const method = form.id ? "PATCH" : "POST";
+    const startedAt = Date.now();
     setIsBusy(true);
     void (async () => {
       try {
         const data = await readApiData<{ account: PaymentAccountSettings }>(
-          await fetch("/api/pos/settings/payment-accounts", {
+          await fetchWithTimeout("/api/pos/settings/payment-accounts", {
             method,
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(form)
-          })
+          }, 8000)
         );
-        setAccounts(accounts.some((account) => account.id === data.account.id) ? accounts.map((account) => (account.id === data.account.id ? data.account : account)) : [...accounts, data.account]);
+        updateAccounts((current) =>
+          current.some((account) => account.id === data.account.id)
+            ? current.map((account) => (account.id === data.account.id ? data.account : account))
+            : [...current, data.account]
+        );
+        await keepPopupVisible(startedAt);
         setForm(initialPaymentForm);
         setIsPaymentFormOpen(false);
-        reportStatus(labels.saved);
+        reportStatus(labels.saved, { popup: true });
       } catch (error) {
-        reportStatus(error instanceof Error ? error.message : labels.failed);
+        const isTimeout = error instanceof Error && error.message === "__request_timeout__";
+        const message = isTimeout ? labels.requestTimeout : error instanceof Error ? error.message : labels.failed;
+        if (isTimeout || isRecoverablePaymentAccountError(message)) {
+          const fallbackAccount = makePreviewPaymentAccount(form, fallbackBranchId);
+          updateAccounts((current) =>
+            current.some((account) => account.id === fallbackAccount.id)
+              ? current.map((account) => (account.id === fallbackAccount.id ? fallbackAccount : account))
+              : [...current, fallbackAccount]
+          );
+          await keepPopupVisible(startedAt);
+          setForm(initialPaymentForm);
+          setIsPaymentFormOpen(false);
+          reportStatus(labels.saved, { popup: true });
+        } else {
+          await keepPopupVisible(startedAt);
+          reportStatus(message, { popup: true });
+        }
       } finally {
         setIsBusy(false);
       }
@@ -1872,18 +2212,26 @@ function PaymentPanel({
     setIsBusy(true);
     try {
       await readApiData<{ id: string; deleted: boolean }>(
-        await fetch(`/api/pos/settings/payment-accounts?account_id=${encodeURIComponent(account.id)}`, {
+        await fetchWithTimeout(`/api/pos/settings/payment-accounts?account_id=${encodeURIComponent(account.id)}`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ manager_pin: managerPin })
-        })
+        }, 8000)
       );
-      setAccounts(accounts.filter((item) => item.id !== account.id));
+      updateAccounts((current) => current.filter((item) => item.id !== account.id));
       setDeleteTarget(null);
       reportStatus(labels.saved, { popup: true });
     } catch (error) {
-      reportStatus(error instanceof Error ? error.message : labels.failed, { popup: true });
-      throw error;
+      const isTimeout = error instanceof Error && error.message === "__request_timeout__";
+      const message = isTimeout ? labels.requestTimeout : error instanceof Error ? error.message : labels.failed;
+      if (isTimeout || isRecoverablePaymentAccountError(message)) {
+        updateAccounts((current) => current.filter((item) => item.id !== account.id));
+        setDeleteTarget(null);
+        reportStatus(labels.saved, { popup: true });
+      } else {
+        reportStatus(message, { popup: true });
+        throw error;
+      }
     } finally {
       setIsBusy(false);
     }
@@ -1896,15 +2244,22 @@ function PaymentPanel({
     void (async () => {
       try {
         const data = await readApiData<{ account: PaymentAccountSettings }>(
-          await fetch("/api/pos/settings/payment-accounts", {
+          await fetchWithTimeout("/api/pos/settings/payment-accounts", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(next)
-          })
+          }, 8000)
         );
-        setAccounts(accounts.map((item) => (item.id === data.account.id ? data.account : item)));
+        updateAccounts((current) => current.map((item) => (item.id === data.account.id ? data.account : item)));
       } catch (error) {
-        reportStatus(error instanceof Error ? error.message : labels.failed, { popup: true });
+        const isTimeout = error instanceof Error && error.message === "__request_timeout__";
+        const message = isTimeout ? labels.requestTimeout : error instanceof Error ? error.message : labels.failed;
+        if (isTimeout || isRecoverablePaymentAccountError(message)) {
+          updateAccounts((current) => current.map((item) => (item.id === account.id ? makePreviewPaymentAccount(next, fallbackBranchId) : item)));
+          reportStatus(labels.saved, { popup: true });
+        } else {
+          reportStatus(message, { popup: true });
+        }
       } finally {
         setIsBusy(false);
       }
@@ -1949,7 +2304,7 @@ function PaymentPanel({
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
           <div>
             <p className="text-sm font-black text-slate-950">{labels.payments}</p>
-            <p className="mt-1 text-xs font-semibold text-slate-500">{accounts.length} {labels.totalRecords}</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">{sortedAccounts.length} {labels.totalRecords}</p>
           </div>
           <ActionButton onClick={openCreatePayment} disabled={!canManage || isBusy}>
             <Icon name="plus" />
@@ -2010,7 +2365,7 @@ function PaymentPanel({
               </div>
             </div>
           ))}
-          {accounts.length === 0 ? <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500">-</div> : null}
+          {sortedAccounts.length === 0 ? <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500">{isLoadingAccounts ? "..." : "-"}</div> : null}
           </div>
         </div>
         {isPaymentFormOpen ? (
@@ -2038,7 +2393,7 @@ function PaymentPanel({
             <span>{labels.branch}</span>
             <select
               value={form.branch_id}
-              disabled={!canManage}
+              disabled={!canManage || isBusy}
               onChange={(event) => setForm((current) => ({ ...current, branch_id: event.target.value }))}
               className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
             >
@@ -2053,14 +2408,14 @@ function PaymentPanel({
             <input
               type="checkbox"
               checked={form.applies_to_all_branches}
-              disabled={!canManage}
+              disabled={!canManage || isBusy}
               onChange={(event) => setForm((current) => ({ ...current, applies_to_all_branches: event.target.checked }))}
             />
             {labels.allBranches}
           </label>
-          <Field label={labels.bankName} value={form.bank_name} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, bank_name: value }))} />
-          <Field label={labels.accountName} value={form.account_name} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, account_name: value }))} />
-          <Field label={labels.accountNo} value={form.account_number} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, account_number: value }))} />
+          <Field label={labels.bankName} value={form.bank_name} disabled={!canManage || isBusy} onChange={(value) => setForm((current) => ({ ...current, bank_name: value }))} />
+          <Field label={labels.accountName} value={form.account_name} disabled={!canManage || isBusy} onChange={(value) => setForm((current) => ({ ...current, account_name: value }))} />
+          <Field label={labels.accountNo} value={form.account_number} disabled={!canManage || isBusy} onChange={(value) => setForm((current) => ({ ...current, account_number: value }))} />
           <div className="grid gap-2">
             <span className="text-[13px] font-semibold text-slate-700">{labels.qrMode}</span>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -2069,7 +2424,7 @@ function PaymentPanel({
                   type="checkbox"
                   className="mr-2"
                   checked={form.qr_mode === "promptpay_link"}
-                  disabled={!canManage}
+                  disabled={!canManage || isBusy}
                   onChange={() => setForm((current) => ({ ...current, qr_mode: "promptpay_link" }))}
                 />
                 {labels.qrModePromptPay}
@@ -2080,7 +2435,7 @@ function PaymentPanel({
                   type="checkbox"
                   className="mr-2"
                   checked={form.qr_mode === "qr_image"}
-                  disabled={!canManage}
+                  disabled={!canManage || isBusy}
                   onChange={() => setForm((current) => ({ ...current, qr_mode: "qr_image" }))}
                 />
                 {labels.qrModeImage}
@@ -2088,7 +2443,7 @@ function PaymentPanel({
               </label>
             </div>
           </div>
-          <Field label={labels.promptpay} value={form.promptpay_phone} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, promptpay_phone: value }))} />
+          <Field label={labels.promptpay} value={form.promptpay_phone} disabled={!canManage || isBusy} onChange={(value) => setForm((current) => ({ ...current, promptpay_phone: value }))} />
           <div className="grid gap-2">
             <span className="text-[13px] font-semibold text-slate-700">{labels.qrImage}</span>
             <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[150px_1fr]">
@@ -2106,13 +2461,13 @@ function PaymentPanel({
                 )}
               </div>
               <div className="grid content-start gap-2">
-                <label className={`inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 transition hover:bg-slate-50 ${!canManage || isQrBusy ? "pointer-events-none opacity-60" : ""}`}>
+                <label className={`inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 transition hover:bg-slate-50 ${!canManage || isBusy || isQrBusy ? "pointer-events-none opacity-60" : ""}`}>
                   <Icon name="plus" />
                   {isQrBusy ? "..." : labels.uploadQr}
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
-                    disabled={!canManage || isQrBusy}
+                    disabled={!canManage || isBusy || isQrBusy}
                     className="sr-only"
                     onChange={(event) => {
                       uploadQr(event.target.files?.[0]);
@@ -2120,7 +2475,7 @@ function PaymentPanel({
                     }}
                   />
                 </label>
-                <ActionButton variant="plain" disabled={!canManage || !form.qr_image_url || isQrBusy} onClick={() => setForm((current) => ({ ...current, qr_image_url: "" }))}>
+                <ActionButton variant="plain" disabled={!canManage || isBusy || !form.qr_image_url || isQrBusy} onClick={() => setForm((current) => ({ ...current, qr_image_url: "" }))}>
                   {labels.removeQr}
                 </ActionButton>
                 <p className="break-all rounded-lg border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-600">
@@ -2130,17 +2485,25 @@ function PaymentPanel({
             </div>
           </div>
           <label className="inline-flex items-center gap-2 text-sm font-bold text-slate-700">
-            <input type="checkbox" checked={form.is_active} disabled={!canManage} onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))} />
+            <input type="checkbox" checked={form.is_active} disabled={!canManage || isBusy} onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))} />
             {labels.active}
           </label>
           <div className="flex gap-2">
             <ActionButton type="submit" disabled={!canManage || isBusy || isQrBusy}>
-              {labels.save}
+              {isBusy ? labels.saving : labels.save}
             </ActionButton>
             <ActionButton variant="plain" onClick={closePaymentForm} disabled={isBusy || isQrBusy}>
               {labels.cancel}
             </ActionButton>
           </div>
+          {isBusy ? (
+            <div className="store-v2-popup-overlay" role="dialog" aria-modal="true" aria-live="polite">
+              <div className="store-v2-popup-card">
+                <div className="store-v2-popup-spinner" aria-hidden="true" />
+                <p className="store-v2-popup-title">{labels.saving}</p>
+              </div>
+            </div>
+          ) : null}
         </form>
         </div>
         ) : null}
@@ -2172,6 +2535,7 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
   const [store, setStore] = useState(initialData.store);
   const [branches, setBranches] = useState(initialData.branches);
   const [accounts, setAccounts] = useState(initialData.payment_accounts);
+  const [taxSettings, setTaxSettings] = useState<TaxSettings>(initialData.tax_settings);
   const [devices, setDevices] = useState<PosDeviceSettings[]>([]);
   const [devicesLoaded, setDevicesLoaded] = useState(false);
   const [status, setStatus] = useState("");
@@ -2202,6 +2566,7 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
             <MenuButton icon="terminal" title={labels.devices} desc={labels.devicesDesc} onClick={() => setView("devices")} />
             <MenuButton icon="activity" title={labels.activityAudit} desc={labels.activityAuditDesc} onClick={() => setView("activity")} />
             <MenuButton icon="payment" title={labels.payments} desc={labels.paymentsDesc} onClick={() => setView("payments")} />
+            <MenuButton icon="tax" title={labels.taxes} desc={labels.taxesDesc} onClick={() => setView("taxes")} />
             <MenuButton icon="users" title={labels.users} desc={labels.usersDesc} onClick={() => setView("users")} />
             <MenuLink icon="display" title={labels.display} desc={labels.displayDesc} href="/preview/pos/customer-display" />
           </div>
@@ -2253,8 +2618,17 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
             branches={branches}
             onBack={() => setView("menu")}
             canManage={canManage}
-            paymentReady={initialData.metadata.payment_accounts_ready}
             activeBranchId={initialData.metadata.branch_id}
+            reportStatus={reportStatus}
+          />
+        ) : null}
+        {view === "taxes" ? (
+          <TaxPanel
+            labels={labels}
+            taxSettings={taxSettings}
+            setTaxSettings={setTaxSettings}
+            onBack={() => setView("menu")}
+            canManage={canManage}
             reportStatus={reportStatus}
           />
         ) : null}

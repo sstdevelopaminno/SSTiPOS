@@ -2,7 +2,15 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 
 const config = [
   {
-    ignores: [".next/**", ".open-next/**", "coverage/**"]
+    ignores: [
+      ".next/**",
+      ".next-local/**",
+      ".open-next/**",
+      ".vercel/**",
+      "coverage/**",
+      "node_modules/**",
+      "tsconfig.tsbuildinfo"
+    ]
   },
   ...nextVitals,
   {

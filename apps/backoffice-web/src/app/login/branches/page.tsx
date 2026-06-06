@@ -3,6 +3,13 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PreEntryShell } from "@/components/pre-entry/pre-entry-shell";
+import {
+  cacheBranches,
+  cacheSelectedBranch,
+  clearPreEntryClientCache,
+  readCachedBranches,
+  warmRoute
+} from "@/lib/pre-entry-client-cache";
 
 type Branch = {
   id: string;
@@ -89,6 +96,22 @@ function LoginBranchesPageContent() {
   useEffect(() => {
     let mounted = true;
     void (async () => {
+      const cached = readCachedBranches();
+      if (cached?.branches.length) {
+        const uniqueBranches = cached.branches.filter(
+          (branch, index, items) => Boolean(branch?.id) && items.findIndex((item) => item.id === branch.id) === index
+        );
+        setBranches(uniqueBranches);
+        setSelectedBranchId(
+          uniqueBranches.some((branch) => branch.id === cached.selectedBranchId)
+            ? (cached.selectedBranchId ?? "")
+            : (uniqueBranches[0]?.id ?? "")
+        );
+        setLoading(false);
+        warmRoute(router, `/login/employee?flow=${uniqueBranches.length === 1 ? "single" : "multi"}${employeeQuery}`);
+        return;
+      }
+
       try {
         const { response, body } = await fetchJsonWithRetry<BranchesResponse>("/api/auth/branches");
         if (!response.ok || !body?.data) {
@@ -112,11 +135,13 @@ function LoginBranchesPageContent() {
         }
 
         if (uniqueBranches.length === 1) {
-          router.replace(`/login/employee?flow=single${employeeQuery}`);
+          setBranches(uniqueBranches);
+          setSelectedBranchId(uniqueBranches[0].id);
           return;
         }
 
         if (mounted) {
+          cacheBranches(uniqueBranches, body.data.selected_branch_id);
           setBranches(uniqueBranches);
           const selected = uniqueBranches.some((branch) => branch.id === body.data?.selected_branch_id)
             ? (body.data?.selected_branch_id ?? "")
@@ -175,6 +200,9 @@ function LoginBranchesPageContent() {
         return;
       }
       shouldNavigate = true;
+      const selectedBranch = branches.find((branch) => branch.id === selectedBranchId);
+      if (selectedBranch) cacheSelectedBranch(selectedBranch);
+      warmRoute(router, `/login/employee?flow=multi${employeeQuery}`);
     } catch (requestError) {
       const message = mapNetworkErrorMessage(requestError);
       setError(message);
@@ -193,6 +221,7 @@ function LoginBranchesPageContent() {
 
   async function handleLogout() {
     await fetch("/api/auth/session/context", { method: "DELETE" }).catch(() => null);
+    clearPreEntryClientCache();
     router.replace("/login/store");
   }
 

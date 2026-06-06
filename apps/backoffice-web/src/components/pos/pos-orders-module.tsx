@@ -5,6 +5,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/backoffice/li
 import { PaginationControls } from "@/components/backoffice/pagination-controls";
 import { usePaginatedApi } from "@/components/backoffice/use-paginated-api";
 import { ManagerOverrideModal } from "@/components/pos/manager-override-modal";
+import { fetchWithTimeout } from "@/lib/client-fetch";
 
 type OrderRow = {
   id: string;
@@ -63,14 +64,14 @@ export function PosOrdersModule() {
 
   async function handleCancel(order: OrderRow, approvalId: string) {
     try {
-      const response = await fetch(`/api/pos/orders/${order.id}/cancel`, {
+      const response = await fetchWithTimeout(`/api/pos/orders/${order.id}/cancel`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reason: "Cancelled from POS orders module",
           cancellation_approval_id: approvalId
         })
-      });
+      }, 15000);
       const body = await response.json();
       if (!response.ok || body.error) {
         throw new Error(body.error?.message ?? "Cancel failed.");

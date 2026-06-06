@@ -131,15 +131,15 @@ function resolveDateRange(period: ActivityAuditPeriod, value: string | undefined
 }
 
 function inferMenu(row: AuditLogRow) {
-  const module = trimText(row.module) || trimText(row.target_table) || "general";
-  if (module === "pos_sales") return "หน้าขาย";
-  if (module === "stock") return "จัดการสินค้า";
-  if (module === "shift") return "เปิด/ปิดกะ";
-  if (module === "staff") return "ผู้ใช้งาน";
-  if (module === "settings" || module === "pos_settings") return "ตั้งค่า";
-  if (module === "settings_activity_audit") return "ตรวจสอบพฤติกรรมการใช้งาน";
-  if (module === "it_admin") return "ระบบหลังบ้าน IT";
-  return module;
+  const moduleName = trimText(row.module) || trimText(row.target_table) || "general";
+  if (moduleName === "pos_sales") return "หน้าขาย";
+  if (moduleName === "stock") return "จัดการสินค้า";
+  if (moduleName === "shift") return "เปิด/ปิดกะ";
+  if (moduleName === "staff") return "ผู้ใช้งาน";
+  if (moduleName === "settings" || moduleName === "pos_settings") return "ตั้งค่า";
+  if (moduleName === "settings_activity_audit") return "ตรวจสอบพฤติกรรมการใช้งาน";
+  if (moduleName === "it_admin") return "ระบบหลังบ้าน IT";
+  return moduleName;
 }
 
 function isDeleteAction(action: string) {

@@ -93,11 +93,8 @@ type Props = {
   transferCanSubmit: boolean;
   transferError: string | null;
   transferReference: string;
-  transferAmountInteger: number;
   promptPayQrUrl: string | null;
-  promptPayPhone: string;
   promptPayPhoneDisplay: string;
-  promptPayLocked: boolean;
   promptPayQrMode: "promptpay_link" | "qr_image";
   paymentAccountLabel: string;
   expectedPayeeName: string;
@@ -137,7 +134,6 @@ type Props = {
   onClearCashInput: () => void;
   onBackspaceCashInput: () => void;
   onCloseTransfer: () => void;
-  onPromptPayPhoneChange: (value: string) => void;
   onTransferSlipFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onVerifyTransferSlip: () => Promise<void> | void;
   onRequestTransferOverride: () => void;
@@ -152,7 +148,6 @@ export function PosPaymentModals({
   lang,
   shiftStatus,
   sellerName,
-  quickMode,
   receiptLogoPath,
   receiptStoreName,
   receiptStoreAddress,
@@ -166,27 +161,8 @@ export function PosPaymentModals({
   receiptSaving,
   cashSubmitting,
   transferSubmitting,
-  transferSlipChecking,
-  transferSlipFile,
-  transferSlipPreviewUrl,
-  transferSlipParsed,
-  transferSlipChecks,
-  transferSlipIssues,
-  transferSlipVerified,
-  transferSlipReverifyRequired,
-  transferNeedsOverride,
-  transferCanSubmit,
   transferError,
-  transferReference,
-  transferAmountInteger,
   promptPayQrUrl,
-  promptPayPhone,
-  promptPayPhoneDisplay,
-  promptPayLocked,
-  promptPayQrMode,
-  paymentAccountLabel,
-  expectedPayeeName,
-  transferVerificationHistory,
   cashReceivedInput,
   cashReceivedDisplay,
   cashDiff,
@@ -194,24 +170,18 @@ export function PosPaymentModals({
   cashKeypadKeys,
   cashError,
   cashConfirmNeedsAttention,
-  transferSlipInputRef,
   formatMoney,
   formatQuantity,
   formatReceiptDateTime,
   renderExternalOrderCode,
-  renderDineInPaymentIdentity,
   getQuickModeLabel,
   getReceiptPaymentMethodLabel,
-  getTransferVerificationStatusTone,
-  getTransferVerificationStatusLabel,
-  normalizeTransferVerificationIssues,
   canDeductIngredientForItem,
   ingredientDeductingKey,
   ingredientDeductingMode,
   onCloseReview,
   onCancelFromReview,
   onCancelFromCash,
-  onCancelFromTransfer,
   onDeductIngredientForItem,
   onOpenCash,
   onOpenTransfer,
@@ -222,11 +192,6 @@ export function PosPaymentModals({
   onClearCashInput,
   onBackspaceCashInput,
   onCloseTransfer,
-  onPromptPayPhoneChange,
-  onTransferSlipFileChange,
-  onVerifyTransferSlip,
-  onRequestTransferOverride,
-  onTransferReferenceChange,
   onConfirmTransfer,
   onPrintReceipt,
   onCloseReceipt
@@ -435,173 +400,46 @@ export function PosPaymentModals({
 
       {transferReviewOrder ? (
         <div className="posui-payment-modal-backdrop" role="dialog" aria-modal="true" aria-label={text.transferTitle}>
-          <section className="posui-payment-modal posui-payment-modal--cash" onClick={(event) => event.stopPropagation()}>
+          <section className="posui-payment-modal posui-payment-modal--transfer-qr-only" onClick={(event) => event.stopPropagation()}>
             <header className="posui-payment-modal__header">
               <h3>{text.transferTitle}</h3>
-              <button type="button" className="posui-btn" onClick={onCloseTransfer} disabled={transferSubmitting || transferSlipChecking}>
-                {text.close}
+              <button
+                type="button"
+                className="posui-transfer-modal__close"
+                onClick={onCloseTransfer}
+                disabled={transferSubmitting}
+                aria-label={text.close}
+              >
+                <span aria-hidden="true">x</span>
               </button>
             </header>
-            <p className="posui-payment-modal__hint">{text.transferHint}</p>
-            {renderExternalOrderCode(transferReviewOrder)}
-            {renderDineInPaymentIdentity(transferReviewOrder.table_id)}
             <div className="posui-transfer-layout">
               <section className="posui-transfer-qr-panel">
-                <div className="posui-cash-summary-row posui-cash-summary-row--due">
+                <div className="posui-transfer-amount-card">
                   <span>{text.transferPromptPayAmountLabel}</span>
-                  <strong>฿{transferAmountInteger}</strong>
+                  <strong>{formatMoney(transferReviewOrder.total_amount)}</strong>
                 </div>
                 <h4 className="posui-transfer-section-title">{text.transferQrTitle}</h4>
-                <p className="posui-transfer-section-hint">{text.transferQrHint}</p>
-                {paymentAccountLabel ? <p className="posui-transfer-section-hint">{paymentAccountLabel}</p> : null}
                 {promptPayQrUrl ? (
                   <div className="posui-transfer-qr-box">
-                    <Image src={promptPayQrUrl} alt="PromptPay QR" className="posui-transfer-qr-image" width={320} height={320} unoptimized />
+                    <Image
+                      src={promptPayQrUrl}
+                      alt={`${text.transferQrTitle} ${formatMoney(transferReviewOrder.total_amount)}`}
+                      className="posui-transfer-qr-image"
+                      width={320}
+                      height={320}
+                      unoptimized
+                    />
                   </div>
                 ) : (
-                  <p className="posui-payment-modal__error">{lang === "th" ? "ยังไม่ได้ตั้งค่าเบอร์พร้อมเพย์" : "PromptPay phone is not configured."}</p>
+                  <p className="posui-payment-modal__error">{lang === "th" ? "กรุณาตั้งค่าพร้อมเพย์หรือภาพ QR ก่อน" : "Please configure PromptPay phone or QR image first."}</p>
                 )}
-                <label className={`posui-payment-modal__input-label ${promptPayQrMode === "qr_image" ? "hidden" : ""}`} htmlFor="transfer-promptpay-phone">
-                  {text.transferPromptPayPhoneLabel}
-                  <input
-                    id="transfer-promptpay-phone"
-                    className="posui-payment-modal__input"
-                    value={promptPayPhone}
-                    onChange={(event) => onPromptPayPhoneChange(event.target.value)}
-                    placeholder="0843374982"
-                    inputMode="numeric"
-                    disabled={promptPayLocked || transferSubmitting || transferSlipChecking}
-                    autoComplete="off"
-                  />
-                </label>
-                {promptPayQrMode === "promptpay_link" ? <p className="posui-transfer-phone-readonly">{promptPayPhoneDisplay || "-"}</p> : null}
                 <p className="posui-transfer-mobile-hint">{text.transferScanWithPhone}</p>
               </section>
-              <section className="posui-transfer-slip-panel">
-                <label className="posui-payment-modal__input-label" htmlFor="transfer-slip-upload">
-                  {text.transferUploadSlipLabel}
-                </label>
-                <input
-                  ref={transferSlipInputRef}
-                  id="transfer-slip-upload"
-                  className="posui-payment-modal__input"
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={onTransferSlipFileChange}
-                  disabled={transferSubmitting || transferSlipChecking}
-                />
-                {transferSlipPreviewUrl ? (
-                  <div className="posui-transfer-slip-preview-wrap">
-                    <p className="posui-transfer-section-title">{text.transferSlipPreview}</p>
-                    <Image src={transferSlipPreviewUrl} alt="Transfer slip preview" className="posui-transfer-slip-preview" width={640} height={960} unoptimized />
-                  </div>
-                ) : null}
-                <button
-                  type="button"
-                  className="posui-btn posui-btn--ghost"
-                  onClick={() => void onVerifyTransferSlip()}
-                  disabled={!transferSlipFile || transferSubmitting || transferSlipChecking}
-                >
-                  {transferSlipChecking ? text.transferSlipAnalyzing : text.transferSlipAnalyze}
-                </button>
-                {transferSlipChecks ? (
-                  <div className={`posui-transfer-verify-banner ${transferSlipVerified ? "is-pass" : "is-fail"}`}>
-                    {transferSlipVerified ? text.transferSlipVerifyPassed : text.transferSlipVerifyFailed}
-                  </div>
-                ) : null}
-                {transferSlipParsed ? (
-                  <div className="posui-transfer-slip-details">
-                    <p><span>{text.transferSlipInfoPayer}</span><strong>{transferSlipParsed.payer_name ?? "-"}</strong></p>
-                    <p><span>{text.transferSlipInfoPayee}</span><strong>{transferSlipParsed.payee_name ?? "-"}</strong></p>
-                    <p><span>{text.transferSlipInfoDateTime}</span><strong>{transferSlipParsed.transfer_datetime ?? "-"}</strong></p>
-                    <p><span>{text.transferSlipInfoTxn}</span><strong>{transferSlipParsed.transaction_id ?? "-"}</strong></p>
-                    <p><span>{text.transferSlipInfoAmount}</span><strong>{transferSlipParsed.amount ?? "-"}</strong></p>
-                    <p><span>{text.transferPayeeExpected}</span><strong>{expectedPayeeName || "-"}</strong></p>
-                    {transferSlipParsed.confidence !== null ? (
-                      <p><span>OCR confidence</span><strong>{Math.round((transferSlipParsed.confidence ?? 0) * 100)}%</strong></p>
-                    ) : null}
-                  </div>
-                ) : null}
-                {transferSlipChecks ? (
-                  <div className="posui-transfer-check-grid">
-                    <span className={transferSlipChecks.amount_match ? "is-pass" : "is-fail"}>{text.transferCheckAmount}: {transferSlipChecks.amount_match ? "OK" : "NO"}</span>
-                    <span className={transferSlipChecks.payee_match ? "is-pass" : "is-fail"}>{text.transferCheckPayee}: {transferSlipChecks.payee_match ? "OK" : "NO"}</span>
-                    <span className={transferSlipChecks.datetime_present ? "is-pass" : "is-fail"}>{text.transferCheckDateTime}: {transferSlipChecks.datetime_present ? "OK" : "NO"}</span>
-                    <span className={transferSlipChecks.confidence_pass ? "is-pass" : "is-fail"}>{text.transferCheckConfidence}: {transferSlipChecks.confidence_pass ? "OK" : "NO"}</span>
-                  </div>
-                ) : null}
-                {transferSlipIssues.length > 0 ? (
-                  <ul className="posui-transfer-issues">
-                    {transferSlipIssues.map((issue) => (
-                      <li key={issue}>{issue}</li>
-                    ))}
-                  </ul>
-                ) : null}
-                {quickMode === "dine_in" ? (
-                  <div className="posui-transfer-history">
-                    <p className="posui-transfer-history__title">{text.transferVerificationHistoryTitle}</p>
-                    {transferVerificationHistory.length === 0 ? (
-                      <p className="posui-transfer-history__empty">{text.transferVerificationHistoryEmpty}</p>
-                    ) : (
-                      <div className="posui-transfer-history__list">
-                        {transferVerificationHistory.map((verification) => {
-                          const tone = getTransferVerificationStatusTone(verification.verification_status);
-                          const issues = normalizeTransferVerificationIssues(verification.issues);
-                          const fallbackIssue = verification.error_message?.trim() ? [verification.error_message.trim()] : [];
-                          const allIssues = issues.length > 0 ? issues : fallbackIssue;
-                          const reference = verification.parsed_reference_no ?? verification.parsed_transaction_id ?? "-";
-                          return (
-                            <article key={verification.id} className="posui-transfer-history__item">
-                              <p className="posui-transfer-history__meta"><span>{text.transferVerificationHistoryAt}</span><strong>{formatReceiptDateTime(verification.verified_at, lang)}</strong></p>
-                              <p className="posui-transfer-history__meta"><span>{text.transferVerificationHistoryStatus}</span><strong className={`posui-transfer-history__status is-${tone}`}>{getTransferVerificationStatusLabel(verification.verification_status)}</strong></p>
-                              <p className="posui-transfer-history__meta"><span>{text.transferVerificationHistoryExpectedAmount}</span><strong>{formatMoney(Number(verification.expected_amount ?? 0))}</strong></p>
-                              <p className="posui-transfer-history__meta"><span>{text.transferVerificationHistoryParsedAmount}</span><strong>{verification.parsed_amount !== null ? formatMoney(Number(verification.parsed_amount)) : "-"}</strong></p>
-                              <p className="posui-transfer-history__meta"><span>{text.transferVerificationHistoryReference}</span><strong>{reference}</strong></p>
-                              {allIssues.length > 0 ? (
-                                <div className="posui-transfer-history__issues">
-                                  <span>{text.transferVerificationHistoryIssues}</span>
-                                  <ul>
-                                    {allIssues.map((issue) => (
-                                      <li key={`${verification.id}-${issue}`}>{issue}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              ) : null}
-                            </article>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                ) : null}
-                {transferNeedsOverride ? (
-                  <div className="posui-transfer-override-box">
-                    <p>{text.transferOverrideNeedReason}</p>
-                    <button type="button" className="posui-btn posui-btn--danger" onClick={onRequestTransferOverride} disabled={transferSubmitting || transferSlipChecking}>
-                      {text.transferOverrideRequest}
-                    </button>
-                  </div>
-                ) : null}
-                <label className="posui-payment-modal__input-label" htmlFor="transfer-reference">{text.transferReferenceLabel}</label>
-                <input
-                  id="transfer-reference"
-                  className="posui-payment-modal__input"
-                  value={transferReference}
-                  onChange={(event) => onTransferReferenceChange(event.target.value)}
-                  placeholder={text.transferReferencePlaceholder}
-                  disabled={transferSubmitting || transferSlipChecking}
-                  autoComplete="off"
-                />
-              </section>
             </div>
-            {transferSlipReverifyRequired ? <p className="posui-payment-modal__error">{text.transferSlipNeedVerify}</p> : null}
             {transferError ? <p className="posui-payment-modal__error">{transferError}</p> : null}
-            <div className="posui-payment-modal__actions posui-payment-modal__actions--cash">
-              <button type="button" className="posui-btn posui-btn--danger" onClick={() => onCancelFromTransfer(transferReviewOrder)} disabled={transferSubmitting || transferSlipChecking}>
-                {text.cancelBill}
-              </button>
-              <button type="button" className="posui-btn posui-btn--primary" onClick={() => void onConfirmTransfer()} disabled={transferSubmitting || transferSlipChecking || !transferCanSubmit}>
+            <div className="posui-payment-modal__actions posui-payment-modal__actions--transfer">
+              <button type="button" className="posui-btn posui-btn--primary" onClick={() => void onConfirmTransfer()} disabled={transferSubmitting || !promptPayQrUrl}>
                 {transferSubmitting ? text.submitting : text.transferConfirm}
               </button>
             </div>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PaymentMethod } from "@pos/shared-types";
 import { EmptyState, ErrorState, LoadingState } from "@/components/backoffice/list-state";
+import { fetchWithTimeout } from "@/lib/client-fetch";
 
 type OrderRow = {
   id: string;
@@ -47,7 +48,7 @@ export function PosPaymentsModule() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/pos/payments?status=queued", { cache: "no-store" });
+      const response = await fetchWithTimeout("/api/pos/payments?status=queued", { cache: "no-store" }, 10000);
       const body = await response.json();
       if (!response.ok || body.error) {
         throw new Error(body.error?.message ?? "Failed to load queued orders.");
@@ -86,7 +87,7 @@ export function PosPaymentsModule() {
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch("/api/pos/payments", {
+      const response = await fetchWithTimeout("/api/pos/payments", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -97,7 +98,7 @@ export function PosPaymentsModule() {
           payment_lines: lines,
           print_kitchen_ticket: printKitchen
         })
-      });
+      }, 20000);
       const body = await response.json();
       if (!response.ok || body.error) {
         throw new Error(body.error?.message ?? "Payment failed.");

@@ -88,7 +88,7 @@ export async function POST(request: Request) {
       );
     }
 
-    await appendAuditLog({
+    void appendAuditLog({
       tenantId: sessionScope.tenantId,
       branchId: sessionScope.branchId,
       actorUserId: sessionScope.userId,

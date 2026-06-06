@@ -381,6 +381,9 @@ async function executeCreatePosOrderDirectFallback(args: {
     app_total_amount: number;
     discount_amount?: number;
     gp_amount?: number;
+    tax_total?: number;
+    grand_total?: number;
+    tax_lines?: Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>;
     delivery_pricing_channel?: string | null;
     delivery_app_subtotal?: number | null;
     delivery_commission_rate_pct?: number | null;
@@ -440,7 +443,7 @@ async function executeCreatePosOrderDirectFallback(args: {
           channel: input.channel,
           external_order_code: input.external_order_code ?? null,
           total_amount: Number(
-            (Number(input.app_total_amount ?? 0) - Number(input.discount_amount ?? 0) - Number(input.gp_amount ?? 0)).toFixed(2)
+            (input.grand_total ?? (Number(input.app_total_amount ?? 0) - Number(input.discount_amount ?? 0) - Number(input.gp_amount ?? 0))).toFixed(2)
           ),
           table_id: existingOrder.table_id ?? input.table_id ?? null,
           created_at: existingOrder.created_at,
@@ -520,7 +523,9 @@ async function executeCreatePosOrderDirectFallback(args: {
   );
   const discountAmount = Number(Math.max(0, input.discount_amount ?? 0).toFixed(2));
   const gpAmount = Number(Math.max(0, input.gp_amount ?? 0).toFixed(2));
-  const totalAmount = Number((computedSubtotal - discountAmount - gpAmount).toFixed(2));
+  const baseTotalAmount = Number((computedSubtotal - discountAmount - gpAmount).toFixed(2));
+  const taxTotal = Number((input.tax_total ?? 0).toFixed(2));
+  const totalAmount = Number((input.grand_total ?? baseTotalAmount + taxTotal).toFixed(2));
 
   if (totalAmount < 0) {
     return { ok: false as const, code: "invalid_total", status: 422, message: "Order total cannot be negative." };
@@ -556,6 +561,11 @@ async function executeCreatePosOrderDirectFallback(args: {
     delivery_pricing_source_url: input.delivery_pricing_source_url ?? null,
     delivery_pricing_note: input.delivery_pricing_note ?? null,
     total_amount: totalAmount,
+    tax_total: taxTotal,
+    grand_total: totalAmount,
+    metadata: {
+      tax_lines: input.tax_lines ?? []
+    },
     status: "queued",
     created_by: auth.userId
   };
@@ -575,6 +585,11 @@ async function executeCreatePosOrderDirectFallback(args: {
     discount_amount: discountAmount,
     gp_amount: gpAmount,
     total_amount: totalAmount,
+    tax_total: taxTotal,
+    grand_total: totalAmount,
+    metadata: {
+      tax_lines: input.tax_lines ?? []
+    },
     status: "queued",
     created_by: auth.userId
   };
@@ -878,6 +893,9 @@ export async function executeCreatePosOrderTransaction(args: {
     app_total_amount: number;
     discount_amount?: number;
     gp_amount?: number;
+    tax_total?: number;
+    grand_total?: number;
+    tax_lines?: Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>;
     delivery_pricing_channel?: string | null;
     delivery_app_subtotal?: number | null;
     delivery_commission_rate_pct?: number | null;
@@ -1006,6 +1024,26 @@ export async function executeCreatePosOrderTransaction(args: {
     return { ok: false as const, code: "pos_order_tx_failed", status: 500, message: "Order transaction returned no data." };
   }
 
+  const taxTotal = Number((input.tax_total ?? 0).toFixed(2));
+  const resolvedTotalAmount = Number(
+    (input.grand_total ?? (Number(input.app_total_amount ?? 0) - Number(input.discount_amount ?? 0) - Number(input.gp_amount ?? 0) + taxTotal)).toFixed(2)
+  );
+  if (taxTotal !== 0 || input.tax_lines?.length) {
+    void getSupabaseServiceClient()
+      .from("orders")
+      .update({
+        tax_total: taxTotal,
+        grand_total: resolvedTotalAmount,
+        total_amount: resolvedTotalAmount,
+        metadata: {
+          tax_lines: input.tax_lines ?? []
+        }
+      })
+      .eq("tenant_id", auth.tenantId)
+      .eq("branch_id", auth.branchId)
+      .eq("id", row.order_id);
+  }
+
   void appendAuditLog({
     tenantId: auth.tenantId ?? undefined,
     branchId: auth.branchId ?? undefined,
@@ -1040,9 +1078,7 @@ export async function executeCreatePosOrderTransaction(args: {
       order_type: input.order_type,
       channel: input.channel,
       external_order_code: input.external_order_code ?? null,
-      total_amount: Number(
-        (Number(input.app_total_amount ?? 0) - Number(input.discount_amount ?? 0) - Number(input.gp_amount ?? 0)).toFixed(2)
-      ),
+      total_amount: resolvedTotalAmount,
       table_id: input.table_id ?? null,
       created_at: row.created_at,
       duplicate_request: row.duplicate_request

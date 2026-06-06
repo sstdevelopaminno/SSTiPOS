@@ -132,21 +132,21 @@ export async function POST(req: Request) {
     let transferVerification: TransferVerificationRow | null = null;
     let overrideApproval: ApprovalRow | null = null;
     let usedTransferOverride = false;
-    let usedAutoDeliveryTransfer = false;
+    let usedQrOnlyTransfer = false;
     if (paymentMethod === "bank_transfer") {
       const transferVerificationId = body.transfer_verification_id?.trim();
-      const allowAutoDeliveryTransfer = body.skip_transfer_verification === true && paymentOrder.order_type === "delivery_manual";
+      const allowQrOnlyTransfer = body.skip_transfer_verification === true;
       if (!transferVerificationId) {
-        if (!allowAutoDeliveryTransfer) {
+        if (!allowQrOnlyTransfer) {
           const response = fail(
             "transfer_verification_required",
-            "Bank transfer payment requires a verified transfer slip or override approval.",
+            "Bank transfer payment requires a verified transfer slip, override approval, or QR-only confirmation.",
             422
           );
           response.headers.set("x-pos-payments-ms", String(Date.now() - startedAt));
           return response;
         }
-        usedAutoDeliveryTransfer = true;
+        usedQrOnlyTransfer = true;
       } else {
         const { data: verificationRow, error: verificationError } = await supabase
           .from("transfer_payment_verifications")
@@ -335,13 +335,13 @@ export async function POST(req: Request) {
         }
       }
     }
-    if (paymentMethod === "bank_transfer" && usedAutoDeliveryTransfer) {
+    if (paymentMethod === "bank_transfer" && usedQrOnlyTransfer) {
       void appendAuditLog({
         tenantId: auth.tenantId!,
         branchId: auth.branchId!,
         actorUserId: auth.userId,
         actorRole: auth.branchRole ?? auth.platformRole,
-        action: "transfer_payment_delivery_auto_settled",
+        action: "transfer_payment_qr_only_settled",
         targetTable: "orders",
         targetId: body.order_id,
         metadata: {

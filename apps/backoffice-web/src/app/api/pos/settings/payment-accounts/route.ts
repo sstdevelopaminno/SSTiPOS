@@ -12,6 +12,7 @@ import { validateManagerPin } from "@/lib/pin-approval";
 function statusFromError(error: unknown) {
   const message = error instanceof Error ? error.message : "Settings request failed.";
   if (message.includes("Only owner")) return { code: "forbidden_role", message, status: 403 };
+  if (message.includes("already exists")) return { code: "payment_account_active_duplicate", message, status: 409 };
   if (message.includes("required")) return { code: "invalid_payload", message, status: 422 };
   if (message.includes("not found")) return { code: "payment_account_not_found", message, status: 404 };
   if (message.includes("migration") || message.includes("table is missing")) return { code: "payment_accounts_schema_missing", message, status: 500 };

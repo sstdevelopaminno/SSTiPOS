@@ -72,6 +72,28 @@ type PaymentAccountSnapshot = {
   is_active: boolean;
 };
 
+type TaxLineMode = "add_to_bill" | "deduct_from_bill";
+
+type TaxLineSettings = {
+  id: string;
+  label: string;
+  rate_pct: number;
+  mode: TaxLineMode;
+  is_active: boolean;
+};
+
+type TaxSettings = {
+  is_enabled: boolean;
+  calculation_base: "net_after_discount";
+  lines: TaxLineSettings[];
+};
+
+const DEFAULT_TAX_SETTINGS: TaxSettings = {
+  is_enabled: false,
+  calculation_base: "net_after_discount",
+  lines: []
+};
+
 type PosSalesDevicePolicy = {
   id: string | null;
   code: string | null;
@@ -91,6 +113,7 @@ type PosSalesSnapshot = {
   branch_name?: string;
   store_profile?: StoreProfile | null;
   payment_account?: PaymentAccountSnapshot | null;
+  tax_settings?: TaxSettings | null;
   device_policy?: PosSalesDevicePolicy | null;
   delivery_configs?: DeliveryChannelConfigRow[];
   delivery_prices_by_product?: Record<string, Record<string, number>>;
@@ -132,6 +155,9 @@ type PendingSubmit = {
     app_total_amount: number;
     discount_amount?: number;
     gp_amount?: number;
+    tax_total?: number;
+    grand_total?: number;
+    tax_lines?: Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>;
     items: Array<{ product_id: string; quantity: number; unit_price?: number }>;
   };
 };
@@ -491,11 +517,16 @@ const uiText = {
     sellerName: "ชื่อผู้ขาย",
     branchName: "สาขา",
     shiftName: "กะ",
+    cashierDeviceCode: "รหัสเครื่องแคช",
     date: "วันที่",
     time: "เวลา",
     goHome: "กลับบ้าน",
     dineIn: "นั่งโต๊ะ",
     delivery: "เดลิเวอรี่",
+    switchMode: "เลือกโหมด",
+    selectMode: "เลือกโหมดการขาย",
+    selectModeHint: "เลือกวิธีรับออเดอร์ที่ต้องการใช้งาน",
+    currentMode: "โหมดปัจจุบัน",
     previewMode: "หน้าขาย POS",
     shift: "กะ",
     noShift: "ยังไม่เปิดกะ",
@@ -715,11 +746,15 @@ const uiText = {
     paymentTransfer: "ชำระเงินโอน",
     paymentTransferComingSoon: "เงินโอนกำลังพัฒนาต่อ",
     transferTitle: "รับชำระเงินโอน",
-    transferHint: "สแกน QR ชำระเงิน แล้วอัปโหลดสลิปให้ระบบตรวจสอบ",
-    transferQrTitle: "สแกนจ่ายพร้อมเพย์",
-    transferQrHint: "ระบบล็อกยอดตามบิลอัตโนมัติ",
+    transferHint: "สแกน QR เพื่อชำระเงินตามยอดบิล",
+    transferQrTitle: "สแกน QR เพื่อชำระเงิน",
+    transferQrHint: "สแกน QR ด้วยแอปธนาคารของลูกค้า",
+    transferPromptPaySettingsHint: "QR นี้สร้างจากเบอร์พร้อมเพย์ในตั้งค่าชำระเงิน และเปลี่ยนเฉพาะยอดบิล",
+    transferQrImageSettingsHint: "QR นี้ดึงจากภาพ QR ในตั้งค่าชำระเงิน",
     transferPromptPayPhoneLabel: "เบอร์พร้อมเพย์",
-    transferPromptPayAmountLabel: "ยอดสำหรับ QR",
+    transferPaymentAccountLabel: "บัญชีรับเงิน",
+    transferQrImageModeLabel: "ใช้ภาพ QR จากตั้งค่า",
+    transferPromptPayAmountLabel: "ยอดชำระ",
     transferUploadSlipLabel: "อัปโหลดสลิป (รองรับถ่ายจากมือถือ)",
     transferSlipPreview: "ตัวอย่างสลิป",
     transferSlipAnalyze: "อ่านข้อมูลจากสลิป",
@@ -755,7 +790,7 @@ const uiText = {
     transferCheckPayee: "ตรวจชื่อผู้รับ",
     transferCheckDateTime: "ตรวจวันเวลาโอน",
     transferCheckConfidence: "ตรวจความเชื่อมั่น OCR",
-    transferScanWithPhone: "ถ้าบนมือถือ กดช่องอัปโหลดแล้วเลือกกล้องเพื่อถ่ายสลิปได้ทันที",
+    transferScanWithPhone: "สแกน QR ด้วยแอปธนาคารของลูกค้า",
     transferOverrideRequest: "อนุมัติแทนกรณีระบบอ่านสลิปไม่ผ่าน",
     transferOverrideGranted: "อนุมัติแทนเรียบร้อยแล้ว",
     transferOverrideNeedReason: "กรณีอ่านสลิปไม่ผ่าน ต้องให้ผู้จัดการ/เจ้าของ/IT Admin อนุมัติแทน",
@@ -793,11 +828,16 @@ const uiText = {
     sellerName: "Seller",
     branchName: "Branch",
     shiftName: "Shift",
+    cashierDeviceCode: "Cashier code",
     date: "Date",
     time: "Time",
     goHome: "Takeaway",
     dineIn: "Dine-in",
     delivery: "Delivery",
+    switchMode: "Select Mode",
+    selectMode: "Select Sales Mode",
+    selectModeHint: "Choose how this order will be served",
+    currentMode: "Current mode",
     previewMode: "POS Sales",
     shift: "Shift",
     noShift: "No open shift",
@@ -1017,11 +1057,15 @@ const uiText = {
     paymentTransfer: "Bank transfer",
     paymentTransferComingSoon: "Transfer is being improved",
     transferTitle: "Transfer payment",
-    transferHint: "Scan PromptPay QR, upload slip, and verify before confirming.",
-    transferQrTitle: "PromptPay QR",
-    transferQrHint: "Amount is locked to this bill",
+    transferHint: "Scan QR to pay this bill amount.",
+    transferQrTitle: "Scan QR to pay",
+    transferQrHint: "Scan QR with the customer's banking app",
+    transferPromptPaySettingsHint: "This QR is generated from Payment Settings and only the bill amount changes.",
+    transferQrImageSettingsHint: "This QR image comes from Payment Settings.",
     transferPromptPayPhoneLabel: "PromptPay phone",
-    transferPromptPayAmountLabel: "QR amount",
+    transferPaymentAccountLabel: "Receiving account",
+    transferQrImageModeLabel: "Settings QR image",
+    transferPromptPayAmountLabel: "Amount due",
     transferUploadSlipLabel: "Upload slip (camera supported on mobile)",
     transferSlipPreview: "Slip preview",
     transferSlipAnalyze: "Extract slip info",
@@ -1057,7 +1101,7 @@ const uiText = {
     transferCheckPayee: "Payee match",
     transferCheckDateTime: "Datetime found",
     transferCheckConfidence: "OCR confidence",
-    transferScanWithPhone: "On mobile, tap upload and choose camera to capture the slip instantly.",
+    transferScanWithPhone: "Scan QR with the customer's banking app.",
     transferOverrideRequest: "Request override when slip verification fails",
     transferOverrideGranted: "Override approved",
     transferOverrideNeedReason: "If slip verification fails, manager/owner/IT Admin override is required.",
@@ -1100,6 +1144,23 @@ function formatMoney(value: number): string {
 
 function formatMoneyPlain(value: number): string {
   return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+}
+
+function calculateClientTaxBreakdown(baseAmount: number, settings: TaxSettings) {
+  const safeBase = Number(Math.max(0, Number(baseAmount) || 0).toFixed(2));
+  if (!settings.is_enabled) return { tax_total: 0, grand_total: safeBase, lines: [] as Array<TaxLineSettings & { amount: number }> };
+  const lines = settings.lines
+    .filter((line) => line.is_active && Number(line.rate_pct) > 0)
+    .map((line) => {
+      const amount = Number((safeBase * (Number(line.rate_pct) / 100)).toFixed(2));
+      return { ...line, amount: line.mode === "deduct_from_bill" ? -amount : amount };
+    });
+  const taxTotal = Number(lines.reduce((sum, line) => sum + line.amount, 0).toFixed(2));
+  return {
+    tax_total: taxTotal,
+    grand_total: Number(Math.max(0, safeBase + taxTotal).toFixed(2)),
+    lines
+  };
 }
 
 function escapeHtml(value: string): string {
@@ -1188,16 +1249,17 @@ function buildDineInSessionBillNo(tableCode: string, openedAt: string, sessionId
   return `TB-${tableCode || "NA"}-${hh}${mm}-${sessionId.slice(0, 4).toUpperCase()}`;
 }
 
-function toPromptPayAmountInteger(value: number): number {
+function toPromptPayAmount(value: number): number {
   if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.round(value));
+  return Number(Math.max(0, value).toFixed(2));
 }
 
 function buildPromptPayQrUrl(phone: string, amount: number): string | null {
   const normalizedPhone = sanitizePromptPayPhone(phone);
   if (!normalizedPhone) return null;
-  const amountInt = toPromptPayAmountInteger(amount);
-  return `https://promptpay.io/${normalizedPhone}/${amountInt}`;
+  const amountValue = toPromptPayAmount(amount);
+  const amountText = Number.isInteger(amountValue) ? String(amountValue) : amountValue.toFixed(2);
+  return `https://promptpay.io/${normalizedPhone}/${amountText}`;
 }
 
 function readStoredJson<T>(key: string): T | null {
@@ -1353,6 +1415,47 @@ function DeviceBlockIcon({ status }: { status: PosSalesDevicePolicy["status"] })
   );
 }
 
+function QuickModeIcon({ mode }: { mode: QuickMode }) {
+  if (mode === "dine_in") {
+    return (
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M16 47h32" fill="none" stroke="#173b76" strokeLinecap="round" strokeWidth="4" />
+        <path d="M19 28h8v19h-8V28Zm18 0h8v19h-8V28Z" fill="#ffffff" stroke="#173b76" strokeLinejoin="round" strokeWidth="4" />
+        <path d="M27 39h10" fill="none" stroke="#173b76" strokeLinecap="round" strokeWidth="4" />
+        <circle cx="32" cy="20" r="7" fill="#f7c948" stroke="#173b76" strokeWidth="4" />
+        <path d="M14 29c5-7 11-11 18-11s13 4 18 11" fill="none" stroke="#2f6fe4" strokeLinecap="round" strokeWidth="4" />
+      </svg>
+    );
+  }
+
+  if (mode === "delivery") {
+    return (
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M13 31H5v-9h15v8" fill="#2f6fe4" stroke="#173b76" strokeLinejoin="round" strokeWidth="4" />
+        <path d="M8 27h7" fill="none" stroke="#ffffff" strokeLinecap="round" strokeWidth="3" />
+        <path d="M22 44h18l6-13h-9l-4-8h-9l-5 21Z" fill="#ffffff" stroke="#173b76" strokeLinejoin="round" strokeWidth="4" />
+        <path d="M40 44h11l5-8-10-5" fill="#ffffff" stroke="#173b76" strokeLinejoin="round" strokeWidth="4" />
+        <circle cx="27" cy="46" r="6" fill="#f7c948" stroke="#173b76" strokeWidth="4" />
+        <circle cx="49" cy="46" r="6" fill="#f7c948" stroke="#173b76" strokeWidth="4" />
+        <circle cx="47" cy="18" r="5" fill="#2f6fe4" stroke="#173b76" strokeWidth="4" />
+        <path d="M45 24l-5 9 8 3 3-8" fill="none" stroke="#173b76" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" />
+        <path d="M7 39h8M4 45h9" fill="none" stroke="#2f6fe4" strokeLinecap="round" strokeWidth="4" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      <path d="M10 30 32 12l22 18" fill="none" stroke="#173b76" strokeLinecap="round" strokeLinejoin="round" strokeWidth="5" />
+      <path d="M16 28v24h32V28" fill="#ffffff" stroke="#173b76" strokeLinejoin="round" strokeWidth="4" />
+      <path d="M20 27 32 17l12 10" fill="none" stroke="#2f6fe4" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" />
+      <path d="M26 34h12l3 16H23l3-16Z" fill="#2f6fe4" stroke="#173b76" strokeLinejoin="round" strokeWidth="4" />
+      <path d="M29 34v-5a3 3 0 0 1 6 0v5" fill="none" stroke="#ffffff" strokeLinecap="round" strokeWidth="3" />
+      <path d="M32 41v3" fill="none" stroke="#f7c948" strokeLinecap="round" strokeWidth="4" />
+    </svg>
+  );
+}
+
 function PosDeviceBlockedOverlay({
   devicePolicy,
   lang,
@@ -1492,6 +1595,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [discountAmountInput, setDiscountAmountInput] = useState("");
   const [discountEditMode, setDiscountEditMode] = useState<"percent" | "amount">("percent");
   const [quickMode, setQuickMode] = useState<QuickMode>("home");
+  const [modeSelectorOpen, setModeSelectorOpen] = useState(false);
   const [orderType, setOrderType] = useState<OrderType>("takeaway");
   const [submitting, setSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
@@ -1552,6 +1656,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [transferReference, setTransferReference] = useState("");
   const [promptPayPhone, setPromptPayPhone] = useState(DEFAULT_PROMPTPAY_PHONE);
   const [paymentAccount, setPaymentAccount] = useState<PaymentAccountSnapshot | null>(null);
+  const [taxSettings, setTaxSettings] = useState<TaxSettings>(DEFAULT_TAX_SETTINGS);
   const [devicePolicy, setDevicePolicy] = useState<PosSalesDevicePolicy | null>(null);
   const [transferSlipFile, setTransferSlipFile] = useState<File | null>(null);
   const [transferSlipPreviewUrl, setTransferSlipPreviewUrl] = useState<string | null>(null);
@@ -2347,6 +2452,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       setBranchName(String(savedSales.branch_name ?? "Unknown Branch"));
       setStoreProfile(savedSales.store_profile ?? null);
       setPaymentAccount(savedSales.payment_account ?? null);
+      setTaxSettings(savedSales.tax_settings ?? DEFAULT_TAX_SETTINGS);
       setDevicePolicy(savedSales.device_policy ?? null);
       if (savedSales.payment_account?.promptpay_phone) {
         setPromptPayPhone(sanitizePromptPayPhone(savedSales.payment_account.promptpay_phone));
@@ -2469,6 +2575,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     }
     customerDisplayPublishTimerRef.current = window.setTimeout(() => {
       const cartSubtotal = Number(cart.reduce((sum, item) => sum + item.quantity * item.price, 0).toFixed(2));
+      const displayTaxBreakdown = calculateClientTaxBreakdown(cartSubtotal, taxSettings);
       const payload: Record<string, unknown> = {
         order_no: activeOrder?.order_no ?? null,
         order_type: orderType,
@@ -2477,7 +2584,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         operator_name: sellerName,
         subtotal: cartSubtotal,
         discount_amount: 0,
-        total_amount: cartSubtotal,
+        tax_total: displayTaxBreakdown.tax_total,
+        total_amount: displayTaxBreakdown.grand_total,
         item_count: cart.reduce((sum, item) => sum + item.quantity, 0),
         items: cart.map((item) => ({
           product_id: item.product_id,
@@ -2532,7 +2640,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     isHydrated,
     orderType,
     selectedTable?.table_code,
-    sellerName
+    sellerName,
+    taxSettings
   ]);
 
   useEffect(() => {
@@ -2762,8 +2871,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         const salesResponse = await fetchJsonWithTimeout<{ data: PosSalesSnapshot } & ApiErrorBody>(
           "/api/pos/sales",
           { cache: "no-store", signal: controller.signal },
-          55000,
-          2
+          process.env.NODE_ENV === "development" ? 30000 : 18000,
+          0
         );
         if (!salesResponse.response.ok || salesResponse.body.error) {
           throw new Error(salesResponse.body.error?.message ?? "Failed to load POS data.");
@@ -2778,6 +2887,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         const nextBranchName = String(salesResponse.body.data?.branch_name ?? (lang === "th" ? "ไม่ทราบสาขา" : "Unknown Branch"));
         const nextStoreProfile = salesResponse.body.data?.store_profile ?? null;
         const nextPaymentAccount = salesResponse.body.data?.payment_account ?? null;
+        const nextTaxSettings = salesResponse.body.data?.tax_settings ?? DEFAULT_TAX_SETTINGS;
         const nextDevicePolicy = salesResponse.body.data?.device_policy ?? null;
         const nextDeliveryConfigs = Array.isArray(salesResponse.body.data?.delivery_configs)
           ? salesResponse.body.data.delivery_configs
@@ -2820,6 +2930,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         setBranchName(nextBranchName);
         setStoreProfile(nextStoreProfile);
         setPaymentAccount(nextPaymentAccount);
+        setTaxSettings(nextTaxSettings);
         setDevicePolicy(nextDevicePolicy);
         if (nextPaymentAccount?.promptpay_phone) {
           setPromptPayPhone(sanitizePromptPayPhone(nextPaymentAccount.promptpay_phone));
@@ -2842,6 +2953,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
               branch_name: nextBranchName,
               store_profile: nextStoreProfile,
               payment_account: nextPaymentAccount,
+              tax_settings: nextTaxSettings,
               device_policy: nextDevicePolicy,
               delivery_configs: nextDeliveryConfigs,
               delivery_prices_by_product: nextDeliveryPricesByProduct,
@@ -3011,7 +3123,9 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       commissionVatRatePct: Number(selectedDeliveryConfig.commission_vat_rate_pct ?? 7)
     });
   }, [orderType, selectedDeliveryConfig, subtotal]);
-  const total = Number(Math.max(0, subtotal - discountAmount).toFixed(2));
+  const taxBaseTotal = Number(Math.max(0, subtotal - discountAmount).toFixed(2));
+  const taxBreakdown = useMemo(() => calculateClientTaxBreakdown(taxBaseTotal, taxSettings), [taxBaseTotal, taxSettings]);
+  const total = taxBreakdown.grand_total;
   const summaryDiscount = discountAmount;
   const isBusy = submitting || cancelBillSubmitting || stockAdjusting || cashSubmitting || transferSubmitting || receiptSaving;
   const hasBlockingPaymentOverlay =
@@ -3053,16 +3167,16 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const cashHasReceivedAmount = cashReceivedInput.trim().length > 0 && cashReceived > 0;
   const cashHasEnoughAmount = cashHasReceivedAmount && cashReceived + 0.009 >= cashTargetTotal;
   const cashConfirmNeedsAttention = Boolean(cashReviewOrder) && !cashHasEnoughAmount && !cashSubmitting;
-  const transferAmountInteger = toPromptPayAmountInteger(transferReviewOrder?.total_amount ?? 0);
+  const transferPromptPayAmount = toPromptPayAmount(transferReviewOrder?.total_amount ?? 0);
   const activePromptPayPhone = paymentAccount?.promptpay_phone ? sanitizePromptPayPhone(paymentAccount.promptpay_phone) : sanitizePromptPayPhone(promptPayPhone);
   const activePaymentQrMode = paymentAccount?.qr_mode ?? "promptpay_link";
   const promptPayQrUrl =
     activePaymentQrMode === "qr_image" && paymentAccount?.qr_image_url
       ? paymentAccount.qr_image_url
-      : buildPromptPayQrUrl(activePromptPayPhone, transferAmountInteger);
+      : buildPromptPayQrUrl(activePromptPayPhone, transferPromptPayAmount);
   const promptPayPhoneDisplay = formatPromptPayPhoneDisplay(activePromptPayPhone);
   const expectedPayeeName = (paymentAccount?.account_name || DEFAULT_PROMPTPAY_PAYEE).trim();
-  const currentTransferSlipSignature = `${activePaymentQrMode}:${activePaymentQrMode === "qr_image" ? paymentAccount?.qr_image_url ?? "" : activePromptPayPhone}:${transferAmountInteger}`;
+  const currentTransferSlipSignature = `${activePaymentQrMode}:${activePaymentQrMode === "qr_image" ? paymentAccount?.qr_image_url ?? "" : activePromptPayPhone}:${transferPromptPayAmount}`;
   const transferSlipReverifyRequired =
     transferSlipVerified && transferSlipVerifiedAgainst !== null && transferSlipVerifiedAgainst !== currentTransferSlipSignature;
   const transferSlipReadyToSubmit =
@@ -4006,6 +4120,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   }
 
   function applyQuickMode(mode: QuickMode) {
+    setModeSelectorOpen(false);
     if (mode === "home") {
       invalidateTableUiContext();
       if (selectedTable?.id && orderType === "dine_in") {
@@ -4062,6 +4177,14 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     setTableTransferVerifications([]);
     setBillPaymentMethod(null);
     pushSubmitMessage(text.delivery);
+  }
+
+  function selectQuickMode(mode: QuickMode) {
+    if (mode === quickMode) {
+      setModeSelectorOpen(false);
+      return;
+    }
+    applyQuickMode(mode);
   }
 
   function requestCancelBill() {
@@ -4352,6 +4475,9 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       summaryDiscount,
       cart
     });
+    payload.payload.tax_total = taxBreakdown.tax_total;
+    payload.payload.grand_total = total;
+    payload.payload.tax_lines = taxBreakdown.lines;
 
     if (orderType === "takeaway") {
       setTakeawayCreatingPreview({
@@ -4835,7 +4961,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       const formData = new FormData();
       formData.append("slip_image", transferSlipFile);
       formData.append("order_id", transferReviewOrder.order_id);
-      formData.append("expected_amount", String(transferAmountInteger));
+      formData.append("expected_amount", String(transferPromptPayAmount));
       formData.append("expected_payee_name", expectedPayeeName);
       formData.append("expected_promptpay_phone", activePromptPayPhone);
 
@@ -5163,19 +5289,6 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       setTransferError(lang === "th" ? "กรุณาตั้งค่าพร้อมเพย์หรือภาพ QR ก่อน" : "Please configure PromptPay phone or QR image first.");
       return;
     }
-    if (!transferSlipFile) {
-      setTransferError(text.transferSlipNeedUpload);
-      return;
-    }
-    if (!transferCanSubmit) {
-      setTransferError(text.transferSlipNeedVerify);
-      return;
-    }
-    if (!transferSlipVerificationId) {
-      setTransferError(text.transferSlipNeedVerify);
-      return;
-    }
-
     const pendingPaymentEntry: PendingPaymentQueueItem = {
       idempotencyKey: `pos-transfer-${crypto.randomUUID()}`,
       payload: {
@@ -5185,9 +5298,10 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         total_amount: transferReviewOrder.total_amount,
         discount_amount: transferReviewOrder.discount_amount ?? 0,
         method: "bank_transfer",
-        reference_no: transferReference.trim() ? transferReference.trim() : null,
-        transfer_verification_id: transferSlipVerificationId,
-        transfer_override_approval_id: transferSlipReadyToSubmit ? null : transferOverrideApprovalId
+        reference_no: null,
+        transfer_verification_id: null,
+        transfer_override_approval_id: null,
+        skip_transfer_verification: true
       },
       queued_at: new Date().toISOString(),
       retry_count: 0,
@@ -5947,6 +6061,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         <PosPaymentPanel
           subtotal={summaryDiscount}
           total={total}
+          taxAmount={taxBreakdown.tax_total}
+          taxLines={taxBreakdown.lines}
           onCheckout={handleCheckout}
           onRetry={showEmergencyRetry ? handleEmergencyRetry : undefined}
           onCancelBill={requestCancelBill}
@@ -6039,58 +6155,49 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
             <div className="posui-mode-header-row">
               <div className="posui-filter-group">
                 <div className="posui-top-actions-card">
-                  <div className="posui-top-actions-grid">
+                  <button
+                    type="button"
+                    className="posui-mode-switch-button"
+                    disabled={hasBlockingPaymentOverlay}
+                    onClick={() => setModeSelectorOpen(true)}
+                    aria-haspopup="dialog"
+                    aria-label={`${text.switchMode}: ${getQuickModeLabel()}`}
+                  >
+                    <span className="posui-mode-switch-button__icon" aria-hidden="true">
+                      <QuickModeIcon mode={quickMode} />
+                    </span>
+                    <span className="posui-mode-switch-button__action">{text.switchMode}</span>
+                  </button>
+                  <div className="posui-mode-stack-meta">
                     <button
                       type="button"
-                      className={`posui-chip posui-chip--quick posui-chip--quick--icon ${quickMode === "home" ? "is-active" : ""}`}
-                      style={{ borderRadius: 0 }}
-                      disabled={hasBlockingPaymentOverlay}
-                      onClick={() => applyQuickMode("home")}
+                      className="posui-held-bill-btn"
+                      onClick={openHeldBillsPanel}
+                      title={isDeliveryPendingPanelMode ? text.deliveryPendingBillsOpen : text.heldBillsOpen}
                     >
-                      <span className="posui-chip__icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" role="presentation" focusable="false">
-                          <path
-                            d="M12 3 3 10.2v1.8h2.2V21h6.2v-5.2h1.2V21h6.2v-9h2.2v-1.8L12 3Zm5 16h-2.8v-5.2H9.8V19H7v-8h10v8Z"
-                            fill="currentColor"
-                          />
-                        </svg>
-                      </span>
-                      <span className="posui-chip__label">{text.goHome}</span>
+                      {isDeliveryPendingPanelMode
+                        ? `${text.deliveryPendingBillsTitle}: ${heldBillPool.length}`
+                        : `${text.heldBills}: ${heldBillPool.length}`}
                     </button>
-                    <button
-                      type="button"
-                      className={`posui-chip posui-chip--quick posui-chip--quick--icon ${quickMode === "dine_in" ? "is-active" : ""}`}
-                      style={{ borderRadius: 0 }}
-                      disabled={hasBlockingPaymentOverlay}
-                      onClick={() => applyQuickMode("dine_in")}
-                    >
-                      <span className="posui-chip__icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" role="presentation" focusable="false">
-                          <path
-                            d="M5 5.2h14v2H5v-2Zm1.2 3.6h3.2v6.4h5.2V8.8h3.2V17H6.2V8.8Zm-1 9.2h13.6v1.8H5.2V18Z"
-                            fill="currentColor"
-                          />
-                        </svg>
-                      </span>
-                      <span className="posui-chip__label">{text.dineIn}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`posui-chip posui-chip--quick posui-chip--quick--icon ${quickMode === "delivery" ? "is-active" : ""}`}
-                      style={{ borderRadius: 0 }}
-                      disabled={hasBlockingPaymentOverlay}
-                      onClick={() => applyQuickMode("delivery")}
-                    >
-                      <span className="posui-chip__icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" role="presentation" focusable="false">
-                          <path
-                            d="M5.2 13a4.6 4.6 0 1 0 4.4 5.8h4a4.6 4.6 0 1 0 4.4-5.8H17l-1.3-3.2h-3.8l-1.1-2.4H8.2l1.2 2.4H8.1l-2.9 4.5Zm1.2 1.8 1.5-2.4h2.9l1.1 2.4H6.4Zm1.6 5.8a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6Zm10 0a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6Z"
-                            fill="currentColor"
-                          />
-                        </svg>
-                      </span>
-                      <span className="posui-chip__label">{text.delivery}</span>
-                    </button>
+                    <span className="posui-sales-status-item">
+                      {text.tableLabel}: {selectedTable ? selectedTable.table_code : "-"}
+                    </span>
+                    {quickMode === "dine_in" && selectedTable?.active_session_id ? (
+                      <button
+                        type="button"
+                        className="posui-held-bill-btn"
+                        onClick={() => {
+                          setTableMoveTargetId("");
+                          setTableMoveReason("");
+                          setTableMoveError(null);
+                          setTableMoveModalOpen(true);
+                        }}
+                        title={text.tableMove}
+                        disabled={isBusy || tableMoveBusy}
+                      >
+                        {text.tableMove}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -6113,92 +6220,13 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
                     </dl>
                     <dl className="posui-sales-meta-list posui-sales-meta-list--right">
                       <PosRealtimeClock lang={lang} dateLabel={text.date} timeLabel={text.time} />
+                      <div className="posui-sales-meta-row">
+                        <dt>{text.cashierDeviceCode}</dt>
+                        <dd>{devicePolicy?.code || devicePolicy?.name || "-"}</dd>
+                      </div>
                     </dl>
                   </div>
                 </section>
-              </div>
-              <div className="posui-sales-status">
-                <div className="posui-sales-status-row posui-sales-status-row--top">
-                  <span className="posui-sales-status-item">
-                    {text.tableLabel}: {selectedTable ? selectedTable.table_code : "-"}
-                  </span>
-                  {quickMode === "dine_in" && selectedTable?.active_session_id ? (
-                    <button
-                      type="button"
-                      className="posui-held-bill-btn"
-                      onClick={() => {
-                        setTableMoveTargetId("");
-                        setTableMoveReason("");
-                        setTableMoveError(null);
-                        setTableMoveModalOpen(true);
-                      }}
-                      title={text.tableMove}
-                      disabled={isBusy || tableMoveBusy}
-                    >
-                      {text.tableMove}
-                    </button>
-                  ) : null}
-                  <span className="posui-sales-status-spacer" aria-hidden="true" />
-                </div>
-                <div className="posui-sales-status-row posui-sales-status-row--bottom">
-                  <button
-                    type="button"
-                    className="posui-held-bill-btn"
-                    onClick={openHeldBillsPanel}
-                    title={isDeliveryPendingPanelMode ? text.deliveryPendingBillsOpen : text.heldBillsOpen}
-                  >
-                    {isDeliveryPendingPanelMode
-                      ? `${text.deliveryPendingBillsTitle}: ${heldBillPool.length}`
-                      : `${text.heldBills}: ${heldBillPool.length}`}
-                  </button>
-                  <button
-                    type="button"
-                    className="posui-held-bill-btn"
-                    onClick={() => {
-                      void (async () => {
-                        let targetUrl = "/preview/pos/customer-display?channel=main";
-                        try {
-                          const response = await fetch("/api/pos/customer-display/pairings", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ channel: "main" })
-                          });
-                          const payload = (await response.json()) as {
-                            data?: { pairing_code?: string; channel?: string; expires_at?: string };
-                            error?: { message?: string };
-                          };
-                          if (response.ok && payload.data?.pairing_code) {
-                            const channel = String(payload.data.channel ?? "main");
-                            const pairingCode = String(payload.data.pairing_code);
-                            targetUrl = `/preview/pos/customer-display?channel=${encodeURIComponent(channel)}&pairing_code=${encodeURIComponent(pairingCode)}`;
-                            pushSubmitMessage(
-                              lang === "th"
-                                ? `รหัสจับคู่จอลูกค้า: ${pairingCode}`
-                                : `Customer display pairing code: ${pairingCode}`
-                            );
-                          } else if (payload.error?.message) {
-                            pushSubmitMessage(payload.error.message);
-                          }
-                        } catch (error) {
-                          pushSubmitMessage(error instanceof Error ? error.message : "Failed to create pairing code.");
-                        }
-
-                        const nextWindow = window.open(
-                          targetUrl,
-                          "pos-customer-display",
-                          "popup=yes,width=1100,height=760,resizable=yes,scrollbars=yes"
-                        );
-                        if (!nextWindow) {
-                          pushSubmitMessage(lang === "th" ? "เบราว์เซอร์บล็อกป๊อปอัปจอลูกค้า" : "Customer display popup was blocked.");
-                        }
-                      })();
-                    }}
-                    title={lang === "th" ? "เปิดจอลูกค้า" : "Open customer display"}
-                  >
-                    {lang === "th" ? "จอลูกค้า" : "Customer Display"}
-                  </button>
-                  <span className="posui-sales-status-spacer" aria-hidden="true" />
-                </div>
               </div>
             </div>
           </div>
@@ -6245,6 +6273,81 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           </PosCartDrawer>
         }
       />
+
+      {modeSelectorOpen ? (
+        <div
+          className="posui-mode-selector-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pos-mode-selector-title"
+          onClick={() => setModeSelectorOpen(false)}
+        >
+          <section className="posui-mode-selector" onClick={(event) => event.stopPropagation()}>
+            <header className="posui-mode-selector__header">
+              <div>
+                <p>{text.switchMode}</p>
+                <h2 id="pos-mode-selector-title">{text.selectMode}</h2>
+                <span>{text.selectModeHint}</span>
+              </div>
+              <button
+                type="button"
+                className="posui-mode-selector__close"
+                onClick={() => setModeSelectorOpen(false)}
+                aria-label={text.close}
+                title={text.close}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18 6 6 18M6 6l12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </button>
+            </header>
+            <div className="posui-mode-selector__grid">
+              <button
+                type="button"
+                className={`posui-mode-option ${quickMode === "home" ? "is-active" : ""}`}
+                onClick={() => selectQuickMode("home")}
+              >
+                <span className="posui-mode-option__icon" aria-hidden="true">
+                  <QuickModeIcon mode="home" />
+                </span>
+                <span className="posui-mode-option__copy">
+                  <strong>{text.goHome}</strong>
+                  <small>{lang === "th" ? "รับกลับ ไม่ใช้โต๊ะ" : "Takeaway order"}</small>
+                </span>
+                <span className="posui-mode-option__check" aria-hidden="true">✓</span>
+              </button>
+              <button
+                type="button"
+                className={`posui-mode-option ${quickMode === "dine_in" ? "is-active" : ""}`}
+                onClick={() => selectQuickMode("dine_in")}
+              >
+                <span className="posui-mode-option__icon" aria-hidden="true">
+                  <QuickModeIcon mode="dine_in" />
+                </span>
+                <span className="posui-mode-option__copy">
+                  <strong>{text.dineIn}</strong>
+                  <small>{lang === "th" ? "เลือกโต๊ะและเปิดบิล" : "Select table and open bill"}</small>
+                </span>
+                <span className="posui-mode-option__check" aria-hidden="true">✓</span>
+              </button>
+              <button
+                type="button"
+                className={`posui-mode-option ${quickMode === "delivery" ? "is-active" : ""}`}
+                onClick={() => selectQuickMode("delivery")}
+              >
+                <span className="posui-mode-option__icon" aria-hidden="true">
+                  <QuickModeIcon mode="delivery" />
+                </span>
+                <span className="posui-mode-option__copy">
+                  <strong>{text.delivery}</strong>
+                  <small>{lang === "th" ? "รับออเดอร์จากแอป" : "Delivery app order"}</small>
+                </span>
+                <span className="posui-mode-option__check" aria-hidden="true">✓</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {devicePolicy && deviceSalesBlocked ? (
         <PosDeviceBlockedOverlay
@@ -6564,11 +6667,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           transferCanSubmit={transferCanSubmit}
           transferError={transferError}
           transferReference={transferReference}
-          transferAmountInteger={transferAmountInteger}
           promptPayQrUrl={promptPayQrUrl}
-          promptPayPhone={activePromptPayPhone}
           promptPayPhoneDisplay={promptPayPhoneDisplay}
-          promptPayLocked={Boolean(paymentAccount?.promptpay_phone)}
           promptPayQrMode={activePaymentQrMode}
           paymentAccountLabel={
             paymentAccount
@@ -6612,7 +6712,6 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           onClearCashInput={clearCashInput}
           onBackspaceCashInput={backspaceCashInput}
           onCloseTransfer={closeTransferPaymentPopup}
-          onPromptPayPhoneChange={(value) => setPromptPayPhone(sanitizePromptPayPhone(value))}
           onTransferSlipFileChange={handleTransferSlipFileChange}
           onVerifyTransferSlip={verifyTransferSlip}
           onRequestTransferOverride={() => setTransferOverrideModalOpen(true)}

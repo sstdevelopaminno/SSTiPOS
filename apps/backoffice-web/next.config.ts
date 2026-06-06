@@ -11,6 +11,8 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
+  allowedDevOrigins: ["127.0.0.1"],
   experimental: {
     lockDistDir: false,
     webpackBuildWorker: false

@@ -24,6 +24,8 @@ type ApiBody = {
   error?: { message?: string } | null;
 } | null;
 
+const POS_SESSION_EVENT_NAME = "pos-session-current-updated";
+
 function formatDateTime(value: string, lang: Lang) {
   const d = new Date(value);
   if (Number.isNaN(d.valueOf())) return value;
@@ -116,6 +118,24 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
 
   const cycle = useMemo(() => (shift ? resolveShiftCycle(shift.opened_at) : null), [shift]);
 
+  const applySessionState = useCallback((sessionData: SessionResponse["data"]) => {
+    const activeShift = sessionData?.has_active_shift && sessionData.shift?.status === "open" ? sessionData.shift : null;
+    if (!activeShift) {
+      setShift(null);
+      setPhase("on_time");
+      setLoading(false);
+      return;
+    }
+    setShift({
+      id: activeShift.id,
+      opened_at: activeShift.opened_at,
+      status: activeShift.status
+    });
+    const nextCycle = resolveShiftCycle(activeShift.opened_at);
+    setPhase(nextCycle ? resolveShiftGuardPhase(nextCycle) : "on_time");
+    setLoading(false);
+  }, []);
+
   const toErrorMessage = useCallback(
     (unknownError: unknown) => {
       if (unknownError instanceof Error && unknownError.message === "request_timeout") return copy.requestTimeout;
@@ -133,38 +153,31 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
         setPhase("on_time");
         return;
       }
-      const activeShift = sessionBody.data.has_active_shift && sessionBody.data.shift?.status === "open" ? sessionBody.data.shift : null;
-      if (!activeShift) {
-        setShift(null);
-        setPhase("on_time");
-        return;
-      }
-      setShift({
-        id: activeShift.id,
-        opened_at: activeShift.opened_at,
-        status: activeShift.status
-      });
-      const nextCycle = resolveShiftCycle(activeShift.opened_at);
-      setPhase(nextCycle ? resolveShiftGuardPhase(nextCycle) : "on_time");
+      applySessionState(sessionBody.data);
     } catch {
       if (phase !== "on_time") setError(copy.requestTimeout);
     } finally {
       setLoading(false);
     }
-  }, [copy.requestTimeout, phase]);
+  }, [applySessionState, copy.requestTimeout, phase]);
 
   useEffect(() => {
+    const onSessionUpdated = (event: Event) => {
+      applySessionState((event as CustomEvent<SessionResponse["data"]>).detail);
+    };
+    window.addEventListener(POS_SESSION_EVENT_NAME, onSessionUpdated);
     const initialTimer = window.setTimeout(() => {
       if (!busy) void loadState();
-    }, 2500);
+    }, 15000);
     const timer = window.setInterval(() => {
       if (!busy) void loadState();
     }, 60_000);
     return () => {
       window.clearTimeout(initialTimer);
       window.clearInterval(timer);
+      window.removeEventListener(POS_SESSION_EVENT_NAME, onSessionUpdated);
     };
-  }, [busy, loadState]);
+  }, [applySessionState, busy, loadState]);
 
   const logoutToBranchSelection = useCallback(async () => {
     const { response, body } = await fetchJsonWithTimeout(

@@ -330,8 +330,9 @@ async function ensureShiftAndSalesAccess(context, page, scenario) {
 
   let currentShift = shiftBody?.data?.current_shift ?? null;
   const openShifts = Array.isArray(shiftBody?.data?.available_open_shifts) ? shiftBody.data.available_open_shifts : [];
+  const sessionHasActiveShift = Boolean(sessionBody?.data?.has_active_shift && sessionBody?.data?.shift?.status === "open");
 
-  if (!currentShift) {
+  if (!sessionHasActiveShift) {
     if (openShifts.length > 0) {
       const joinTarget =
         (preferredDevice ? openShifts.find((item) => String(item?.device_code ?? "").toUpperCase() === preferredDevice) : null) ?? openShifts[0];

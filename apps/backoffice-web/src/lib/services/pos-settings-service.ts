@@ -37,6 +37,22 @@ export type PaymentAccountSettings = {
   is_active: boolean;
 };
 
+export type TaxLineMode = "add_to_bill" | "deduct_from_bill";
+
+export type TaxLineSettings = {
+  id: string;
+  label: string;
+  rate_pct: number;
+  mode: TaxLineMode;
+  is_active: boolean;
+};
+
+export type TaxSettings = {
+  is_enabled: boolean;
+  calculation_base: "net_after_discount";
+  lines: TaxLineSettings[];
+};
+
 export type PosDeviceSettings = {
   id: string;
   branch_id: string;
@@ -54,6 +70,7 @@ export type PosSettingsSnapshot = {
   store: StoreSettings | null;
   branches: BranchSettings[];
   payment_accounts: PaymentAccountSettings[];
+  tax_settings: TaxSettings;
   metadata: {
     tenant_id: string | null;
     branch_id: string | null;
@@ -113,6 +130,12 @@ type PosDeviceRow = {
   last_seen_at: string | null;
 };
 
+type TaxSettingsRow = {
+  is_enabled: boolean | null;
+  calculation_base: string | null;
+  settings: Record<string, unknown> | null;
+};
+
 export type StoreSettingsInput = {
   display_name?: string;
   logo_url?: string;
@@ -139,6 +162,17 @@ export type PaymentAccountInput = {
   qr_mode?: "promptpay_link" | "qr_image";
   applies_to_all_branches?: boolean;
   is_active?: boolean;
+};
+
+export type TaxSettingsInput = Partial<TaxSettings>;
+
+export const DEFAULT_TAX_SETTINGS: TaxSettings = {
+  is_enabled: false,
+  calculation_base: "net_after_discount",
+  lines: [
+    { id: "vat-7", label: "VAT 7%", rate_pct: 7, mode: "add_to_bill", is_active: true },
+    { id: "withholding-3", label: "หัก ณ ที่จ่าย 3%", rate_pct: 3, mode: "deduct_from_bill", is_active: false }
+  ]
 };
 
 export type PosDeviceInput = {
@@ -240,6 +274,23 @@ export function buildPromptPayPayload(phone: unknown) {
   return digits ? `https://promptpay.io/${digits}` : "";
 }
 
+export async function loadTaxSettings(auth: AuthContext): Promise<TaxSettings> {
+  if (!auth.tenantId) return DEFAULT_TAX_SETTINGS;
+  const supabase = getSupabaseServiceClient();
+  const branchId = auth.branchId ?? null;
+  let query = supabase
+    .from("tenant_tax_settings")
+    .select("is_enabled,calculation_base,settings")
+    .eq("tenant_id", auth.tenantId);
+  query = branchId ? query.eq("branch_id", branchId) : query.is("branch_id", null);
+  const { data, error } = await query.maybeSingle<TaxSettingsRow>();
+  if (error) {
+    if (isMissingRelationSchemaError(error, "tenant_tax_settings")) return DEFAULT_TAX_SETTINGS;
+    throw new Error(error.message);
+  }
+  return mapTaxSettings(data);
+}
+
 function mapPaymentAccount(row: PaymentAccountRow): PaymentAccountSettings {
   const promptpayPhone = trimText(row.promptpay_phone);
   const qrMode = row.qr_mode === "qr_image" ? "qr_image" : "promptpay_link";
@@ -256,6 +307,41 @@ function mapPaymentAccount(row: PaymentAccountRow): PaymentAccountSettings {
     applies_to_all_branches: Boolean(row.applies_to_all_branches),
     is_active: row.is_active !== false
   };
+}
+
+async function assertNoActivePaymentAccountDuplicate(args: {
+  tenantId: string;
+  branchId: string;
+  accountId?: string;
+  appliesToAllBranches: boolean;
+}) {
+  const supabase = getSupabaseServiceClient();
+  let query = supabase
+    .from("tenant_payment_accounts")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", args.tenantId)
+    .eq("is_active", true)
+    .eq("applies_to_all_branches", args.appliesToAllBranches);
+
+  query = args.appliesToAllBranches ? query : query.eq("branch_id", args.branchId);
+
+  if (args.accountId) {
+    query = query.neq("id", args.accountId);
+  }
+
+  const { count, error } = await query;
+  if (error) {
+    if (isMissingSchemaError(error, "tenant_payment_accounts")) return;
+    throw new Error(error.message);
+  }
+
+  if ((count ?? 0) > 0) {
+    throw new Error(
+      args.appliesToAllBranches
+        ? "Active tenant-wide payment account already exists."
+        : "Active payment account already exists for this branch."
+    );
+  }
 }
 
 function normalizeDeviceCode(value: unknown) {
@@ -276,6 +362,56 @@ function normalizeDeviceStatus(value: unknown): PosDeviceSettings["status"] {
   return "active";
 }
 
+function normalizeTaxRate(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return 0;
+  return Number(Math.min(100, numeric).toFixed(2));
+}
+
+function normalizeTaxLineMode(value: unknown): TaxLineMode {
+  return value === "deduct_from_bill" ? "deduct_from_bill" : "add_to_bill";
+}
+
+function normalizeTaxSettings(input: unknown): TaxSettings {
+  const source = input && typeof input === "object" ? (input as Partial<TaxSettings>) : {};
+  const rawLines = Array.isArray(source.lines) ? source.lines : DEFAULT_TAX_SETTINGS.lines;
+  const lines = rawLines.slice(0, 6).map((line, index) => {
+    const item = line && typeof line === "object" ? (line as Partial<TaxLineSettings>) : {};
+    return {
+      id: trimText(item.id) || `tax-line-${index + 1}`,
+      label: trimText(item.label) || (index === 0 ? "VAT 7%" : `Tax ${index + 1}`),
+      rate_pct: normalizeTaxRate(item.rate_pct),
+      mode: normalizeTaxLineMode(item.mode),
+      is_active: item.is_active !== false
+    };
+  });
+  return {
+    is_enabled: source.is_enabled === true,
+    calculation_base: "net_after_discount",
+    lines: lines.length > 0 ? lines : DEFAULT_TAX_SETTINGS.lines
+  };
+}
+
+export function calculateTaxBreakdown(baseAmount: number, settings: TaxSettings) {
+  const safeBase = Number(Math.max(0, Number(baseAmount) || 0).toFixed(2));
+  if (!settings.is_enabled) {
+    return { base_amount: safeBase, tax_total: 0, grand_total: safeBase, lines: [] as Array<TaxLineSettings & { amount: number }> };
+  }
+  const lines = settings.lines
+    .filter((line) => line.is_active && line.rate_pct > 0)
+    .map((line) => {
+      const rawAmount = Number((safeBase * (line.rate_pct / 100)).toFixed(2));
+      return { ...line, amount: line.mode === "deduct_from_bill" ? -rawAmount : rawAmount };
+    });
+  const taxTotal = Number(lines.reduce((sum, line) => sum + line.amount, 0).toFixed(2));
+  return {
+    base_amount: safeBase,
+    tax_total: taxTotal,
+    grand_total: Number(Math.max(0, safeBase + taxTotal).toFixed(2)),
+    lines
+  };
+}
+
 function mapDevice(row: PosDeviceRow): PosDeviceSettings {
   const metadata = row.metadata ?? {};
   return {
@@ -290,6 +426,15 @@ function mapDevice(row: PosDeviceRow): PosDeviceSettings {
     location: typeof metadata.location === "string" ? metadata.location : "",
     last_seen_at: row.last_seen_at ?? null
   };
+}
+
+function mapTaxSettings(row: TaxSettingsRow | null | undefined): TaxSettings {
+  if (!row) return DEFAULT_TAX_SETTINGS;
+  return normalizeTaxSettings({
+    is_enabled: row.is_enabled === true,
+    calculation_base: row.calculation_base,
+    lines: Array.isArray(row.settings?.lines) ? row.settings.lines : DEFAULT_TAX_SETTINGS.lines
+  });
 }
 
 async function loadStoreSettings(tenantId: string) {
@@ -315,12 +460,13 @@ export async function loadPosSettingsSnapshot(auth: AuthContext): Promise<PosSet
       store: null,
       branches: [],
       payment_accounts: [],
+      tax_settings: DEFAULT_TAX_SETTINGS,
       metadata: { tenant_id: null, branch_id: auth.branchId, can_manage: false, payment_accounts_ready: false }
     };
   }
 
   const supabase = getSupabaseServiceClient();
-  const [store, branchesResult, paymentResult] = await Promise.all([
+  const [store, branchesResult, paymentResult, taxSettings] = await Promise.all([
     loadStoreSettings(auth.tenantId),
     supabase.from("branches").select("id,code,name,address,is_active").eq("tenant_id", auth.tenantId).order("name", { ascending: true }),
     (async () => {
@@ -345,7 +491,8 @@ export async function loadPosSettingsSnapshot(auth: AuthContext): Promise<PosSet
       }
 
       return fullResult;
-    })()
+    })(),
+    loadTaxSettings(auth)
   ]);
 
   if (branchesResult.error) throw new Error(branchesResult.error.message);
@@ -359,6 +506,7 @@ export async function loadPosSettingsSnapshot(auth: AuthContext): Promise<PosSet
     store,
     branches: ((branchesResult.data ?? []) as BranchRow[]).map(mapBranch),
     payment_accounts: paymentResult.error ? [] : ((paymentResult.data ?? []) as PaymentAccountRow[]).map(mapPaymentAccount),
+    tax_settings: taxSettings,
     metadata: {
       tenant_id: auth.tenantId,
       branch_id: auth.branchId,
@@ -412,9 +560,18 @@ async function syncBranchDevicePolicy(tenantId: string, branchId: string) {
   if (error) throw new Error(error.message);
 }
 
+function runDeviceSettingsBackgroundTask(label: string, task: () => Promise<unknown>) {
+  void task().catch((error) => {
+    console.error(`[pos-settings] background task failed: ${label}`, {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  });
+}
+
 export async function saveDeviceSettings(auth: AuthContext, input: PosDeviceInput) {
   assertCanManageSettings(auth);
   if (!auth.tenantId) throw new Error("Missing tenant scope.");
+  const tenantId = auth.tenantId;
 
   const deviceName = trimText(input.device_name);
   const deviceCode = normalizeDeviceCode(input.device_code);
@@ -508,27 +665,33 @@ export async function saveDeviceSettings(auth: AuthContext, input: PosDeviceInpu
   if (result.error) throw new Error(result.error.message);
   if (!result.data) throw new Error("Cashier device was not found.");
 
-  await syncBranchDevicePolicy(auth.tenantId, branchId);
-  if (previousBranchId && previousBranchId !== branchId) {
-    await syncBranchDevicePolicy(auth.tenantId, previousBranchId);
-  }
-  await appendAuditLog({
-    tenantId: auth.tenantId,
-    branchId,
-    actorUserId: auth.userId,
-    actorRole: auth.branchRole ?? "owner",
-    action: deviceId ? "pos_cashier_device_updated" : "pos_cashier_device_created",
-    targetTable: "branch_devices",
-    targetId: result.data.id,
-    metadata: {
-      device_code: deviceCode,
-      device_name: deviceName,
-      status,
-      is_locked: isLocked
+  const savedDevice = mapDevice(result.data);
+
+  runDeviceSettingsBackgroundTask("sync_branch_device_policy", async () => {
+    await syncBranchDevicePolicy(tenantId, branchId);
+    if (previousBranchId && previousBranchId !== branchId) {
+      await syncBranchDevicePolicy(tenantId, previousBranchId);
     }
   });
+  runDeviceSettingsBackgroundTask("append_device_audit_log", () =>
+    appendAuditLog({
+      tenantId,
+      branchId,
+      actorUserId: auth.userId,
+      actorRole: auth.branchRole ?? "owner",
+      action: deviceId ? "pos_cashier_device_updated" : "pos_cashier_device_created",
+      targetTable: "branch_devices",
+      targetId: savedDevice.id,
+      metadata: {
+        device_code: deviceCode,
+        device_name: deviceName,
+        status,
+        is_locked: isLocked
+      }
+    })
+  );
 
-  return mapDevice(result.data);
+  return savedDevice;
 }
 
 export async function deleteDeviceSettings(auth: AuthContext, deviceId: string) {
@@ -645,6 +808,48 @@ export async function updateStoreSettings(auth: AuthContext, input: StoreSetting
   return mapStore(updateResult.data);
 }
 
+export async function saveTaxSettings(auth: AuthContext, input: TaxSettingsInput) {
+  assertCanManageSettings(auth);
+  if (!auth.tenantId) throw new Error("Missing tenant scope.");
+  const tenantId = auth.tenantId;
+  const branchId = trimText(auth.branchId);
+  if (!branchId) throw new Error("Branch is required for tax settings.");
+  const settings = normalizeTaxSettings(input);
+  const supabase = getSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("tenant_tax_settings")
+    .upsert(
+      {
+        tenant_id: tenantId,
+        branch_id: branchId,
+        is_enabled: settings.is_enabled,
+        calculation_base: settings.calculation_base,
+        settings: { lines: settings.lines }
+      },
+      { onConflict: "tenant_id,branch_id" }
+    )
+    .select("is_enabled,calculation_base,settings")
+    .maybeSingle<TaxSettingsRow>();
+  if (error) throw new Error(error.message);
+
+  runDeviceSettingsBackgroundTask("append_tax_settings_audit_log", () =>
+    appendAuditLog({
+      tenantId,
+      branchId,
+      actorUserId: auth.userId,
+      actorRole: auth.branchRole ?? "owner",
+      action: "pos_tax_settings_updated",
+      targetTable: "tenant_tax_settings",
+      metadata: {
+        is_enabled: settings.is_enabled,
+        lines: settings.lines
+      }
+    })
+  );
+
+  return mapTaxSettings(data);
+}
+
 async function assertBranchInTenant(tenantId: string, branchId: string) {
   const supabase = getSupabaseServiceClient();
   const { data, error } = await supabase.from("branches").select("id").eq("tenant_id", tenantId).eq("id", branchId).maybeSingle<{ id: string }>();
@@ -743,9 +948,21 @@ export async function savePaymentAccount(auth: AuthContext, input: PaymentAccoun
   const qrImageUrl = trimText(input.qr_image_url);
   const qrMode = input.qr_mode === "qr_image" ? "qr_image" : "promptpay_link";
   const appliesToAllBranches = input.applies_to_all_branches === true;
+  const isActive = input.is_active ?? true;
   if (!bankName || !accountName) throw new Error("Bank name and account name are required.");
   if (qrMode === "promptpay_link" && !promptpayPhone) throw new Error("PromptPay phone is required for generated QR mode.");
   if (qrMode === "qr_image" && !qrImageUrl) throw new Error("QR image is required for image QR mode.");
+
+  const supabase = getSupabaseServiceClient();
+  const accountId = trimText(input.id);
+  if (isActive) {
+    await assertNoActivePaymentAccountDuplicate({
+      tenantId: auth.tenantId,
+      branchId,
+      accountId,
+      appliesToAllBranches
+    });
+  }
 
   const payload = {
     tenant_id: auth.tenantId,
@@ -758,12 +975,10 @@ export async function savePaymentAccount(auth: AuthContext, input: PaymentAccoun
     qr_image_url: qrImageUrl || null,
     qr_mode: qrMode,
     applies_to_all_branches: appliesToAllBranches,
-    is_active: input.is_active ?? true,
+    is_active: isActive,
     created_by: auth.userId
   };
 
-  const supabase = getSupabaseServiceClient();
-  const accountId = trimText(input.id);
   const updatePayload = {
     branch_id: branchId,
     bank_name: bankName,
@@ -774,7 +989,7 @@ export async function savePaymentAccount(auth: AuthContext, input: PaymentAccoun
     qr_image_url: qrImageUrl || null,
     qr_mode: qrMode,
     applies_to_all_branches: appliesToAllBranches,
-    is_active: input.is_active ?? true
+    is_active: isActive
   };
   let result = accountId
     ? await supabase
@@ -804,7 +1019,7 @@ export async function savePaymentAccount(auth: AuthContext, input: PaymentAccoun
       promptpay_phone: promptpayPhone || null,
       promptpay_payload: buildPromptPayPayload(promptpayPhone) || null,
       qr_image_url: qrImageUrl || null,
-      is_active: input.is_active ?? true,
+      is_active: isActive,
       created_by: auth.userId
     };
     const legacyUpdatePayload = {
@@ -815,7 +1030,7 @@ export async function savePaymentAccount(auth: AuthContext, input: PaymentAccoun
       promptpay_phone: promptpayPhone || null,
       promptpay_payload: buildPromptPayPayload(promptpayPhone) || null,
       qr_image_url: qrImageUrl || null,
-      is_active: input.is_active ?? true
+      is_active: isActive
     };
 
     result = accountId
@@ -834,6 +1049,13 @@ export async function savePaymentAccount(auth: AuthContext, input: PaymentAccoun
   }
 
   if (result.error) {
+    if (String(result.error.code ?? "") === "23505") {
+      throw new Error(
+        appliesToAllBranches
+          ? "Active tenant-wide payment account already exists."
+          : "Active payment account already exists for this branch."
+      );
+    }
     if (isMissingSchemaError(result.error, "tenant_payment_accounts")) {
       throw new Error("Payment account table is missing. Please run the latest migration.");
     }

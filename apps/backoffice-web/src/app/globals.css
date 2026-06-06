@@ -1012,7 +1012,7 @@ a {
 
 .posui-mode-header-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(170px, 188px) minmax(0, 1fr);
   align-items: stretch;
   gap: 12px;
 }
@@ -1026,7 +1026,8 @@ a {
   margin-bottom: 0;
   min-height: 104px;
   width: 100%;
-  align-content: center;
+  align-content: start;
+  align-self: stretch;
 }
 
 .posui-sales-meta-card {
@@ -1063,7 +1064,7 @@ a {
 }
 
 .posui-sales-meta-list--right .posui-sales-meta-row {
-  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-columns: 86px minmax(0, 1fr);
 }
 
 .posui-sales-meta-row {
@@ -1132,7 +1133,7 @@ a {
   gap: 8px;
   margin-bottom: 0;
   border: 1px solid #e2e8f0;
-  border-radius: 14px;
+  border-radius: 12px;
   background: #ffffff;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
   padding: 8px;
@@ -1143,6 +1144,266 @@ a {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   width: 100%;
+}
+
+.posui-mode-switch-button {
+  width: 100%;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 7px;
+  color: #0f172a;
+  text-align: left;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.posui-mode-switch-button:hover:not(:disabled) {
+  border-color: #93c5fd;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.12);
+  transform: translateY(-1px);
+}
+
+.posui-mode-switch-button:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.22);
+  outline-offset: 2px;
+}
+
+.posui-mode-switch-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.posui-mode-switch-button__icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: #eaf3ff;
+  color: #1d4ed8;
+}
+
+.posui-mode-switch-button__icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.posui-mode-switch-button__copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.posui-mode-switch-button__copy small {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.1;
+}
+
+.posui-mode-switch-button__copy strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.posui-mode-switch-button__action {
+  justify-self: start;
+  color: #2563eb;
+  font-size: 14px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.posui-mode-selector-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 145;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(3px);
+}
+
+.posui-mode-selector {
+  width: min(680px, calc(100vw - 36px));
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.3);
+  padding: 18px;
+  animation: posuiModalPop 0.18s ease-out;
+}
+
+.posui-mode-selector__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.posui-mode-selector__header > div {
+  min-width: 0;
+}
+
+.posui-mode-selector__header p,
+.posui-mode-selector__header h2,
+.posui-mode-selector__header span {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.posui-mode-selector__header p {
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.posui-mode-selector__header h2 {
+  margin-top: 3px;
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.posui-mode-selector__header span {
+  display: block;
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.posui-mode-selector__close {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #475569;
+}
+
+.posui-mode-selector__close:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.posui-mode-selector__close svg {
+  width: 19px;
+  height: 19px;
+}
+
+.posui-mode-selector__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 16px;
+}
+
+.posui-mode-option {
+  position: relative;
+  min-width: 0;
+  min-height: 154px;
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 12px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 16px;
+  color: #0f172a;
+  text-align: left;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.posui-mode-option:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.11);
+  transform: translateY(-2px);
+}
+
+.posui-mode-option.is-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: inset 0 0 0 1px #2563eb;
+}
+
+.posui-mode-option__icon {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: #eaf3ff;
+  color: #1d4ed8;
+}
+
+.posui-mode-option.is-active .posui-mode-option__icon {
+  background: #eaf3ff;
+  color: #1d4ed8;
+}
+
+.posui-mode-option__icon svg {
+  width: 42px;
+  height: 42px;
+}
+
+.posui-mode-option__copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.posui-mode-option__copy strong {
+  color: inherit;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.posui-mode-option__copy small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.posui-mode-option__check {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 22px;
+  height: 22px;
+  display: none;
+  place-items: center;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.posui-mode-option.is-active .posui-mode-option__check {
+  display: grid;
 }
 
 .posui-chip--dine-view {
@@ -1558,6 +1819,15 @@ a {
 .posui-held-bill-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.posui-mode-stack-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-self: start;
+  width: 100%;
 }
 
 .posui-held-bill-btn--history {
@@ -4058,9 +4328,41 @@ a {
   border: 1px solid #dbe4f0;
   border-radius: 14px;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  padding: 12px;
+  padding: 14px;
   display: grid;
-  gap: 10px;
+  gap: 12px;
+}
+
+.posui-transfer-amount-card {
+  display: grid;
+  gap: 5px;
+  border-bottom: 1px dashed #cbd5e1;
+  padding-bottom: 12px;
+}
+
+.posui-transfer-amount-card span {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.posui-transfer-amount-card strong {
+  color: #16a34a;
+  font-size: clamp(34px, 5vw, 48px);
+  font-weight: 950;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.posui-transfer-amount-card small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.posui-transfer-qr-heading {
+  display: grid;
+  gap: 4px;
 }
 
 .posui-transfer-section-title {
@@ -4080,7 +4382,7 @@ a {
   border-radius: 14px;
   border: 1px solid #cfd8e6;
   background: #0b1220;
-  padding: 10px;
+  padding: 14px;
   display: grid;
   place-items: center;
 }
@@ -4093,11 +4395,162 @@ a {
   background: #ffffff;
 }
 
+.posui-payment-modal--transfer-qr-only {
+  width: min(560px, calc(100vw - 24px));
+  max-height: min(94dvh, 760px);
+  padding: clamp(16px, 3vw, 24px);
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.posui-payment-modal--transfer-qr-only .posui-payment-modal__header {
+  align-items: flex-start;
+}
+
+.posui-payment-modal--transfer-qr-only .posui-transfer-layout {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  gap: 0;
+}
+
+.posui-payment-modal--transfer-qr-only .posui-transfer-qr-panel {
+  width: 100%;
+  max-width: 468px;
+  border-color: #dbeafe;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: clamp(16px, 3vw, 22px);
+  justify-items: center;
+  gap: 12px;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+}
+
+.posui-payment-modal--transfer-qr-only .posui-transfer-amount-card {
+  width: 100%;
+  border-bottom: 1px solid #dbeafe;
+  padding-bottom: 12px;
+  justify-items: center;
+  text-align: center;
+}
+
+.posui-payment-modal--transfer-qr-only .posui-transfer-amount-card span {
+  color: #475569;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.posui-payment-modal--transfer-qr-only .posui-transfer-amount-card strong {
+  max-width: 100%;
+  color: #2563eb;
+  font-size: clamp(42px, 8vw, 58px);
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.posui-payment-modal--transfer-qr-only .posui-transfer-section-title {
+  color: #334155;
+  font-size: 16px;
+  text-align: center;
+}
+
+.posui-payment-modal--transfer-qr-only .posui-transfer-qr-box {
+  width: 100%;
+  max-width: 340px;
+  border-color: #dbe4f0;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.posui-payment-modal--transfer-qr-only .posui-transfer-qr-image {
+  width: min(100%, 300px);
+  border-radius: 6px;
+}
+
+.posui-payment-modal--transfer-qr-only .posui-transfer-mobile-hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.posui-transfer-modal__close {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.posui-transfer-modal__close:hover:not(:disabled) {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.posui-transfer-modal__close:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.24);
+  outline-offset: 2px;
+}
+
+.posui-transfer-modal__close:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.posui-payment-modal__actions--transfer {
+  justify-content: center;
+}
+
+.posui-payment-modal__actions--transfer .posui-btn {
+  width: min(468px, 100%);
+  min-height: 48px;
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: 900;
+}
+
 .posui-transfer-phone-readonly {
   margin: 0;
   color: #0f172a;
   font-size: 14px;
   font-weight: 700;
+}
+
+.posui-transfer-account-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
+.posui-transfer-account-card p {
+  margin: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.posui-transfer-account-card span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.posui-transfer-account-card strong {
+  overflow-wrap: anywhere;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .posui-transfer-mobile-hint {
@@ -4651,6 +5104,41 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .posui-payment-modal--transfer-qr-only {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .posui-payment-modal--transfer-qr-only .posui-payment-modal__header h3 {
+    font-size: 22px;
+  }
+
+  .posui-payment-modal--transfer-qr-only .posui-transfer-qr-panel {
+    max-width: 100%;
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .posui-payment-modal--transfer-qr-only .posui-transfer-amount-card strong {
+    font-size: clamp(38px, 12vw, 46px);
+  }
+
+  .posui-payment-modal--transfer-qr-only .posui-transfer-qr-box {
+    max-width: 280px;
+    padding: 8px;
+  }
+
+  .posui-payment-modal--transfer-qr-only .posui-transfer-qr-image {
+    width: min(100%, 252px);
+  }
+
+  .posui-payment-modal__actions--transfer .posui-btn {
+    width: 100%;
+    min-width: 0;
+  }
+
   .posui-transfer-check-grid {
     grid-template-columns: 1fr;
   }
@@ -5097,7 +5585,11 @@ a {
 
 @media (max-width: 900px) {
   .posui-mode-header-row {
-    grid-template-columns: 1.1fr 1fr 1fr;
+    grid-template-columns: minmax(170px, 188px) minmax(0, 1fr);
+  }
+
+  .posui-mode-switch-button {
+    grid-template-columns: 36px minmax(0, 1fr);
   }
 
   .posui-chip--dine-view span {
@@ -5193,6 +5685,17 @@ a {
 @media (max-width: 760px) {
   .posui-mode-header-row {
     grid-template-columns: 1fr;
+  }
+
+  .posui-mode-selector__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .posui-mode-option {
+    min-height: 104px;
+    grid-template-columns: 56px minmax(0, 1fr);
+    align-items: center;
+    align-content: center;
   }
 
   .posui-table-browser__controls-row {

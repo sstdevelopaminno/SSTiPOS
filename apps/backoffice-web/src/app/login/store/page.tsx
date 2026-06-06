@@ -1,15 +1,17 @@
 ﻿"use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { AppLanguageSwitcher } from "@/components/i18n/app-language-switcher";
 import { useAppLanguage, type AppLanguage } from "@/lib/app-language-client";
+import { cacheBranches, clearPreEntryClientCache, warmRoute, type CachedBranch } from "@/lib/pre-entry-client-cache";
 
 type StoreVerifyResponse = {
   data?: {
     next_step: "branches" | "employee";
     auto_skip_branch_selection: boolean;
+    branches?: CachedBranch[];
   } | null;
   error?: {
     code: string;
@@ -151,6 +153,12 @@ export default function LoginStorePage() {
   const [popup, setPopup] = useState<PopupState>({ type: "none" });
   const activeControllerRef = useRef<AbortController | null>(null);
 
+  useEffect(() => {
+    clearPreEntryClientCache();
+    warmRoute(router, "/login/branches?flow=multi");
+    warmRoute(router, "/login/employee?flow=single");
+  }, [router]);
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (loading) return;
@@ -188,6 +196,8 @@ export default function LoginStorePage() {
 
       const flowMode = body.data.next_step === "employee" ? "single" : "multi";
       navigateTo = body.data.next_step === "employee" ? `/login/employee?flow=${flowMode}` : `/login/branches?flow=${flowMode}`;
+      cacheBranches(body.data.branches ?? []);
+      warmRoute(router, navigateTo);
     } catch (requestError) {
       if (controller.signal.aborted && activeControllerRef.current === null) {
         hasFailure = true;

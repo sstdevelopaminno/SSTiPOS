@@ -42,9 +42,12 @@ type PendingSubmit = {
     external_order_code?: string;
     notes?: string;
     app_total_amount: number;
-    discount_amount?: number;
-    gp_amount?: number;
-    items: Array<{ product_id: string; quantity: number; unit_price?: number }>;
+  discount_amount?: number;
+  gp_amount?: number;
+  tax_total?: number;
+  grand_total?: number;
+  tax_lines?: Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>;
+  items: Array<{ product_id: string; quantity: number; unit_price?: number }>;
   };
 };
 
