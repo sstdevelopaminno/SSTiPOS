@@ -728,6 +728,8 @@ async function executeCreatePosOrderDirectFallback(args: {
       channel: input.channel,
       external_order_code: input.external_order_code ?? null,
       total_amount: totalAmount,
+      tax_total: taxTotal,
+      tax_lines: input.tax_lines ?? [],
       table_id: input.table_id ?? null,
       created_at: nowIso,
       duplicate_request: false,
@@ -1079,6 +1081,8 @@ export async function executeCreatePosOrderTransaction(args: {
       channel: input.channel,
       external_order_code: input.external_order_code ?? null,
       total_amount: resolvedTotalAmount,
+      tax_total: taxTotal,
+      tax_lines: input.tax_lines ?? [],
       table_id: input.table_id ?? null,
       created_at: row.created_at,
       duplicate_request: row.duplicate_request

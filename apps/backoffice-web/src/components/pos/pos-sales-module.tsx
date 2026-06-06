@@ -82,6 +82,15 @@ type TaxLineSettings = {
   is_active: boolean;
 };
 
+type TaxLineSnapshot = {
+  id: string;
+  label: string;
+  rate_pct: number;
+  mode: string;
+  is_active?: boolean;
+  amount: number;
+};
+
 type TaxSettings = {
   is_enabled: boolean;
   calculation_base: "net_after_discount";
@@ -182,6 +191,8 @@ type PendingPaymentSubmit = {
     skip_transfer_verification?: boolean;
     receipt_items?: CartItem[];
     discount_amount?: number;
+    tax_total?: number;
+    tax_lines?: TaxLineSnapshot[];
   };
 };
 
@@ -199,6 +210,8 @@ type ActiveOrder = {
   channel?: string | null;
   external_order_code?: string | null;
   total_amount?: number;
+  tax_total?: number | null;
+  tax_lines?: TaxLineSnapshot[];
   table_id?: string | null;
   created_at?: string;
   updated_existing?: boolean;
@@ -215,6 +228,8 @@ type CheckoutReviewOrder = {
   items: CartItem[];
   total_amount: number;
   discount_amount?: number;
+  tax_total?: number;
+  tax_lines?: TaxLineSnapshot[];
 };
 
 type ReceiptSession = CheckoutReviewOrder & {
@@ -357,6 +372,8 @@ type TableBillOrderPayload = {
   channel?: string | null;
   external_order_code?: string | null;
   total_amount?: number;
+  tax_total?: number | null;
+  metadata?: Record<string, unknown> | null;
   status: string;
   table_id: string | null;
   created_at: string;
@@ -556,6 +573,7 @@ const uiText = {
     retry: "ลองส่งใหม่",
     managerOverride: "อนุมัติผู้จัดการ",
     discount: "ส่วนลด",
+    tax: "ภาษี",
     gp: "GP",
     notes: "หมายเหตุ",
     notesPlaceholder: "หมายเหตุออเดอร์",
@@ -867,6 +885,7 @@ const uiText = {
     retry: "Retry pending submit",
     managerOverride: "Stock adjustment (override)",
     discount: "Discount",
+    tax: "Tax",
     gp: "GP",
     notes: "Notes",
     notesPlaceholder: "Order notes",
@@ -1161,6 +1180,49 @@ function calculateClientTaxBreakdown(baseAmount: number, settings: TaxSettings) 
     grand_total: Number(Math.max(0, safeBase + taxTotal).toFixed(2)),
     lines
   };
+}
+
+function normalizeTaxLineSnapshots(value: unknown): TaxLineSnapshot[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map<TaxLineSnapshot | null>((entry, index) => {
+      if (!entry || typeof entry !== "object") return null;
+      const source = entry as Partial<TaxLineSnapshot>;
+      const label = typeof source.label === "string" && source.label.trim() ? source.label.trim() : `Tax ${index + 1}`;
+      const amount = Number(source.amount ?? 0);
+      if (!Number.isFinite(amount) || Math.abs(amount) < 0.005) return null;
+      return {
+        id: typeof source.id === "string" && source.id.trim() ? source.id.trim() : `tax-line-${index + 1}`,
+        label,
+        rate_pct: Number.isFinite(Number(source.rate_pct)) ? Number(source.rate_pct) : 0,
+        mode: source.mode === "deduct_from_bill" ? "deduct_from_bill" : "add_to_bill",
+        is_active: source.is_active !== false,
+        amount: Number(amount.toFixed(2))
+      };
+    })
+    .filter((entry): entry is TaxLineSnapshot => Boolean(entry));
+}
+
+function resolveTaxLinesForReceipt(session: Pick<CheckoutReviewOrder, "tax_lines" | "tax_total">, fallbackLabel: string): TaxLineSnapshot[] {
+  const explicitLines = normalizeTaxLineSnapshots(session.tax_lines);
+  if (explicitLines.length > 0) return explicitLines;
+  const taxTotal = Number(session.tax_total ?? 0);
+  if (!Number.isFinite(taxTotal) || Math.abs(taxTotal) < 0.005) return [];
+  return [
+    {
+      id: "tax-total",
+      label: fallbackLabel,
+      rate_pct: 0,
+      mode: taxTotal < 0 ? "deduct_from_bill" : "add_to_bill",
+      is_active: true,
+      amount: Number(taxTotal.toFixed(2))
+    }
+  ];
+}
+
+function formatSignedMoneyPlain(amount: number): string {
+  const sign = amount < 0 ? "-" : "+";
+  return `${sign}฿${formatMoneyPlain(Math.abs(amount))}`;
 }
 
 function escapeHtml(value: string): string {
@@ -2142,6 +2204,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     const payments = (data.payments ?? []) as TableBillPaymentPayload[];
     const transferVerifications = (data.transfer_verifications ?? []) as TableBillTransferVerificationPayload[];
     const draftItems = dineInDraftByTableIdRef.current[table.id] ?? [];
+    const orderTaxLines = normalizeTaxLineSnapshots(order?.metadata?.tax_lines);
+    const orderTaxTotal = Number(order?.tax_total ?? orderTaxLines.reduce((sum, line) => sum + line.amount, 0));
     const mappedOrderItems = items.map((item) => ({
       product_id: item.product_id,
       quantity: Math.max(1, Number(item.quantity || 0)),
@@ -2181,6 +2245,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       channel: order.channel ?? null,
       external_order_code: order.external_order_code ?? null,
       total_amount: Number(order.total_amount ?? 0),
+      tax_total: Number.isFinite(orderTaxTotal) ? Number(orderTaxTotal.toFixed(2)) : 0,
+      tax_lines: orderTaxLines,
       table_id: order.table_id,
       created_at: order.created_at
     });
@@ -3201,6 +3267,10 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     () => (receiptSession ? resolveReceiptDiscountAmount(receiptSession) : 0),
     [receiptSession]
   );
+  const receiptTaxLines = useMemo(
+    () => (receiptSession ? resolveTaxLinesForReceipt(receiptSession, text.tax) : []),
+    [receiptSession, text.tax]
+  );
   const reviewOrderId = reviewOrder?.order_id ?? null;
   const reviewOrderItemProductIds = useMemo(() => {
     if (!reviewOrderId || !reviewOrder) return [];
@@ -4119,6 +4189,19 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     setBillPaymentMethod(null);
   }
 
+  function returnToDineInTableBrowserKeepingBill() {
+    if (isBusy || tableSwitching) return;
+    const currentSelectedTable = selectedTableRef.current;
+    if (currentSelectedTable?.id && orderType === "dine_in") {
+      rememberDineInDraft(currentSelectedTable.id, cartRef.current);
+    }
+    setQuickMode("dine_in");
+    setOrderType("dine_in");
+    setTableBrowserOpen(true);
+    setTableMoveError(null);
+    void fetchPosTables({ timeoutMs: 10000, retries: 0 }).catch(() => undefined);
+  }
+
   function applyQuickMode(mode: QuickMode) {
     setModeSelectorOpen(false);
     if (mode === "home") {
@@ -4448,7 +4531,9 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           fallbackTableId: selectedTable?.id ?? null,
           fallbackTotal: total,
           items: cartSnapshot,
-          discountAmount: summaryDiscount
+          discountAmount: summaryDiscount,
+          taxTotal: currentQueuedOrder.tax_total ?? taxBreakdown.tax_total,
+          taxLines: currentQueuedOrder.tax_lines?.length ? currentQueuedOrder.tax_lines : taxBreakdown.lines
         })
       );
       setTakeawayCreatingPreview(null);
@@ -4515,7 +4600,9 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
             fallbackTableId: selectedTable?.id ?? null,
             fallbackTotal: total,
             items: cartSnapshot,
-            discountAmount: summaryDiscount
+            discountAmount: summaryDiscount,
+            taxTotal: createdOrder.tax_total ?? taxBreakdown.tax_total,
+            taxLines: createdOrder.tax_lines?.length ? createdOrder.tax_lines : taxBreakdown.lines
           })
         );
         setCashReviewOrder(null);
@@ -5297,6 +5384,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         order_type: orderType,
         total_amount: transferReviewOrder.total_amount,
         discount_amount: transferReviewOrder.discount_amount ?? 0,
+        tax_total: transferReviewOrder.tax_total ?? 0,
+        tax_lines: transferReviewOrder.tax_lines ?? [],
         method: "bank_transfer",
         reference_no: null,
         transfer_verification_id: null,
@@ -5670,6 +5759,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     const printableWidthMm = 48;
     const logoUrl = getAbsoluteAssetUrl(receiptLogoPath);
     const receiptDiscountAmount = resolveReceiptDiscountAmount(session);
+    const receiptTaxLines = resolveTaxLinesForReceipt(session, text.tax);
     const itemRows = session.items
       .map((item) => {
         const qty = formatQuantity(item.quantity);
@@ -5694,6 +5784,12 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     const storePhoneLine = receiptStorePhone ? `<div class="muted">${escapeHtml(receiptStorePhone)}</div>` : "";
     const paymentMethodLine = `<div class="summary-line is-heading"><span>${escapeHtml(text.paymentMethod)}</span><strong>${escapeHtml(getReceiptPaymentMethodLabel(session))}</strong></div>`;
     const discountLine = `<div class="summary-line is-muted"><span>${escapeHtml(text.discount)}</span><strong>฿${escapeHtml(formatMoneyPlain(receiptDiscountAmount))}</strong></div>`;
+    const taxSummaryLines = receiptTaxLines
+      .map(
+        (line) =>
+          `<div class="summary-line is-muted"><span>${escapeHtml(line.label)}</span><strong>${escapeHtml(formatSignedMoneyPlain(line.amount))}</strong></div>`
+      )
+      .join("");
     const cashSummaryLines =
       session.payment_method === "cash"
         ? `
@@ -5777,6 +5873,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     <div class="hr"></div>
     ${paymentMethodLine}
     ${discountLine}
+    ${taxSummaryLines}
     <div class="summary-line grand"><span>${escapeHtml(text.paymentTotalDue)}</span><strong>฿${escapeHtml(formatMoneyPlain(session.total_amount))}</strong></div>
     ${cashSummaryLines}
     <div class="hr"></div>
@@ -6068,6 +6165,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           onCancelBill={requestCancelBill}
           onHoldBill={holdBill}
           onPromotion={openDiscountPopup}
+          showHoldBill={quickMode === "home"}
           checkoutLabel={orderType === "dine_in" ? text.dineInCheckout : orderType === "delivery_manual" ? text.deliveryQueueCheckout : text.checkout}
           checkoutDisabled={
             isBusy ||
@@ -6107,6 +6205,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           text={{
             subtotal: text.subtotal,
             total: text.total,
+            tax: text.tax,
             checkout: text.checkout,
             retry: text.retry,
             managerOverride: text.managerOverride,
@@ -6169,19 +6268,30 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
                     <span className="posui-mode-switch-button__action">{text.switchMode}</span>
                   </button>
                   <div className="posui-mode-stack-meta">
-                    <button
-                      type="button"
-                      className="posui-held-bill-btn"
-                      onClick={openHeldBillsPanel}
-                      title={isDeliveryPendingPanelMode ? text.deliveryPendingBillsOpen : text.heldBillsOpen}
-                    >
-                      {isDeliveryPendingPanelMode
-                        ? `${text.deliveryPendingBillsTitle}: ${heldBillPool.length}`
-                        : `${text.heldBills}: ${heldBillPool.length}`}
-                    </button>
-                    <span className="posui-sales-status-item">
-                      {text.tableLabel}: {selectedTable ? selectedTable.table_code : "-"}
-                    </span>
+                    {quickMode === "delivery" ? (
+                      <button
+                        type="button"
+                        className="posui-held-bill-btn"
+                        onClick={openHeldBillsPanel}
+                        title={text.deliveryPendingBillsOpen}
+                      >
+                        {`${text.deliveryPendingBillsTitle}: ${heldBillPool.length}`}
+                      </button>
+                    ) : quickMode !== "dine_in" ? (
+                      <button
+                        type="button"
+                        className="posui-held-bill-btn"
+                        onClick={openHeldBillsPanel}
+                        title={text.heldBillsOpen}
+                      >
+                        {`${text.heldBills}: ${heldBillPool.length}`}
+                      </button>
+                    ) : null}
+                    {quickMode === "dine_in" ? (
+                      <span className="posui-sales-status-item">
+                        {text.tableLabel}: {selectedTable ? selectedTable.table_code : "-"}
+                      </span>
+                    ) : null}
                     {quickMode === "dine_in" && selectedTable?.active_session_id ? (
                       <button
                         type="button"
@@ -6196,6 +6306,17 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
                         disabled={isBusy || tableMoveBusy}
                       >
                         {text.tableMove}
+                      </button>
+                    ) : null}
+                    {quickMode === "dine_in" && selectedTable && !tableBrowserOpen ? (
+                      <button
+                        type="button"
+                        className="posui-held-bill-btn"
+                        onClick={returnToDineInTableBrowserKeepingBill}
+                        title={text.selectTable}
+                        disabled={isBusy || tableSwitching}
+                      >
+                        {text.selectTable}
                       </button>
                     ) : null}
                   </div>
@@ -6882,6 +7003,15 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
                 <span>{text.discount}</span>
                 <strong>{formatMoney(receiptDiscountAmount)}</strong>
               </p>
+              {receiptTaxLines.map((line) => (
+                <p key={`receipt-tax-${line.id}`} className="is-muted">
+                  <span>{line.label}</span>
+                  <strong>
+                    {line.amount < 0 ? "-" : "+"}
+                    {formatMoney(Math.abs(line.amount))}
+                  </strong>
+                </p>
+              ))}
               <p className="is-due">
                 <span>{text.paymentTotalDue}</span>
                 <strong>{formatMoney(receiptSession.total_amount)}</strong>

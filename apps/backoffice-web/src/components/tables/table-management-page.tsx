@@ -30,6 +30,14 @@ type TablePerfEvent = {
   at?: string;
 };
 
+type BranchScopeItem = {
+  id: string;
+  code: string;
+  name: string;
+  role: "owner" | "manager" | "staff";
+  isDefault?: boolean;
+};
+
 function emitTablePerf(event: TablePerfEvent) {
   if (typeof window === "undefined") return;
   const payload = {
@@ -100,7 +108,6 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
     initialRole === "owner" || initialRole === "manager" || initialRole === "staff" || initialRole === "accountant"
       ? initialRole
       : null;
-  const requiresManagerPin = normalizedRole === "manager";
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +117,8 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
   const [draftTables, setDraftTables] = useState<DiningTableItem[]>([]);
   const [objects, setObjects] = useState<FloorPlanObjectItem[]>([]);
   const [draftObjects, setDraftObjects] = useState<FloorPlanObjectItem[]>([]);
+  const [branchOptions, setBranchOptions] = useState<BranchScopeItem[]>([]);
+  const [branchFilterId, setBranchFilterId] = useState("");
   const [activeZoneId, setActiveZoneId] = useState("all");
   const [selectedTable, setSelectedTable] = useState<DiningTableItem | null>(null);
   const [selectedObject, setSelectedObject] = useState<FloorPlanObjectItem | null>(null);
@@ -136,6 +145,22 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
   const telemetryDisabledRef = useRef(false);
   const telemetryWarnedRef = useRef(false);
 
+  const branchSelectLabel = lang === "th" ? "สาขา" : "Branch";
+  const allBranchesLabel = lang === "th" ? "ทุกสาขา" : "All branches";
+  const chooseBranchFirstLabel = lang === "th" ? "เลือกสาขาก่อนเพิ่ม/แก้ไขโต๊ะ" : "Choose a branch before editing tables";
+
+  const selectedActionBranchId = branchFilterId && branchFilterId !== "all" ? branchFilterId : "";
+  const canWriteSelectedBranch = Boolean(selectedActionBranchId);
+  const selectedBranchRole = branchOptions.find((branch) => branch.id === selectedActionBranchId)?.role ?? normalizedRole;
+  const requiresManagerPin = selectedBranchRole === "manager";
+
+  function buildBranchQuery(path: string, branchId = branchFilterId): string {
+    const normalized = branchId.trim();
+    if (!normalized) return path;
+    const separator = path.includes("?") ? "&" : "?";
+    return `${path}${separator}branch_id=${encodeURIComponent(normalized)}`;
+  }
+
   const fetchJsonWithTiming = useCallback(async (input: string, init: RequestInit | undefined, label: string) => {
     const startedAt = performance.now();
     const response = await fetch(input, init);
@@ -159,10 +184,29 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
     }
     setError(null);
     try {
+      const branchScopeResult = await fetchJsonWithTiming("/api/backoffice/branch-scope", { cache: "no-store" }, "load:branch-scope");
+      const branchScopeResponse = branchScopeResult.response;
+      const branchScopeBody = branchScopeResult.body;
+      if (!branchScopeResponse.ok || branchScopeBody?.error) {
+        throw new Error(branchScopeBody?.error?.message ?? (lang === "th" ? "โหลดข้อมูลสาขาไม่สำเร็จ" : "Failed to load branch scope."));
+      }
+      const nextBranchOptions = (branchScopeBody?.data?.items ?? []) as BranchScopeItem[];
+      const currentBranchId = String(branchScopeBody?.data?.currentBranchId ?? "").trim();
+      const requestedBranchId =
+        branchFilterId === "all" && nextBranchOptions.length > 1
+          ? "all"
+          : nextBranchOptions.some((branch) => branch.id === branchFilterId)
+            ? branchFilterId
+            : currentBranchId || nextBranchOptions[0]?.id || "";
+      setBranchOptions(nextBranchOptions);
+      if (requestedBranchId !== branchFilterId) {
+        setBranchFilterId(requestedBranchId);
+      }
+      const branchQuery = requestedBranchId ? `?branch_id=${encodeURIComponent(requestedBranchId)}` : "";
       const [zonesResult, tablesResult, objectsResult] = await Promise.all([
-        fetchJsonWithTiming("/api/backoffice/table-zones", { cache: "no-store" }, "load:zones"),
-        fetchJsonWithTiming("/api/backoffice/tables", { cache: "no-store" }, "load:tables"),
-        fetchJsonWithTiming("/api/backoffice/table-layout-objects", { cache: "no-store" }, "load:objects")
+        fetchJsonWithTiming(`/api/backoffice/table-zones${branchQuery}`, { cache: "no-store" }, "load:zones"),
+        fetchJsonWithTiming(`/api/backoffice/tables${branchQuery}`, { cache: "no-store" }, "load:tables"),
+        fetchJsonWithTiming(`/api/backoffice/table-layout-objects${branchQuery}`, { cache: "no-store" }, "load:objects")
       ]);
       const zonesResponse = zonesResult.response;
       const tablesResponse = tablesResult.response;
@@ -221,7 +265,7 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
         setLoading(false);
       }
     }
-  }, [fetchJsonWithTiming, text.errorLoadObjects, text.errorLoadTables, text.errorLoadZones, text.errorUnknown]);
+  }, [branchFilterId, fetchJsonWithTiming, lang, text.errorLoadObjects, text.errorLoadTables, text.errorLoadZones, text.errorUnknown]);
 
   useEffect(() => {
     void loadData({ showOverlay: true });
@@ -420,6 +464,10 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
   }
 
   function openCreateTableEditor() {
+    if (!canWriteSelectedBranch) {
+      setError(chooseBranchFirstLabel);
+      return;
+    }
     setTableEditorMode("create");
     const activeZone = activeZoneId === "all" ? null : zones.find((zone) => zone.id === activeZoneId) ?? null;
     setQuickCreateForm({
@@ -443,6 +491,10 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
 
   async function submitQuickCreateForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canWriteSelectedBranch) {
+      setError(chooseBranchFirstLabel);
+      return;
+    }
     const startedAt = performance.now();
     setSaving(true);
     setError(null);
@@ -462,6 +514,7 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
+                branch_id: selectedActionBranchId,
                 zone_name: zoneName,
                 color: "#0ea5e9",
                 display_order: zones.length + 1
@@ -486,6 +539,7 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             zone_id: zoneId,
+            branch_id: selectedActionBranchId,
             table_name: quickCreateForm.table_name.trim() || null,
             capacity: Number(quickCreateForm.capacity || 4),
             status: "available",
@@ -553,6 +607,10 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
     approvalId?: string;
   }) {
     const { payload, isEdit, tableId, approvalId } = args;
+    if (!canWriteSelectedBranch) {
+      setError(chooseBranchFirstLabel);
+      return;
+    }
     const startedAt = performance.now();
     setSaving(true);
     setError(null);
@@ -566,11 +624,14 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
             }
           : payload;
       const result = await fetchJsonWithTiming(
-        isEdit ? `/api/backoffice/tables/${tableId}` : "/api/backoffice/tables",
+        isEdit ? buildBranchQuery(`/api/backoffice/tables/${tableId}`, selectedActionBranchId) : "/api/backoffice/tables",
         {
           method: isEdit ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(finalPayload)
+          body: JSON.stringify({
+            ...finalPayload,
+            branch_id: selectedActionBranchId
+          })
         },
         isEdit ? "update:table" : "create:table-editor"
       );
@@ -644,6 +705,10 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
   }
 
   async function deleteTable(table: DiningTableItem, approvalId?: string) {
+    if (!canWriteSelectedBranch) {
+      setError(chooseBranchFirstLabel);
+      return;
+    }
     if (requiresManagerPin && !approvalId) {
       setTableApprovalRequest({
         kind: "delete",
@@ -657,7 +722,7 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
     setError(null);
     setSuccess(null);
     try {
-      const query = approvalId ? `?approval_id=${encodeURIComponent(approvalId)}` : "";
+      const query = `?branch_id=${encodeURIComponent(selectedActionBranchId)}${approvalId ? `&approval_id=${encodeURIComponent(approvalId)}` : ""}`;
       const result = await fetchJsonWithTiming(`/api/backoffice/tables/${table.id}${query}`, { method: "DELETE" }, "delete:table");
       const response = result.response;
       const body = result.body;
@@ -691,6 +756,10 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
 
   async function addFloorObject(objectType: (typeof floorObjectTypes)[number]) {
     if (saving) return;
+    if (!canWriteSelectedBranch) {
+      setError(chooseBranchFirstLabel);
+      return;
+    }
     const startedAt = performance.now();
     setSaving(true);
     setError(null);
@@ -703,6 +772,7 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            branch_id: selectedActionBranchId,
             zone_id: activeZoneId === "all" ? null : activeZoneId,
             object_type: objectType,
             object_name: defaults.name,
@@ -757,7 +827,7 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
     setSuccess(null);
     try {
       const result = await fetchJsonWithTiming(
-        `/api/backoffice/table-layout-objects/${selectedObject.id}`,
+        buildBranchQuery(`/api/backoffice/table-layout-objects/${selectedObject.id}`, selectedActionBranchId),
         { method: "DELETE" },
         "delete:floor-object"
       );
@@ -925,6 +995,10 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
 
   async function saveFloorPlan(reset = false) {
     if (saving) return;
+    if (!canWriteSelectedBranch) {
+      setError(chooseBranchFirstLabel);
+      return;
+    }
     if (!reset && !isFloorPlanDirty) return;
     if (reset && !canResetFloorPlan) return;
     const startedAt = performance.now();
@@ -938,6 +1012,7 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            branch_id: selectedActionBranchId,
             reset,
             tables: draftTables.map((table) => ({
               id: table.id,
@@ -1038,7 +1113,10 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
 
   const listControlsStyle = {
     display: "grid",
-    gridTemplateColumns: "minmax(0,1fr) minmax(170px,220px) minmax(118px,140px)",
+    gridTemplateColumns:
+      branchOptions.length > 1
+        ? "minmax(0,1fr) minmax(150px,220px) minmax(170px,220px) minmax(118px,140px)"
+        : "minmax(0,1fr) minmax(170px,220px) minmax(118px,140px)",
     gap: "8px",
     alignItems: "center",
     padding: "6px",
@@ -1118,10 +1196,10 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
               ))}
             </select>
             <div className="table-form-card__actions">
-              <button type="button" onClick={() => void addFloorObject("counter")} disabled={saving}>
+              <button type="button" onClick={() => void addFloorObject("counter")} disabled={saving || !canWriteSelectedBranch}>
                 {text.addCounter}
               </button>
-              <button type="button" onClick={() => void addFloorObject(objectCreateType)} disabled={saving}>
+              <button type="button" onClick={() => void addFloorObject(objectCreateType)} disabled={saving || !canWriteSelectedBranch}>
                 {text.addSelectedObject}
               </button>
             </div>
@@ -1140,6 +1218,26 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
                   aria-label={text.searchTable}
                   style={listControlFieldStyle}
                 />
+                {branchOptions.length > 1 ? (
+                  <select
+                    value={branchFilterId}
+                    onChange={(event) => {
+                      setBranchFilterId(event.target.value);
+                      setActiveZoneId("all");
+                      setSelectedTable(null);
+                      setSelectedObject(null);
+                    }}
+                    aria-label={branchSelectLabel}
+                    style={listControlFieldStyle}
+                  >
+                    <option value="all">{allBranchesLabel}</option>
+                    {branchOptions.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.code ? `${branch.name} (${branch.code})` : branch.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
                 <select
                   value={listSortMode}
                   onChange={(event) => setListSortMode(event.target.value as "natural" | "capacity_desc" | "status")}
@@ -1149,7 +1247,14 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
                   <option value="capacity_desc">{text.sortCapacity}</option>
                   <option value="status">{text.sortStatus}</option>
                 </select>
-                <button type="button" className="table-list-create-btn" onClick={openCreateTableEditor} style={listCreateButtonStyle}>
+                <button
+                  type="button"
+                  className="table-list-create-btn"
+                  onClick={openCreateTableEditor}
+                  style={listCreateButtonStyle}
+                  disabled={saving || !canWriteSelectedBranch}
+                  title={!canWriteSelectedBranch ? chooseBranchFirstLabel : text.addTable}
+                >
                   + {text.addTable}
                 </button>
               </div>
@@ -1158,8 +1263,9 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
                 zones={zones}
                 selectedTableId={selectedTable?.id}
                 onSelect={(table) => setSelectedTable(table)}
-                onEdit={openEditTableEditor}
-                onDelete={requestDeleteTable}
+                onEdit={canWriteSelectedBranch ? openEditTableEditor : undefined}
+                onDelete={canWriteSelectedBranch ? requestDeleteTable : undefined}
+                readOnly={!canWriteSelectedBranch}
                 sortMode={listSortMode}
                 lang={lang}
               />
@@ -1168,10 +1274,10 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
             <>
               <FloorPlanToolbar
                 zoom={zoom}
-                canEdit
+                canEdit={canWriteSelectedBranch}
                 saving={saving}
-                canSaveLayout={isFloorPlanDirty}
-                canResetLayout={canResetFloorPlan}
+                canSaveLayout={canWriteSelectedBranch && isFloorPlanDirty}
+                canResetLayout={canWriteSelectedBranch && canResetFloorPlan}
                 dirty={isFloorPlanDirty}
                 lang={lang}
                 onZoomIn={() => setZoom((value) => Math.min(2.5, value + 0.1))}
@@ -1192,7 +1298,7 @@ export function TableManagementPage({ lang = "th", initialRole = null }: { lang?
                 lang={lang}
                 selectedTableId={selectedTable?.id}
                 selectedObjectId={selectedObject?.id}
-                editable
+                editable={canWriteSelectedBranch}
                 zoom={zoom}
                 pan={pan}
                 onPanChange={setPan}

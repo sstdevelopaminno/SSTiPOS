@@ -1,10 +1,12 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
-import { canManageTables, floorObjectTypes } from "@/lib/table-management";
+import { floorObjectTypes } from "@/lib/table-management";
+import { resolveTableBranchScope } from "@/lib/table-branch-scope";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 type FloorObjectUpdatePayload = {
+  branch_id?: string;
   zone_id?: string | null;
   object_type?: string;
   object_name?: string | null;
@@ -22,16 +24,24 @@ type FloorObjectUpdatePayload = {
 export async function PATCH(req: Request, context: { params: Promise<{ objectId: string }> }) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    if (!canManageTables(auth.branchRole)) {
-      return fail("forbidden_role", "Only manager or owner can manage floor objects.", 403);
-    }
-
     const { objectId } = await context.params;
     if (!objectId) {
       return fail("invalid_object_id", "objectId is required.", 422);
     }
 
     const body = (await req.json()) as FloorObjectUpdatePayload;
+    const supabase = getSupabaseServiceClient();
+    const branchScope = await resolveTableBranchScope({
+      auth,
+      requestedBranchId: body.branch_id,
+      requireManage: true,
+      supabaseClient: supabase
+    });
+    if (!branchScope.ok) {
+      return fail(branchScope.code, branchScope.message, branchScope.status);
+    }
+    const targetBranchId = branchScope.targetBranchId!;
+    const targetRole = branchScope.branches.find((branch) => branch.id === targetBranchId)?.role ?? auth.branchRole;
     const updatePayload: Record<string, unknown> = {};
 
     if (body.zone_id !== undefined) updatePayload.zone_id = body.zone_id;
@@ -53,13 +63,12 @@ export async function PATCH(req: Request, context: { params: Promise<{ objectId:
       return fail("invalid_payload", "No updatable fields provided.", 422);
     }
 
-    const supabase = getSupabaseServiceClient();
     if (body.zone_id !== undefined && body.zone_id !== null) {
       const { data: zone, error: zoneError } = await supabase
         .from("table_zones")
         .select("id")
         .eq("tenant_id", auth.tenantId!)
-        .eq("branch_id", auth.branchId!)
+        .eq("branch_id", targetBranchId)
         .eq("id", body.zone_id)
         .maybeSingle();
       if (zoneError) {
@@ -74,7 +83,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ objectId:
       .from("table_layout_objects")
       .update(updatePayload)
       .eq("tenant_id", auth.tenantId!)
-      .eq("branch_id", auth.branchId!)
+      .eq("branch_id", targetBranchId)
       .eq("id", objectId)
       .select(
         "id,tenant_id,branch_id,zone_id,object_type,object_name,color,position_x,position_y,width,height,rotation,z_index,is_active,metadata,created_at,updated_at"
@@ -90,9 +99,9 @@ export async function PATCH(req: Request, context: { params: Promise<{ objectId:
 
     await appendAuditLog({
       tenantId: auth.tenantId!,
-      branchId: auth.branchId!,
+      branchId: targetBranchId,
       actorUserId: auth.userId,
-      actorRole: auth.branchRole!,
+      actorRole: targetRole!,
       action: "floor_object_updated",
       targetTable: "table_layout_objects",
       targetId: data.id,
@@ -108,21 +117,29 @@ export async function PATCH(req: Request, context: { params: Promise<{ objectId:
 export async function DELETE(_req: Request, context: { params: Promise<{ objectId: string }> }) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    if (!canManageTables(auth.branchRole)) {
-      return fail("forbidden_role", "Only manager or owner can manage floor objects.", 403);
-    }
-
     const { objectId } = await context.params;
     if (!objectId) {
       return fail("invalid_object_id", "objectId is required.", 422);
     }
 
     const supabase = getSupabaseServiceClient();
+    const url = new URL(_req.url);
+    const branchScope = await resolveTableBranchScope({
+      auth,
+      requestedBranchId: url.searchParams.get("branch_id"),
+      requireManage: true,
+      supabaseClient: supabase
+    });
+    if (!branchScope.ok) {
+      return fail(branchScope.code, branchScope.message, branchScope.status);
+    }
+    const targetBranchId = branchScope.targetBranchId!;
+    const targetRole = branchScope.branches.find((branch) => branch.id === targetBranchId)?.role ?? auth.branchRole;
     const { data, error } = await supabase
       .from("table_layout_objects")
       .delete()
       .eq("tenant_id", auth.tenantId!)
-      .eq("branch_id", auth.branchId!)
+      .eq("branch_id", targetBranchId)
       .eq("id", objectId)
       .select("id,object_type,object_name")
       .maybeSingle();
@@ -136,9 +153,9 @@ export async function DELETE(_req: Request, context: { params: Promise<{ objectI
 
     await appendAuditLog({
       tenantId: auth.tenantId!,
-      branchId: auth.branchId!,
+      branchId: targetBranchId,
       actorUserId: auth.userId,
-      actorRole: auth.branchRole!,
+      actorRole: targetRole!,
       action: "floor_object_deleted",
       targetTable: "table_layout_objects",
       targetId: data.id,

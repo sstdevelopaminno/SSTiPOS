@@ -1,10 +1,12 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
-import { canManageTables, floorObjectDefaults, floorObjectTypes } from "@/lib/table-management";
+import { floorObjectDefaults, floorObjectTypes } from "@/lib/table-management";
+import { resolveTableBranchScope } from "@/lib/table-branch-scope";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 type FloorObjectPayload = {
+  branch_id?: string;
   zone_id?: string | null;
   object_type: string;
   object_name?: string | null;
@@ -19,25 +21,35 @@ type FloorObjectPayload = {
   metadata?: Record<string, unknown>;
 };
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
     const supabase = getSupabaseServiceClient();
-    const { data, error } = await supabase
+    const branchScope = await resolveTableBranchScope({
+      auth,
+      requestedBranchId: new URL(req.url).searchParams.get("branch_id"),
+      allowAll: true,
+      supabaseClient: supabase
+    });
+    if (!branchScope.ok) {
+      return fail(branchScope.code, branchScope.message, branchScope.status);
+    }
+    let query = supabase
       .from("table_layout_objects")
       .select(
         "id,tenant_id,branch_id,zone_id,object_type,object_name,color,position_x,position_y,width,height,rotation,z_index,is_active,metadata,created_at,updated_at"
       )
       .eq("tenant_id", auth.tenantId!)
-      .eq("branch_id", auth.branchId!)
       .order("z_index", { ascending: true })
       .order("created_at", { ascending: true });
+    query = branchScope.branchIds.length === 1 ? query.eq("branch_id", branchScope.branchIds[0]) : query.in("branch_id", branchScope.branchIds);
+    const { data, error } = await query;
 
     if (error) {
       return fail("layout_object_query_failed", error.message, 500);
     }
 
-    return ok({ items: data ?? [] });
+    return ok({ items: data ?? [], branches: branchScope.branches, branch_id: branchScope.targetBranchId });
   } catch (error) {
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }
@@ -46,11 +58,19 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    if (!canManageTables(auth.branchRole)) {
-      return fail("forbidden_role", "Only manager or owner can manage floor objects.", 403);
-    }
-
     const body = (await req.json()) as FloorObjectPayload;
+    const supabase = getSupabaseServiceClient();
+    const branchScope = await resolveTableBranchScope({
+      auth,
+      requestedBranchId: body.branch_id,
+      requireManage: true,
+      supabaseClient: supabase
+    });
+    if (!branchScope.ok) {
+      return fail(branchScope.code, branchScope.message, branchScope.status);
+    }
+    const targetBranchId = branchScope.targetBranchId!;
+    const targetRole = branchScope.branches.find((branch) => branch.id === targetBranchId)?.role ?? auth.branchRole;
     if (!body.object_type || !floorObjectTypes.includes(body.object_type as (typeof floorObjectTypes)[number])) {
       return fail("invalid_object_type", "object_type is invalid.", 422);
     }
@@ -61,13 +81,12 @@ export async function POST(req: Request) {
     const width = Math.max(24, Number(body.width ?? defaults.width));
     const height = Math.max(24, Number(body.height ?? defaults.height));
 
-    const supabase = getSupabaseServiceClient();
     if (body.zone_id) {
       const { data: zone, error: zoneError } = await supabase
         .from("table_zones")
         .select("id")
         .eq("tenant_id", auth.tenantId!)
-        .eq("branch_id", auth.branchId!)
+        .eq("branch_id", targetBranchId)
         .eq("id", body.zone_id)
         .maybeSingle();
       if (zoneError) {
@@ -82,7 +101,7 @@ export async function POST(req: Request) {
       .from("table_layout_objects")
       .insert({
         tenant_id: auth.tenantId,
-        branch_id: auth.branchId,
+        branch_id: targetBranchId,
         zone_id: body.zone_id ?? null,
         object_type: objectType,
         object_name: body.object_name?.trim() || defaults.name,
@@ -107,9 +126,9 @@ export async function POST(req: Request) {
 
     await appendAuditLog({
       tenantId: auth.tenantId!,
-      branchId: auth.branchId!,
+      branchId: targetBranchId,
       actorUserId: auth.userId,
-      actorRole: auth.branchRole!,
+      actorRole: targetRole!,
       action: "floor_object_created",
       targetTable: "table_layout_objects",
       targetId: data.id,

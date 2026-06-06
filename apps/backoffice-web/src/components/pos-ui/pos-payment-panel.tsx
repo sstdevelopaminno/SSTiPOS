@@ -27,6 +27,7 @@ type Props = {
   onCancelBill?: () => void;
   onHoldBill?: () => void;
   onPromotion?: () => void;
+  showHoldBill?: boolean;
   checkoutLabel?: string;
   checkoutDisabled?: boolean;
   retryDisabled?: boolean;
@@ -49,6 +50,14 @@ type Props = {
   text: PaymentText;
 };
 
+type SecondaryAction = {
+  key: string;
+  className: string;
+  onClick?: () => void;
+  disabled: boolean;
+  label: string;
+};
+
 function formatMoney(value: number): string {
   return `฿${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`;
 }
@@ -64,6 +73,7 @@ export function PosPaymentPanel({
   onCancelBill,
   onHoldBill,
   onPromotion,
+  showHoldBill = true,
   checkoutLabel,
   checkoutDisabled,
   retryDisabled,
@@ -79,6 +89,32 @@ export function PosPaymentPanel({
   paymentMethodValue,
   text
 }: Props) {
+  const secondaryActions = ([
+    showHoldBill
+      ? {
+          key: "hold",
+          className: "posui-btn",
+          onClick: onHoldBill,
+          disabled: actionsDisabled,
+          label: text.holdBill
+        }
+      : null,
+    {
+      key: "promotion",
+      className: "posui-btn posui-btn--promo",
+      onClick: onPromotion,
+      disabled: actionsDisabled,
+      label: text.promotion
+    },
+    {
+      key: "cancel",
+      className: "posui-btn posui-btn--cancel-near-checkout",
+      onClick: onCancelBill,
+      disabled: actionsDisabled || cancelBillDisabled,
+      label: cancelLabel ?? text.cancelBill
+    }
+  ] as Array<SecondaryAction | null>).filter((action): action is SecondaryAction => Boolean(action));
+
   return (
     <section className="posui-payment-panel">
       <div className="posui-bill-summary-card">
@@ -124,23 +160,14 @@ export function PosPaymentPanel({
       </div>
 
       <div
-        className="posui-bill-actions posui-bill-actions--triple"
-        style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}
+        className={`posui-bill-actions posui-bill-actions--${secondaryActions.length}`}
+        style={{ display: "grid", gridTemplateColumns: `repeat(${secondaryActions.length}, minmax(0, 1fr))`, gap: 8 }}
       >
-        <button type="button" className="posui-btn" onClick={onHoldBill} disabled={actionsDisabled}>
-          {text.holdBill}
-        </button>
-        <button type="button" className="posui-btn posui-btn--promo" onClick={onPromotion} disabled={actionsDisabled}>
-          {text.promotion}
-        </button>
-        <button
-          type="button"
-          className="posui-btn posui-btn--cancel-near-checkout"
-          onClick={onCancelBill}
-          disabled={actionsDisabled || cancelBillDisabled}
-        >
-          {cancelLabel ?? text.cancelBill}
-        </button>
+        {secondaryActions.map((action) => (
+          <button key={action.key} type="button" className={action.className} onClick={action.onClick} disabled={action.disabled}>
+            {action.label}
+          </button>
+        ))}
       </div>
 
       <div className="posui-payment-actions posui-payment-actions--single" style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>

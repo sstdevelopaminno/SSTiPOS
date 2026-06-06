@@ -2829,6 +2829,13 @@ a {
   white-space: nowrap;
 }
 
+.posui-bill-actions--2 .posui-btn,
+.posui-bill-actions--3 .posui-btn {
+  min-width: 0;
+  width: 100%;
+  white-space: nowrap;
+}
+
 .posui-payment-actions {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -4155,6 +4162,21 @@ a {
   line-height: 1;
 }
 
+.posui-payment-modal__tax-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.posui-payment-modal__tax-row strong {
+  color: #0f172a;
+  white-space: nowrap;
+}
+
 .posui-payment-modal__input-label {
   display: grid;
   gap: 6px;
@@ -4352,6 +4374,21 @@ a {
   font-weight: 950;
   letter-spacing: -0.04em;
   line-height: 1;
+}
+
+.posui-transfer-tax-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.posui-transfer-tax-row strong {
+  color: #0f172a;
+  font-size: 13px;
+  letter-spacing: 0;
 }
 
 .posui-transfer-amount-card small {
@@ -4787,6 +4824,11 @@ a {
 
 .posui-cash-summary-row--due strong {
   color: #16a34a;
+}
+
+.posui-cash-summary-row--tax strong {
+  color: #0f172a;
+  font-size: 18px;
 }
 
 .posui-cash-summary-row--accent {

@@ -1,10 +1,12 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
-import { canManageTables, tableShapes, tableStatuses } from "@/lib/table-management";
+import { tableShapes, tableStatuses } from "@/lib/table-management";
+import { resolveTableBranchScope } from "@/lib/table-branch-scope";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 type TableUpdatePayload = {
+  branch_id?: string;
   manager_approval_id?: string | null;
   zone_id?: string | null;
   table_code?: string;
@@ -64,17 +66,26 @@ async function verifyManagerTableApproval(args: {
 export async function PATCH(req: Request, context: { params: Promise<{ tableId: string }> }) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    if (!canManageTables(auth.branchRole)) {
-      return fail("forbidden_role", "Only manager or owner can manage tables.", 403);
-    }
-
     const { tableId } = await context.params;
     if (!tableId) {
       return fail("invalid_table_id", "tableId is required.", 422);
     }
 
     const body = (await req.json()) as TableUpdatePayload;
-    if (auth.branchRole === "manager") {
+    const supabase = getSupabaseServiceClient();
+    const branchScope = await resolveTableBranchScope({
+      auth,
+      requestedBranchId: body.branch_id,
+      requireManage: true,
+      supabaseClient: supabase
+    });
+    if (!branchScope.ok) {
+      return fail(branchScope.code, branchScope.message, branchScope.status);
+    }
+    const targetBranchId = branchScope.targetBranchId!;
+    const targetRole = branchScope.branches.find((branch) => branch.id === targetBranchId)?.role ?? auth.branchRole;
+
+    if (targetRole === "manager") {
       const approvalId = String(body.manager_approval_id ?? "").trim();
       if (!approvalId) {
         return fail("table_approval_required", "Manager PIN approval is required to edit table.", 422);
@@ -82,7 +93,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ tableId: 
       const approvalError = await verifyManagerTableApproval({
         approvalId,
         tenantId: auth.tenantId!,
-        branchId: auth.branchId!,
+        branchId: targetBranchId,
         tableId
       });
       if (approvalError) {
@@ -112,13 +123,12 @@ export async function PATCH(req: Request, context: { params: Promise<{ tableId: 
       return fail("invalid_payload", "No updatable fields provided.", 422);
     }
 
-    const supabase = getSupabaseServiceClient();
     if (body.zone_id !== undefined && body.zone_id !== null) {
       const { data: zone, error: zoneError } = await supabase
         .from("table_zones")
         .select("id")
         .eq("tenant_id", auth.tenantId!)
-        .eq("branch_id", auth.branchId!)
+        .eq("branch_id", targetBranchId)
         .eq("id", body.zone_id)
         .maybeSingle();
       if (zoneError) {
@@ -133,7 +143,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ tableId: 
       .from("dining_tables")
       .update(updatePayload)
       .eq("tenant_id", auth.tenantId!)
-      .eq("branch_id", auth.branchId!)
+      .eq("branch_id", targetBranchId)
       .eq("id", tableId)
       .select(
         "id,tenant_id,branch_id,zone_id,table_code,table_name,capacity,status,shape,position_x,position_y,width,height,rotation,is_active,metadata,created_at,updated_at"
@@ -149,9 +159,9 @@ export async function PATCH(req: Request, context: { params: Promise<{ tableId: 
 
     await appendAuditLog({
       tenantId: auth.tenantId!,
-      branchId: auth.branchId!,
+      branchId: targetBranchId,
       actorUserId: auth.userId,
-      actorRole: auth.branchRole!,
+      actorRole: targetRole!,
       action: "table_updated",
       targetTable: "dining_tables",
       targetId: data.id,
@@ -167,16 +177,24 @@ export async function PATCH(req: Request, context: { params: Promise<{ tableId: 
 export async function DELETE(_req: Request, context: { params: Promise<{ tableId: string }> }) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    if (!canManageTables(auth.branchRole)) {
-      return fail("forbidden_role", "Only manager or owner can manage tables.", 403);
-    }
-
     const { tableId } = await context.params;
     if (!tableId) {
       return fail("invalid_table_id", "tableId is required.", 422);
     }
-    if (auth.branchRole === "manager") {
-      const url = new URL(_req.url);
+    const url = new URL(_req.url);
+    const supabase = getSupabaseServiceClient();
+    const branchScope = await resolveTableBranchScope({
+      auth,
+      requestedBranchId: url.searchParams.get("branch_id"),
+      requireManage: true,
+      supabaseClient: supabase
+    });
+    if (!branchScope.ok) {
+      return fail(branchScope.code, branchScope.message, branchScope.status);
+    }
+    const targetBranchId = branchScope.targetBranchId!;
+    const targetRole = branchScope.branches.find((branch) => branch.id === targetBranchId)?.role ?? auth.branchRole;
+    if (targetRole === "manager") {
       const approvalId = String(url.searchParams.get("approval_id") ?? "").trim();
       if (!approvalId) {
         return fail("table_approval_required", "Manager PIN approval is required to delete table.", 422);
@@ -184,7 +202,7 @@ export async function DELETE(_req: Request, context: { params: Promise<{ tableId
       const approvalError = await verifyManagerTableApproval({
         approvalId,
         tenantId: auth.tenantId!,
-        branchId: auth.branchId!,
+        branchId: targetBranchId,
         tableId
       });
       if (approvalError) {
@@ -192,14 +210,13 @@ export async function DELETE(_req: Request, context: { params: Promise<{ tableId
       }
     }
 
-    const supabase = getSupabaseServiceClient();
     // Force delete behavior: detach table from all orders first, then delete table.
     // This avoids FK constraints from historical/current orders.
     const { error: detachOrderError } = await supabase
       .from("orders")
       .update({ table_id: null })
       .eq("tenant_id", auth.tenantId!)
-      .eq("branch_id", auth.branchId!)
+      .eq("branch_id", targetBranchId)
       .eq("table_id", tableId);
 
     if (detachOrderError) {
@@ -210,7 +227,7 @@ export async function DELETE(_req: Request, context: { params: Promise<{ tableId
       .from("dining_tables")
       .delete()
       .eq("tenant_id", auth.tenantId!)
-      .eq("branch_id", auth.branchId!)
+      .eq("branch_id", targetBranchId)
       .eq("id", tableId)
       .select("id,table_code")
       .maybeSingle();
@@ -224,9 +241,9 @@ export async function DELETE(_req: Request, context: { params: Promise<{ tableId
 
     await appendAuditLog({
       tenantId: auth.tenantId!,
-      branchId: auth.branchId!,
+      branchId: targetBranchId,
       actorUserId: auth.userId,
-      actorRole: auth.branchRole!,
+      actorRole: targetRole!,
       action: "table_deleted",
       targetTable: "dining_tables",
       targetId: data.id,

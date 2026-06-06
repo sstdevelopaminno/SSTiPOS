@@ -441,3 +441,42 @@ Use this section as the current source of truth before changing the Payment Sett
 - Commit and push to `main`.
 - Deploy Vercel production from the same commit.
 - Smoke test `/login/store`, `/preview/pos/settings`, `/preview/pos`, `/api/pos/sales`, and one bank-transfer payment flow.
+
+## POS Table Mode / Branch Tables / Tax Handoff (2026-06-07)
+
+### What changed
+- POS sales now hides the `พักบิล` action in dine-in/table mode and delivery mode.
+- POS sales delivery mode no longer shows the table status chip; dine-in still shows table context plus `ย้ายโต๊ะ` and `เลือกโต๊ะ`.
+- The `เลือกโต๊ะ` button returns to the table selector while preserving the current table draft until payment clears the bill.
+- Table Management now supports branch-scoped table, zone, and floor-plan data with a branch filter and an all-branches read-only view.
+- POS payment review, cash, transfer, sidebar summary, receipt preview, and 58mm print HTML now show tax lines from the saved tax settings/order snapshot.
+
+### Files/routes/components affected
+- Sales UI: `apps/backoffice-web/src/components/pos/pos-sales-module.tsx`.
+- Payment panel/modal UI: `apps/backoffice-web/src/components/pos-ui/pos-payment-panel.tsx`, `apps/backoffice-web/src/components/pos/pos-payment-modals.tsx`.
+- Checkout/submit tax snapshot types: `apps/backoffice-web/src/components/pos/features/checkout-flow.ts`, `apps/backoffice-web/src/components/pos/services/pos-sales-service-module.ts`, `apps/backoffice-web/src/lib/services/pos-sales-service.ts`.
+- Table Management UI/types: `apps/backoffice-web/src/components/tables/table-management-page.tsx`, `apps/backoffice-web/src/components/tables/types.ts`.
+- Branch scope helper: `apps/backoffice-web/src/lib/table-branch-scope.ts`.
+- Table APIs: `apps/backoffice-web/src/app/api/backoffice/tables`, `table-zones`, `table-layout-objects`, and `tables/floor-plan/save`.
+- Dine-in bill reload API: `apps/backoffice-web/src/app/api/pos/tables/[tableId]/bill/route.ts`.
+
+### UI behavior notes
+- In dine-in mode, cashier can switch back to the table selector without losing the selected table cart draft.
+- In delivery mode, the pending-delivery queue button may remain visible, but generic hold-bill and table controls are hidden.
+- In Table Management, selecting `ทุกสาขา` / `All branches` is for viewing only. Add/edit/delete/save layout requires choosing a specific branch.
+- Table creation sends the selected branch to the API; newly created zones and floor objects are created in that same branch.
+
+### Payment flow safety notes
+- Tax is still calculated by the existing POS sales API from server-loaded tax settings. Client tax lines are used for preview/snapshot display and do not replace server-calculated totals.
+- Receipt tax display reads `tax_lines` from the order snapshot when available and falls back to `tax_total`.
+- Payment confirmation APIs and order/bill state transitions were not changed.
+- Tenant/session/branch guards remain in place; table-management writes now validate that the actor can manage the target branch.
+
+### Responsive notes
+- The payment panel action row now adapts from three buttons to two buttons when hold-bill is hidden, preventing squeezed buttons on tablet/mobile.
+- Table Management branch filtering is placed in the list controls row; action buttons are disabled instead of overflowing when all branches are selected.
+
+### Checks for this change
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`

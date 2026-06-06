@@ -12,6 +12,14 @@ type CartItem = {
   price: number;
 };
 
+type TaxLineSnapshot = {
+  id: string;
+  label: string;
+  rate_pct: number;
+  mode: string;
+  amount: number;
+};
+
 type CheckoutReviewOrder = {
   order_id: string;
   order_no: string;
@@ -21,6 +29,8 @@ type CheckoutReviewOrder = {
   items: CartItem[];
   total_amount: number;
   discount_amount?: number;
+  tax_total?: number;
+  tax_lines?: TaxLineSnapshot[];
 };
 
 type ReceiptSession = CheckoutReviewOrder & {
@@ -206,6 +216,42 @@ export function PosPaymentModals({
     return Number(fallbackDiscount.toFixed(2));
   }
 
+  function resolveTaxLines(order: Pick<CheckoutReviewOrder, "tax_lines" | "tax_total"> | null | undefined): TaxLineSnapshot[] {
+    if (!order) return [];
+    const explicitLines = Array.isArray(order.tax_lines)
+      ? order.tax_lines.filter((line) => Number.isFinite(Number(line.amount)) && Math.abs(Number(line.amount)) >= 0.005)
+      : [];
+    if (explicitLines.length > 0) return explicitLines;
+    const taxTotal = Number(order.tax_total ?? 0);
+    if (!Number.isFinite(taxTotal) || Math.abs(taxTotal) < 0.005) return [];
+    return [
+      {
+        id: "tax-total",
+        label: text.tax ?? (lang === "th" ? "ภาษี" : "Tax"),
+        rate_pct: 0,
+        mode: taxTotal < 0 ? "deduct_from_bill" : "add_to_bill",
+        amount: Number(taxTotal.toFixed(2))
+      }
+    ];
+  }
+
+  function renderTaxSummaryRows(
+    order: Pick<CheckoutReviewOrder, "tax_lines" | "tax_total"> | null | undefined,
+    className: string,
+    element: "div" | "p" = "div"
+  ) {
+    const Tag = element;
+    return resolveTaxLines(order).map((line) => (
+      <Tag key={`tax-${line.id}`} className={className}>
+        <span>{line.label}</span>
+        <strong>
+          {line.amount < 0 ? "-" : "+"}
+          {formatMoney(Math.abs(line.amount))}
+        </strong>
+      </Tag>
+    ));
+  }
+
   return (
     <>
       {takeawayCreatingPreview ? (
@@ -304,6 +350,7 @@ export function PosPaymentModals({
                     </div>
                   ))}
                 </div>
+                {renderTaxSummaryRows(reviewOrder, "posui-payment-modal__tax-row")}
                 <div className="posui-payment-modal__total">
                   <span>{text.reviewGrandTotalLabel}</span>
                   <strong>{formatMoney(reviewOrder.total_amount)}</strong>
@@ -342,6 +389,7 @@ export function PosPaymentModals({
                   <span>{text.paymentTotalDue}</span>
                   <strong>{formatMoney(cashReviewOrder.total_amount)}</strong>
                 </div>
+                {renderTaxSummaryRows(cashReviewOrder, "posui-cash-summary-row posui-cash-summary-row--tax")}
                 <div className="posui-cash-summary-row posui-cash-summary-row--received" aria-live="polite" aria-label={text.cashReceivedLabel}>
                   <span>{text.cashReceivedLabel}</span>
                   <strong className={cashReceivedInput ? "" : "is-placeholder"}>{cashReceivedDisplay}</strong>
@@ -418,6 +466,7 @@ export function PosPaymentModals({
                 <div className="posui-transfer-amount-card">
                   <span>{text.transferPromptPayAmountLabel}</span>
                   <strong>{formatMoney(transferReviewOrder.total_amount)}</strong>
+                  {renderTaxSummaryRows(transferReviewOrder, "posui-transfer-tax-row")}
                 </div>
                 <h4 className="posui-transfer-section-title">{text.transferQrTitle}</h4>
                 {promptPayQrUrl ? (
@@ -497,6 +546,7 @@ export function PosPaymentModals({
               <footer className="posui-receipt-card-preview__summary">
                 <p><span>{text.paymentMethod}</span><strong>{getReceiptPaymentMethodLabel(receiptSession)}</strong></p>
                 <p><span>{text.discount}</span><strong>{formatMoney(resolveReceiptDiscountAmount(receiptSession))}</strong></p>
+                {renderTaxSummaryRows(receiptSession, "", "p")}
                 <p><span>{text.paymentTotalDue}</span><strong>{formatMoney(receiptSession.total_amount)}</strong></p>
                 {receiptSession.payment_method === "cash" ? (
                   <>

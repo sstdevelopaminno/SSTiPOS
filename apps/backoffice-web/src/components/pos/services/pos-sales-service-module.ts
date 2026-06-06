@@ -65,6 +65,8 @@ type PendingPaymentQueueItem = {
     skip_transfer_verification?: boolean;
     receipt_items?: CartItem[];
     discount_amount?: number;
+    tax_total?: number;
+    tax_lines?: Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>;
   };
   queued_at: string;
   retry_count: number;
@@ -79,6 +81,8 @@ type ActiveOrder = {
   channel?: string | null;
   external_order_code?: string | null;
   total_amount?: number;
+  tax_total?: number | null;
+  tax_lines?: Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>;
   table_id?: string | null;
   created_at?: string;
   updated_existing?: boolean;
@@ -178,6 +182,10 @@ export async function submitOrderWithEffects(args: {
       channel: typeof nextOrder.channel === "string" ? nextOrder.channel : null,
       external_order_code: typeof nextOrder.external_order_code === "string" ? nextOrder.external_order_code : null,
       total_amount: Number.isFinite(nextOrder.total_amount) ? Number(nextOrder.total_amount) : undefined,
+      tax_total: Number.isFinite(nextOrder.tax_total) ? Number(nextOrder.tax_total) : null,
+      tax_lines: Array.isArray(nextOrder.tax_lines)
+        ? nextOrder.tax_lines as Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>
+        : [],
       table_id: nextOrder.table_id ?? null,
       created_at: nextOrder.created_at,
       updated_existing: Boolean(nextOrder.updated_existing)
@@ -241,6 +249,8 @@ export async function submitTransferPaymentWithEffects(args: {
     items: CartItem[];
     total_amount: number;
     discount_amount: number;
+    tax_total?: number;
+    tax_lines?: Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>;
     payment_method: "bank_transfer";
     cash_received: number;
     change_amount: number;
@@ -361,6 +371,8 @@ export async function submitTransferPaymentWithEffects(args: {
     items: pendingPaymentEntry.payload.receipt_items ?? fallbackReceiptItems,
     total_amount: pendingPaymentEntry.payload.total_amount,
     discount_amount: pendingPaymentEntry.payload.discount_amount ?? 0,
+    tax_total: pendingPaymentEntry.payload.tax_total ?? 0,
+    tax_lines: pendingPaymentEntry.payload.tax_lines ?? [],
     payment_method: "bank_transfer",
     cash_received: pendingPaymentEntry.payload.total_amount,
     change_amount: 0,

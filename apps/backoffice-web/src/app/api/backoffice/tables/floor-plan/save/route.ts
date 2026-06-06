@@ -1,7 +1,7 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
-import { canManageTables } from "@/lib/table-management";
+import { resolveTableBranchScope } from "@/lib/table-branch-scope";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 type FloorPlanTablePatch = {
@@ -31,6 +31,7 @@ type FloorPlanObjectPatch = {
 };
 
 type SavePayload = {
+  branch_id?: string;
   tables: FloorPlanTablePatch[];
   objects?: FloorPlanObjectPatch[];
   reset?: boolean;
@@ -39,11 +40,19 @@ type SavePayload = {
 export async function POST(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    if (!canManageTables(auth.branchRole)) {
-      return fail("forbidden_role", "Only manager or owner can save floor plan.", 403);
-    }
-
     const body = (await req.json()) as SavePayload;
+    const supabase = getSupabaseServiceClient();
+    const branchScope = await resolveTableBranchScope({
+      auth,
+      requestedBranchId: body.branch_id,
+      requireManage: true,
+      supabaseClient: supabase
+    });
+    if (!branchScope.ok) {
+      return fail(branchScope.code, branchScope.message, branchScope.status);
+    }
+    const targetBranchId = branchScope.targetBranchId!;
+    const targetRole = branchScope.branches.find((branch) => branch.id === targetBranchId)?.role ?? auth.branchRole;
     if (!Array.isArray(body.tables)) {
       return fail("invalid_payload", "tables array is required.", 422);
     }
@@ -76,7 +85,6 @@ export async function POST(req: Request) {
         }))
       : [];
 
-    const supabase = getSupabaseServiceClient();
     const zoneIds = Array.from(
       new Set(
         [...patches.map((patch) => patch.zone_id), ...objectPatches.map((patch) => patch.zone_id)].filter(
@@ -89,7 +97,7 @@ export async function POST(req: Request) {
         .from("table_zones")
         .select("id")
         .eq("tenant_id", auth.tenantId!)
-        .eq("branch_id", auth.branchId!)
+        .eq("branch_id", targetBranchId)
         .in("id", zoneIds);
       if (zoneError) {
         return fail("zone_lookup_failed", zoneError.message, 500);
@@ -114,7 +122,7 @@ export async function POST(req: Request) {
             rotation: patch.rotation
           })
           .eq("tenant_id", auth.tenantId!)
-          .eq("branch_id", auth.branchId!)
+          .eq("branch_id", targetBranchId)
           .eq("id", patch.id);
 
         return {
@@ -144,7 +152,7 @@ export async function POST(req: Request) {
             metadata: patch.metadata
           })
           .eq("tenant_id", auth.tenantId!)
-          .eq("branch_id", auth.branchId!)
+          .eq("branch_id", targetBranchId)
           .eq("id", patch.id);
 
         return {
@@ -162,9 +170,9 @@ export async function POST(req: Request) {
 
     await appendAuditLog({
       tenantId: auth.tenantId!,
-      branchId: auth.branchId!,
+      branchId: targetBranchId,
       actorUserId: auth.userId,
-      actorRole: auth.branchRole!,
+      actorRole: targetRole!,
       action: "floor_plan_updated",
       targetTable: "dining_tables",
       metadata: {

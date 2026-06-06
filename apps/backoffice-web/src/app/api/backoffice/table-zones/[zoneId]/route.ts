@@ -1,10 +1,11 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
-import { canManageTables } from "@/lib/table-management";
+import { resolveTableBranchScope } from "@/lib/table-branch-scope";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 type ZoneUpdatePayload = {
+  branch_id?: string;
   zone_name?: string;
   color?: string;
   display_order?: number;
@@ -14,16 +15,24 @@ type ZoneUpdatePayload = {
 export async function PATCH(req: Request, context: { params: Promise<{ zoneId: string }> }) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    if (!canManageTables(auth.branchRole)) {
-      return fail("forbidden_role", "Only manager or owner can manage zones.", 403);
-    }
-
     const { zoneId } = await context.params;
     if (!zoneId) {
       return fail("invalid_zone_id", "zoneId is required.", 422);
     }
 
     const body = (await req.json()) as ZoneUpdatePayload;
+    const supabase = getSupabaseServiceClient();
+    const branchScope = await resolveTableBranchScope({
+      auth,
+      requestedBranchId: body.branch_id,
+      requireManage: true,
+      supabaseClient: supabase
+    });
+    if (!branchScope.ok) {
+      return fail(branchScope.code, branchScope.message, branchScope.status);
+    }
+    const targetBranchId = branchScope.targetBranchId!;
+    const targetRole = branchScope.branches.find((branch) => branch.id === targetBranchId)?.role ?? auth.branchRole;
     const updatePayload: Record<string, unknown> = {};
     if (typeof body.zone_name === "string") updatePayload.zone_name = body.zone_name.trim();
     if (typeof body.color === "string") updatePayload.color = body.color.trim();
@@ -34,12 +43,11 @@ export async function PATCH(req: Request, context: { params: Promise<{ zoneId: s
       return fail("invalid_payload", "No updatable fields provided.", 422);
     }
 
-    const supabase = getSupabaseServiceClient();
     const { data, error } = await supabase
       .from("table_zones")
       .update(updatePayload)
       .eq("tenant_id", auth.tenantId!)
-      .eq("branch_id", auth.branchId!)
+      .eq("branch_id", targetBranchId)
       .eq("id", zoneId)
       .select("id,tenant_id,branch_id,zone_name,color,display_order,is_active,metadata,created_at,updated_at")
       .maybeSingle();
@@ -53,9 +61,9 @@ export async function PATCH(req: Request, context: { params: Promise<{ zoneId: s
 
     await appendAuditLog({
       tenantId: auth.tenantId!,
-      branchId: auth.branchId!,
+      branchId: targetBranchId,
       actorUserId: auth.userId,
-      actorRole: auth.branchRole!,
+      actorRole: targetRole!,
       action: "table_zone_updated",
       targetTable: "table_zones",
       targetId: data.id,
@@ -71,21 +79,29 @@ export async function PATCH(req: Request, context: { params: Promise<{ zoneId: s
 export async function DELETE(_req: Request, context: { params: Promise<{ zoneId: string }> }) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    if (!canManageTables(auth.branchRole)) {
-      return fail("forbidden_role", "Only manager or owner can manage zones.", 403);
-    }
-
     const { zoneId } = await context.params;
     if (!zoneId) {
       return fail("invalid_zone_id", "zoneId is required.", 422);
     }
 
     const supabase = getSupabaseServiceClient();
+    const url = new URL(_req.url);
+    const branchScope = await resolveTableBranchScope({
+      auth,
+      requestedBranchId: url.searchParams.get("branch_id"),
+      requireManage: true,
+      supabaseClient: supabase
+    });
+    if (!branchScope.ok) {
+      return fail(branchScope.code, branchScope.message, branchScope.status);
+    }
+    const targetBranchId = branchScope.targetBranchId!;
+    const targetRole = branchScope.branches.find((branch) => branch.id === targetBranchId)?.role ?? auth.branchRole;
     const { count: linkedTableCount, error: countError } = await supabase
       .from("dining_tables")
       .select("id", { head: true, count: "exact" })
       .eq("tenant_id", auth.tenantId!)
-      .eq("branch_id", auth.branchId!)
+      .eq("branch_id", targetBranchId)
       .eq("zone_id", zoneId);
 
     if (countError) {
@@ -99,7 +115,7 @@ export async function DELETE(_req: Request, context: { params: Promise<{ zoneId:
       .from("table_zones")
       .delete()
       .eq("tenant_id", auth.tenantId!)
-      .eq("branch_id", auth.branchId!)
+      .eq("branch_id", targetBranchId)
       .eq("id", zoneId)
       .select("id,zone_name")
       .maybeSingle();
@@ -113,9 +129,9 @@ export async function DELETE(_req: Request, context: { params: Promise<{ zoneId:
 
     await appendAuditLog({
       tenantId: auth.tenantId!,
-      branchId: auth.branchId!,
+      branchId: targetBranchId,
       actorUserId: auth.userId,
-      actorRole: auth.branchRole!,
+      actorRole: targetRole!,
       action: "table_zone_deleted",
       targetTable: "table_zones",
       targetId: data.id,

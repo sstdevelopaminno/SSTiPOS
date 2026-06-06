@@ -1,10 +1,12 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
-import { canManageTables, tableShapes, tableStatuses } from "@/lib/table-management";
+import { tableShapes, tableStatuses } from "@/lib/table-management";
+import { resolveTableBranchScope } from "@/lib/table-branch-scope";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 type TablePayload = {
+  branch_id?: string;
   zone_id?: string | null;
   table_code?: string;
   table_name?: string | null;
@@ -58,24 +60,35 @@ async function getNextNumericTableCode(args: {
   return { code: String(maxCode + 1), error: null };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
     const supabase = getSupabaseServiceClient();
-    const { data, error } = await supabase
+    const branchScope = await resolveTableBranchScope({
+      auth,
+      requestedBranchId: new URL(req.url).searchParams.get("branch_id"),
+      allowAll: true,
+      supabaseClient: supabase
+    });
+    if (!branchScope.ok) {
+      return fail(branchScope.code, branchScope.message, branchScope.status);
+    }
+
+    let query = supabase
       .from("dining_tables")
       .select(
         "id,tenant_id,branch_id,zone_id,table_code,table_name,capacity,status,shape,position_x,position_y,width,height,rotation,is_active,metadata,created_at,updated_at"
       )
       .eq("tenant_id", auth.tenantId!)
-      .eq("branch_id", auth.branchId!)
       .order("table_code", { ascending: true });
+    query = branchScope.branchIds.length === 1 ? query.eq("branch_id", branchScope.branchIds[0]) : query.in("branch_id", branchScope.branchIds);
+    const { data, error } = await query;
 
     if (error) {
       return fail("table_query_failed", error.message, 500);
     }
 
-    return ok({ items: data ?? [] });
+    return ok({ items: data ?? [], branches: branchScope.branches, branch_id: branchScope.targetBranchId });
   } catch (error) {
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }
@@ -84,24 +97,30 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    if (!canManageTables(auth.branchRole)) {
-      return fail("forbidden_role", "Only manager or owner can manage tables.", 403);
-    }
-
     const body = (await req.json()) as TablePayload;
+    const supabase = getSupabaseServiceClient();
+    const branchScope = await resolveTableBranchScope({
+      auth,
+      requestedBranchId: body.branch_id,
+      requireManage: true,
+      supabaseClient: supabase
+    });
+    if (!branchScope.ok) {
+      return fail(branchScope.code, branchScope.message, branchScope.status);
+    }
+    const targetBranchId = branchScope.targetBranchId!;
     const manualTableCode = body.table_code?.trim() ?? "";
 
     const status = body.status && tableStatuses.includes(body.status as (typeof tableStatuses)[number]) ? body.status : "available";
     const shape = body.shape && tableShapes.includes(body.shape as (typeof tableShapes)[number]) ? body.shape : "rectangle";
     const capacity = Math.max(1, Number(body.capacity ?? 4));
 
-    const supabase = getSupabaseServiceClient();
     if (body.zone_id) {
       const { data: zone, error: zoneError } = await supabase
         .from("table_zones")
         .select("id")
         .eq("tenant_id", auth.tenantId!)
-        .eq("branch_id", auth.branchId!)
+        .eq("branch_id", targetBranchId)
         .eq("id", body.zone_id)
         .maybeSingle();
       if (zoneError) {
@@ -127,7 +146,7 @@ export async function POST(req: Request) {
         const generated = await getNextNumericTableCode({
           supabase,
           tenantId: auth.tenantId!,
-          branchId: auth.branchId!
+          branchId: targetBranchId
         });
         if (generated.error || !generated.code) {
           return fail("table_code_generate_failed", generated.error ?? "Failed to generate next table code.", 500);
@@ -140,7 +159,7 @@ export async function POST(req: Request) {
         .from("dining_tables")
         .insert({
           tenant_id: auth.tenantId,
-          branch_id: auth.branchId,
+          branch_id: targetBranchId,
           zone_id: body.zone_id ?? null,
           table_code: candidateCode,
           table_name: body.table_name?.trim() || null,
@@ -178,7 +197,7 @@ export async function POST(req: Request) {
 
     await appendAuditLog({
       tenantId: auth.tenantId!,
-      branchId: auth.branchId!,
+      branchId: targetBranchId,
       actorUserId: auth.userId,
       actorRole: auth.branchRole!,
       action: "table_created",
@@ -186,6 +205,7 @@ export async function POST(req: Request) {
       targetId: data.id,
       metadata: {
         table_code: data.table_code,
+        branch_id: targetBranchId,
         zone_id: data.zone_id
       }
     });

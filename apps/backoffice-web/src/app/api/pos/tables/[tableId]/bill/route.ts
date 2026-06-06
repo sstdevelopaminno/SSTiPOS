@@ -95,7 +95,7 @@ export async function GET(req: Request, context: { params: Promise<{ tableId: st
         supabase
           .from("orders")
           .select(
-            "id,order_no,order_type,channel,external_order_code,table_id,customer_name,notes,subtotal,discount_amount,gp_amount,total_amount,status,created_at"
+            "id,order_no,order_type,channel,external_order_code,table_id,customer_name,notes,subtotal,discount_amount,gp_amount,total_amount,tax_total,metadata,status,created_at"
           )
           .eq("tenant_id", auth.tenantId!)
           .eq("branch_id", auth.branchId!)

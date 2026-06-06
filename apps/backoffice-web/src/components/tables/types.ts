@@ -2,6 +2,7 @@ import type { FloorPlanObjectType, TableShape, TableStatus } from "@pos/shared-t
 
 export type TableZoneItem = {
   id: string;
+  branch_id?: string | null;
   zone_name: string;
   color: string;
   display_order: number;
@@ -10,6 +11,7 @@ export type TableZoneItem = {
 
 export type DiningTableItem = {
   id: string;
+  branch_id?: string | null;
   zone_id: string | null;
   table_code: string;
   table_name: string | null;
@@ -29,6 +31,7 @@ export type DiningTableItem = {
 
 export type FloorPlanObjectItem = {
   id: string;
+  branch_id?: string | null;
   zone_id: string | null;
   object_type: FloorPlanObjectType;
   object_name: string | null;

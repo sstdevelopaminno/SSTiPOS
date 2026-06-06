@@ -35,6 +35,8 @@ export type CheckoutReviewOrder = {
   items: CheckoutCartItem[];
   total_amount: number;
   discount_amount?: number;
+  tax_total?: number;
+  tax_lines?: Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>;
 };
 
 export type PendingSubmitPayload = {
@@ -134,9 +136,11 @@ export function buildReviewOrder(args: {
   fallbackTotal: number;
   items: CheckoutCartItem[];
   discountAmount: number;
+  taxTotal?: number;
+  taxLines?: Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>;
   createdAt?: string;
 }): CheckoutReviewOrder {
-  const { order, fallbackOrderType, fallbackTableId, fallbackTotal, items, discountAmount, createdAt } = args;
+  const { order, fallbackOrderType, fallbackTableId, fallbackTotal, items, discountAmount, taxTotal, taxLines, createdAt } = args;
   return {
     order_id: order.id,
     order_no: order.order_no,
@@ -147,6 +151,8 @@ export function buildReviewOrder(args: {
     created_at: order.created_at ?? createdAt ?? new Date().toISOString(),
     items,
     total_amount: Number(order.total_amount ?? fallbackTotal),
-    discount_amount: discountAmount
+    discount_amount: discountAmount,
+    tax_total: taxTotal,
+    tax_lines: taxLines
   };
 }
