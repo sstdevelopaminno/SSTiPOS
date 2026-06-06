@@ -276,11 +276,13 @@ Use this section as the current source of truth before changing the Payment Sett
 
 ### Supabase migration status
 - `supabase db push` completed successfully against linked project ref `deejlitaivfnsbwqdugy` on 2026-06-06.
+- `supabase db push` completed successfully again on 2026-06-07 to apply payment account scope uniqueness.
 - Applied migrations:
   - `202606050001_add_payment_account_delete_approval_action.sql`
   - `202606050002_payment_account_qr_modes.sql`
   - `202606050003_branch_devices_settings_perf.sql`
   - `202606050004_tax_settings.sql`
+  - `202606060001_payment_account_active_scope_uniqueness.sql`
 - Do not show a permanent "migration has not been applied" banner in Payment Settings. The required migrations are now applied.
 - Never place Supabase access tokens, database passwords, service-role keys, or other secrets in README, source files, commits, screenshots, or client-side code.
 - If migration access fails later, verify the linked project, CLI account permissions, and `SUPABASE_DB_PASSWORD` outside source control.
@@ -304,7 +306,7 @@ Use this section as the current source of truth before changing the Payment Sett
 - Do not disable the Add Account button merely because a stale initial snapshot reports that the payment schema is unavailable.
 - Runtime QR selection rule: an active branch-specific payment account wins over an active tenant-wide/all-branches account. The tenant-wide account is only the fallback when the current branch has no active branch-specific account.
 - Active duplicate guard: there can be only one active branch-specific payment account per `tenant_id + branch_id`, and only one active all-branches payment account per `tenant_id`. Migration `202606060001_payment_account_active_scope_uniqueness.sql` deactivates older duplicates and adds partial unique indexes.
-- The duplicate-scope migration is present in the repo but must be applied to the intended Supabase project before database-level uniqueness is guaranteed in production.
+- The duplicate-scope migration is applied to linked Supabase project ref `deejlitaivfnsbwqdugy`.
 
 ### Tax Settings behavior
 - UI/API/service files:
@@ -425,10 +427,10 @@ Use this section as the current source of truth before changing the Payment Sett
 - Keep performance-critical list endpoints cached by tenant/branch scope, and invalidate by scope after writes.
 
 ### Database readiness
-- Apply pending migrations to the linked Supabase project before production verification.
+- As of 2026-06-07, local and remote migration lists match through `202606060001` on linked project ref `deejlitaivfnsbwqdugy`.
 - If `supabase migration list` or `supabase db push` returns privilege errors, set `SUPABASE_DB_PASSWORD` in the shell/session or run from a Supabase account with the correct project database privileges.
-- `202606060001_payment_account_active_scope_uniqueness.sql` is required to guarantee one active branch-specific payment account per branch and one active all-branches account per tenant at the database level.
-- `202606050004_tax_settings.sql` is required for branch tax settings and POS tax summary consistency.
+- `202606060001_payment_account_active_scope_uniqueness.sql` is applied and guarantees one active branch-specific payment account per branch and one active all-branches account per tenant at the database level.
+- `202606050004_tax_settings.sql` is applied and supports branch tax settings and POS tax summary consistency.
 - After migration push, verify Supabase schema cache if a route reports missing column/table errors.
 
 ### Release checklist
