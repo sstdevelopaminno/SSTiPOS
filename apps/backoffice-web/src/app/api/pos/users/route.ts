@@ -68,7 +68,12 @@ function isMissingRelationError(error: { code?: string | null; message?: string 
   if (!error) return false;
   const code = String(error.code ?? "");
   const message = String(error.message ?? "").toLowerCase();
-  return code === "42P01" || message.includes("does not exist") || message.includes(relationName.toLowerCase());
+  const relation = relationName.toLowerCase();
+  return (
+    code === "42P01" ||
+    (message.includes("does not exist") &&
+      (message.includes(`"${relation}"`) || message.includes(`.${relation}"`) || message.includes(`'${relation}'`) || message.includes(relation)))
+  );
 }
 
 function normalizeRole(value: string): BranchRole {
@@ -140,9 +145,9 @@ function normalizeManagerRoleChange(actorRole: BranchRole | null | undefined, re
   return currentRole;
 }
 
-async function requirePinIfProvided(input: { pin?: string; tenantId: string; branchId: string }) {
+async function requireApprovalPin(input: { pin?: string; tenantId: string; branchId: string }) {
   const pin = String(input.pin ?? "").trim();
-  if (!pin) return { approved: true };
+  if (!pin) return { approved: false };
   const approval = await validateManagerPin("employee_delete", pin, {
     tenantId: input.tenantId,
     branchId: input.branchId
@@ -193,19 +198,28 @@ async function upsertProfileSettings(input: {
   permissionRole: string;
 }) {
   const supabase = getSupabaseServiceClient();
-  const { error } = await supabase.from("pos_user_profiles").upsert(
-    {
-      tenant_id: input.tenantId,
-      user_id: input.userId,
-      employee_code: input.employeeCode,
-      position_title: input.positionTitle,
-      permission_role: input.permissionRole
-    },
-    { onConflict: "tenant_id,user_id" }
-  );
+  const { data, error } = await supabase
+    .from("pos_user_profiles")
+    .upsert(
+      {
+        tenant_id: input.tenantId,
+        user_id: input.userId,
+        employee_code: input.employeeCode,
+        position_title: input.positionTitle,
+        permission_role: input.permissionRole
+      },
+      { onConflict: "tenant_id,user_id" }
+    )
+    .select("user_id,employee_code,position_title,permission_role")
+    .single<UserProfileSettingsRow>();
   if (error) {
-    if (isMissingRelationError(error, "pos_user_profiles")) return;
+    if (isMissingRelationError(error, "pos_user_profiles")) {
+      throw new Error("POS user profile table is missing. Please run Supabase migrations.");
+    }
     throw new Error(error.message);
+  }
+  if (!data || data.user_id !== input.userId || normalizeEmployeeCode(data.employee_code ?? "") !== input.employeeCode) {
+    throw new Error("POS user profile update was not persisted.");
   }
 }
 
@@ -389,22 +403,31 @@ export async function PATCH(request: Request) {
         return fail("invalid_profile", "Full name and valid email are required.", 422);
       }
 
-      const pinApproval = employeeCodeChanged ? await requirePinIfProvided({ pin: payload.approval_pin, tenantId: auth.tenantId!, branchId }) : { approved: true };
+      const pinApproval = employeeCodeChanged ? await requireApprovalPin({ pin: payload.approval_pin, tenantId: auth.tenantId!, branchId }) : { approved: true };
       if (employeeCodeChanged && !pinApproval.approved) {
         return fail("approval_pin_required", "PIN approval is required to update employee code.", 403);
       }
 
-      const { error: profileError } = await supabase.from("users_profiles").update({ full_name: fullName, email }).eq("id", userId);
+      const { data: updatedProfile, error: profileError } = await supabase
+        .from("users_profiles")
+        .update({ full_name: fullName, email })
+        .eq("id", userId)
+        .select("id,full_name,email")
+        .maybeSingle<{ id: string; full_name: string | null; email: string | null }>();
       if (profileError) return fail("user_profile_update_failed", profileError.message, 500);
+      if (!updatedProfile) return fail("user_profile_not_found", "User profile was not found.", 404);
 
       if (nextRole !== targetRole) {
-        const { error: roleError } = await supabase
+        const { data: updatedRole, error: roleError } = await supabase
           .from("user_branch_roles")
           .update({ role: nextRole })
           .eq("tenant_id", auth.tenantId!)
           .eq("branch_id", branchId)
-          .eq("user_id", userId);
+          .eq("user_id", userId)
+          .select("user_id,role")
+          .maybeSingle<{ user_id: string; role: BranchRole }>();
         if (roleError) return fail("user_role_update_failed", roleError.message, 500);
+        if (!updatedRole) return fail("user_role_not_found", "User branch role was not found.", 404);
       }
 
       try {
@@ -437,19 +460,31 @@ export async function PATCH(request: Request) {
       const payload = body as Extract<PatchPayload, { action: "set_pin" }>;
       const pin = String(payload.pin ?? "").trim();
       if (!/^\d{4,12}$/.test(pin)) return fail("invalid_pin", "PIN must be 4-12 digits.", 422);
-      const approval = await requirePinIfProvided({ pin: payload.approval_pin, tenantId: auth.tenantId!, branchId });
+      const approval = await requireApprovalPin({ pin: payload.approval_pin, tenantId: auth.tenantId!, branchId });
       if (!approval.approved) return fail("approval_pin_required", "PIN approval is required to update user PIN.", 403);
       const pinHash = await bcrypt.hash(pin, 10);
-      const { error } = await supabase.from("users_profiles").update({ pin_hash: pinHash }).eq("id", userId);
+      const { data: updatedProfile, error } = await supabase
+        .from("users_profiles")
+        .update({ pin_hash: pinHash })
+        .eq("id", userId)
+        .select("id")
+        .maybeSingle<{ id: string }>();
       if (error) return fail("user_pin_update_failed", error.message, 500);
+      if (!updatedProfile) return fail("user_profile_not_found", "User profile was not found.", 404);
       return ok({ user_id: userId, branch_id: branchId, action: "set_pin" });
     }
 
     if (action === "set_active") {
       const payload = body as Extract<PatchPayload, { action: "set_active" }>;
       const isActive = Boolean(payload.is_active);
-      const { error } = await supabase.from("users_profiles").update({ is_active: isActive }).eq("id", userId);
+      const { data: updatedProfile, error } = await supabase
+        .from("users_profiles")
+        .update({ is_active: isActive })
+        .eq("id", userId)
+        .select("id,is_active")
+        .maybeSingle<{ id: string; is_active: boolean }>();
       if (error) return fail("user_status_update_failed", error.message, 500);
+      if (!updatedProfile) return fail("user_profile_not_found", "User profile was not found.", 404);
       return ok({ user_id: userId, branch_id: branchId, action: "set_active", is_active: isActive });
     }
 
@@ -513,8 +548,9 @@ export async function POST(request: Request) {
     if (pin && !/^\d{4,12}$/.test(pin)) return fail("invalid_pin", "PIN must be 4-12 digits.", 422);
     if (scopeMode === "single_device" && !deviceId) return fail("invalid_scope_device", "device_id is required for single_device mode.", 422);
 
-    const approval = await requirePinIfProvided({ pin: body.approval_pin, tenantId: auth.tenantId!, branchId });
-    if (!approval.approved && (employeeCodeInput || pin)) {
+    const needsApproval = Boolean(employeeCodeInput || pin);
+    const approval = needsApproval ? await requireApprovalPin({ pin: body.approval_pin, tenantId: auth.tenantId!, branchId }) : { approved: true };
+    if (needsApproval && !approval.approved) {
       return fail("approval_pin_required", "PIN approval is required to create user code or PIN.", 403);
     }
 

@@ -15,11 +15,13 @@ class PosGuardError extends Error {
 const getAuthContext = vi.fn();
 const getPosApiAuthContext = vi.fn();
 const getSupabaseServiceClient = vi.fn();
+const validateManagerPin = vi.fn();
 
 vi.mock("@/lib/auth-context", () => ({ getAuthContext }));
 vi.mock("@/lib/pos-api-auth", () => ({ getPosApiAuthContext }));
 vi.mock("@/lib/pos-session-guard", () => ({ PosGuardError }));
 vi.mock("@/lib/supabase-admin", () => ({ getSupabaseServiceClient }));
+vi.mock("@/lib/pin-approval", () => ({ validateManagerPin }));
 
 type QueryResult<T> = {
   data: T;
@@ -31,15 +33,29 @@ type ChainableQuery<T> = {
   eq: (column: string, value: unknown) => ChainableQuery<T>;
   in: (column: string, values: unknown[]) => ChainableQuery<T>;
   order: (column: string, options?: unknown) => ChainableQuery<T>;
+  update: (values: unknown) => ChainableQuery<T>;
+  upsert: (values: unknown, options?: unknown) => ChainableQuery<T>;
+  maybeSingle: <TNext = T>() => Promise<QueryResult<TNext>>;
+  single: <TNext = T>() => Promise<QueryResult<TNext>>;
   then: Promise<QueryResult<T>>["then"];
 };
 
-function createChainableQuery<T>(result: QueryResult<T>): ChainableQuery<T> {
+function createChainableQuery<T>(
+  result: QueryResult<T>,
+  options: {
+    maybeSingleResult?: QueryResult<unknown>;
+    singleResult?: QueryResult<unknown>;
+  } = {}
+): ChainableQuery<T> {
   const query = {} as ChainableQuery<T>;
   query.select = vi.fn(() => query);
   query.eq = vi.fn(() => query);
   query.in = vi.fn(() => query);
   query.order = vi.fn(() => query);
+  query.update = vi.fn(() => query);
+  query.upsert = vi.fn(() => query);
+  query.maybeSingle = vi.fn(() => Promise.resolve((options.maybeSingleResult ?? result) as QueryResult<unknown>));
+  query.single = vi.fn(() => Promise.resolve((options.singleResult ?? result) as QueryResult<unknown>));
   const promise = Promise.resolve(result);
   query.then = promise.then.bind(promise);
   return query;
@@ -103,5 +119,76 @@ describe("POS users auth fallback", () => {
     expect(body.data.items).toHaveLength(1);
     expect(body.data.metadata.role).toBe("owner");
     expect(getAuthContext).toHaveBeenCalledWith({ requireBranchScope: true });
+  });
+
+  it("does not report success when POS profile settings fail with a duplicate employee code", async () => {
+    getPosApiAuthContext.mockResolvedValue({
+      userId: "owner-user",
+      platformRole: "tenant_user",
+      tenantId: "tenant-1",
+      branchId: "branch-1",
+      branchRole: "owner"
+    });
+    validateManagerPin.mockResolvedValue({ approved: true, approverUserId: "owner-user", approverRole: "owner" });
+
+    const roleQuery = createChainableQuery(
+      { data: [], error: null },
+      { maybeSingleResult: { data: { role: "staff" }, error: null } }
+    );
+    const profileSettingsLoadQuery = createChainableQuery({ data: [], error: null });
+    const profileSettingsWriteQuery = createChainableQuery(
+      { data: null, error: null },
+      {
+        singleResult: {
+          data: null,
+          error: {
+            code: "23505",
+            message: 'duplicate key value violates unique constraint "pos_user_profiles_tenant_id_employee_code_key"'
+          }
+        }
+      }
+    );
+    const profileLookupQuery = createChainableQuery(
+      { data: [], error: null },
+      { maybeSingleResult: { data: { email: "staff@demo.local" }, error: null } }
+    );
+    const profileUpdateQuery = createChainableQuery(
+      { data: [], error: null },
+      { maybeSingleResult: { data: { id: "staff-user", full_name: "Staff Updated", email: "staff-updated@demo.local" }, error: null } }
+    );
+
+    const usersProfileQueries = [profileLookupQuery, profileUpdateQuery];
+    const posProfileQueries = [profileSettingsLoadQuery, profileSettingsWriteQuery];
+    const from = vi.fn((tableName: string) => {
+      if (tableName === "user_branch_roles") return roleQuery;
+      if (tableName === "users_profiles") return usersProfileQueries.shift() ?? profileUpdateQuery;
+      if (tableName === "pos_user_profiles") return posProfileQueries.shift() ?? profileSettingsWriteQuery;
+      return createChainableQuery({ data: [], error: null });
+    });
+    getSupabaseServiceClient.mockReturnValue({ from });
+
+    const { PATCH } = await import("@/app/api/pos/users/route");
+    const response = await PATCH(
+      new Request("http://localhost/api/pos/users", {
+        method: "PATCH",
+        body: JSON.stringify({
+          action: "update_profile",
+          user_id: "staff-user",
+          branch_id: "branch-1",
+          full_name: "Staff Updated",
+          email: "staff-updated@demo.local",
+          employee_code: "182536",
+          position_title: "Staff",
+          permission_role: "staff",
+          role: "staff",
+          approval_pin: "1357"
+        })
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.error.code).toBe("pos_user_profile_update_failed");
+    expect(body.error.message).toContain("duplicate key value");
   });
 });

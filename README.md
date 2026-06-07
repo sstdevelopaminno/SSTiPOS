@@ -509,3 +509,25 @@ Use this section as the current source of truth before changing the Payment Sett
 - Payment, tax, order totals, and bill state flows were not changed.
 - POS session cookies and pre-entry flow handling remain the source of runtime scope.
 - Do not relax this rule in UI only; the API route must keep the staff block because direct requests can bypass UI state.
+
+## POS Users Save Persistence Handoff (2026-06-07)
+
+### What changed
+- Fixed the POS Users API so edit/save no longer reports success when profile settings fail to persist.
+- Narrowed the missing-table detector for `pos_user_profiles` so duplicate employee-code constraint errors are not mistaken for missing migration errors.
+- POS user profile, role, PIN, and active-status writes now select the updated row back from Supabase and fail if no row was actually updated.
+- Changing an employee code, creating a user with an employee code/PIN, or changing a PIN now requires a non-empty valid manager/owner approval PIN.
+
+### Files/routes/components affected
+- POS users API: `apps/backoffice-web/src/app/api/pos/users/route.ts`.
+- Regression test: `apps/backoffice-web/tests/integration/pos-users-auth-fallback.integration.test.ts`.
+
+### UI behavior notes
+- If a cashier/admin enters a duplicate employee code, the POS Users submenu should now show the real API error instead of `บันทึกข้อมูลเรียบร้อย`.
+- PIN/password changes are intentionally not displayed back in the table for security; verify by logging in with the new PIN.
+- If the remote Supabase project is missing `pos_user_profiles`, the API now returns a migration error instead of silently ignoring the save.
+
+### Safety notes
+- Tenant, branch, role, and POS-session fallback guards remain unchanged.
+- Device scope, shift, order, tax, and payment flows were not changed.
+- Employee-code uniqueness is enforced by `pos_user_profiles` at tenant scope; do not bypass it in the UI.
