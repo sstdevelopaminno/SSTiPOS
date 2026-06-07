@@ -1,9 +1,11 @@
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { appendAuditLog } from "@/lib/audit-log";
+import { getAuthContext, type AuthContext } from "@/lib/auth-context";
 import { fail, ok } from "@/lib/http";
 import { validateManagerPin } from "@/lib/pin-approval";
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
+import { PosGuardError, type PosPermission } from "@/lib/pos-session-guard";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 type BranchRole = "owner" | "manager" | "staff" | "accountant";
@@ -118,6 +120,17 @@ function canActorEditTarget(input: { actorRole: BranchRole | null | undefined; a
   return input.targetRole === "staff" || input.targetRole === "accountant";
 }
 
+async function getPosUsersAuthContext(requiredPermission: PosPermission): Promise<AuthContext> {
+  try {
+    return await getPosApiAuthContext({ requireBranchScope: true, requiredPermission });
+  } catch (error) {
+    if (!(error instanceof PosGuardError) || error.status !== 401) {
+      throw error;
+    }
+    return getAuthContext({ requireBranchScope: true });
+  }
+}
+
 function normalizeManagerRoleChange(actorRole: BranchRole | null | undefined, requestedRole: BranchRole, currentRole: BranchRole) {
   if (actorRole === "owner") return requestedRole;
   if (actorRole === "manager") {
@@ -198,7 +211,7 @@ async function upsertProfileSettings(input: {
 
 export async function GET(request: Request) {
   try {
-    const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "users:view" });
+    const auth = await getPosUsersAuthContext("users:view");
     if (auth.branchRole !== "owner" && auth.branchRole !== "manager") {
       return fail("forbidden_role", "Only owner or manager can view POS users.", 403);
     }
@@ -341,7 +354,7 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "users:manage" });
+    const auth = await getPosUsersAuthContext("users:manage");
     const body = (await request.json()) as PatchPayload;
     const action = String(body?.action ?? "").trim();
     const userId = String((body as { user_id?: string })?.user_id ?? "").trim();
@@ -480,7 +493,7 @@ export async function PATCH(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "users:manage" });
+    const auth = await getPosUsersAuthContext("users:manage");
     if (!canActorAdd(auth.branchRole)) return fail("forbidden_role", "Only owner or manager can add POS users.", 403);
 
     const body = (await request.json()) as CreatePayload;
@@ -581,7 +594,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "users:manage" });
+    const auth = await getPosUsersAuthContext("users:manage");
     if (!canActorDelete(auth.branchRole)) return fail("forbidden_role", "Only owner can delete POS users.", 403);
 
     const { searchParams } = new URL(request.url);

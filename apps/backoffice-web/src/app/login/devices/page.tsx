@@ -18,6 +18,7 @@ type DeviceItem = {
 type DevicesResponse = {
   data?: {
     branch: { name: string | null };
+    employee?: { id: string | null; code?: string | null; name?: string | null; role?: string | null };
     devices: DeviceItem[];
     single_device_mode: boolean;
     can_override_in_use: boolean;
@@ -44,6 +45,12 @@ function statusLabel(status: DeviceItem["status"]) {
   return "ปิดใช้งาน";
 }
 
+function canSelectDevice(device: DeviceItem, canOverride: boolean, employeeId: string) {
+  if (device.status === "ready") return true;
+  if (device.status === "in_use") return canOverride || (Boolean(employeeId) && device.currentUser?.id === employeeId);
+  return false;
+}
+
 function mapDeviceError(code?: string | null, fallback?: string | null) {
   if (code === "device_required") return "กรุณาเลือกเครื่องแคชเชียร์";
   if (code === "missing_employee_context") return "กรุณายืนยันผู้ใช้งานก่อนเลือกเครื่อง";
@@ -51,7 +58,7 @@ function mapDeviceError(code?: string | null, fallback?: string | null) {
   if (code === "device_not_found") return "ไม่พบเครื่องที่เลือกในสาขานี้";
   if (code === "device_disabled") return "เครื่องที่เลือกถูกปิดใช้งาน";
   if (code === "device_offline") return "เครื่องที่เลือกออฟไลน์หรืออยู่ระหว่างบำรุงรักษา";
-  if (code === "device_in_use") return "เครื่องนี้กำลังถูกใช้งานอยู่";
+  if (code === "device_in_use") return "เครื่องนี้ยังมีผู้ใช้งานค้างอยู่ พนักงานขายต้องเลือกเครื่องอื่น หรือให้ผู้จัดการ/เจ้าของร้านเข้าแทน";
   if (code === "device_scope_denied") return "ผู้ใช้งานนี้ไม่ได้รับสิทธิ์ใช้เครื่องที่เลือก";
   if (code === "session_scope_conflict") return "เครื่องนี้กำลังถูกใช้งานอยู่";
   if (code === "context_create_failed") return "ไม่สามารถเตรียมบริบทการล็อคอินได้";
@@ -110,6 +117,7 @@ function LoginDevicesPageContent() {
   const [branchName, setBranchName] = useState("");
   const [devices, setDevices] = useState<DeviceItem[]>([]);
   const [selectedCode, setSelectedCode] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
   const [canOverride, setCanOverride] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -132,6 +140,7 @@ function LoginDevicesPageContent() {
         if (!mounted) return;
 
         setBranchName(data.branch.name ?? "");
+        setEmployeeId(data.employee?.id ?? "");
         setDevices(data.devices);
         setCanOverride(data.can_override_in_use);
 
@@ -145,7 +154,7 @@ function LoginDevicesPageContent() {
         const firstAllowed =
           firstReady ??
           data.devices.find((device) => device.status === "in_use" && data.can_override_in_use) ??
-          data.devices.find((device) => device.status !== "offline" && device.status !== "disabled") ??
+          data.devices.find((device) => canSelectDevice(device, data.can_override_in_use, data.employee?.id ?? "")) ??
           data.devices[0];
         setSelectedCode(firstAllowed?.deviceCode ?? "");
       } catch (requestError) {
@@ -181,6 +190,7 @@ function LoginDevicesPageContent() {
   }, [submitting]);
 
   const selectedDevice = useMemo(() => devices.find((device) => device.deviceCode === selectedCode) ?? null, [devices, selectedCode]);
+  const selectedDeviceCanOpen = selectedDevice ? canSelectDevice(selectedDevice, canOverride, employeeId) : false;
 
   async function handleSelectDevice() {
     if (submitting || loading) return;
@@ -192,7 +202,7 @@ function LoginDevicesPageContent() {
       return;
     }
 
-    if (selectedDevice.status === "offline" || selectedDevice.status === "disabled") {
+    if (!selectedDeviceCanOpen) {
       const message = "เครื่องที่เลือกยังไม่พร้อมใช้งาน";
       setError(message);
       setPopup({ type: "error", message });
@@ -255,16 +265,23 @@ function LoginDevicesPageContent() {
     if (submitting) return;
     setSubmitting(true);
     setError("");
+    clearPreEntryClientCache();
+    let redirectTo = `/login/employee?flow=${flow}`;
     try {
-      await fetch("/api/auth/session/logout", {
+      const response = await fetch("/api/auth/session/logout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "switch_device" }),
+        body: JSON.stringify({ mode: "switch_employee" }),
         cache: "no-store"
-      }).catch(() => null);
+      });
+      const body = (await response.json().catch(() => null)) as { data?: { redirect_to?: string } | null } | null;
+      redirectTo = body?.data?.redirect_to ?? redirectTo;
+    } catch {
+      // Best-effort logout; still move the user back to employee verification.
     } finally {
       setSubmitting(false);
-      router.push(`/login/employee?flow=${flow}`);
+      warmRoute(router, redirectTo);
+      router.replace(redirectTo);
     }
   }
 
@@ -296,7 +313,7 @@ function LoginDevicesPageContent() {
 
           <div className="ipos-device-grid ipos-device-grid-compact">
             {devices.map((device) => {
-              const disabled = device.status === "offline" || device.status === "disabled" || (device.status === "in_use" && !canOverride);
+              const disabled = !canSelectDevice(device, canOverride, employeeId);
 
               return (
                 <button
@@ -334,7 +351,7 @@ function LoginDevicesPageContent() {
         <button type="button" className="ipos-outline-btn" onClick={() => void handleBack()} disabled={submitting}>
           ย้อนกลับ
         </button>
-        <button type="button" className="ipos-primary-btn ipos-btn-compact" onClick={handleSelectDevice} disabled={submitting || loading || !selectedDevice}>
+        <button type="button" className="ipos-primary-btn ipos-btn-compact" onClick={handleSelectDevice} disabled={submitting || loading || !selectedDeviceCanOpen}>
           {submitting ? "กำลังเข้าสู่ระบบ..." : "เปิดแคช"}
         </button>
       </div>

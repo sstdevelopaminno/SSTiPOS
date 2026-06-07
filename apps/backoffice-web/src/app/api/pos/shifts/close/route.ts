@@ -79,6 +79,8 @@ export async function POST(request: Request) {
     const sessionScope = getTenantBranchScopeFromSession(scope);
     const supabase = getSupabaseServiceClient();
     const closedAtIso = new Date().toISOString();
+    const closedByDifferentUser = shift.opened_by !== sessionScope.userId;
+    const closeReason = closedByDifferentUser ? "manager_owner_close_for_staff" : "self_close";
 
     const expectedCash = closingCash ?? 0;
     const actualCash = closingCash ?? 0;
@@ -91,9 +93,12 @@ export async function POST(request: Request) {
         closing_cash: closingCash,
         expected_cash: expectedCash,
         actual_cash: actualCash,
-      metadata: {
-        ...(typeof shift === "object" ? { closed_via: "pos_session_gate" } : {}),
-        pos_session_id: scope.session.id
+        metadata: {
+          ...(typeof shift === "object" ? { closed_via: "pos_session_gate" } : {}),
+          pos_session_id: scope.session.id,
+          close_reason: closeReason,
+          opened_by_user_id: shift.opened_by,
+          closed_by_user_id: sessionScope.userId
         }
       })
       .eq("id", shift.id)
@@ -138,7 +143,10 @@ export async function POST(request: Request) {
         metadata: {
           closing_cash: closingCash,
           pos_session_id: scope.session.id,
-          quick_close: true
+          quick_close: true,
+          close_reason: closeReason,
+          opened_by_user_id: shift.opened_by,
+          closed_by_user_id: sessionScope.userId
         }
       }).catch((auditError) => {
         console.warn("[pos-shifts-close] quick close audit failed", {
@@ -283,7 +291,10 @@ export async function POST(request: Request) {
       targetId: shift.id,
       metadata: {
         closing_cash: closingCash,
-        pos_session_id: scope.session.id
+        pos_session_id: scope.session.id,
+        close_reason: closeReason,
+        opened_by_user_id: shift.opened_by,
+        closed_by_user_id: sessionScope.userId
       }
     });
 

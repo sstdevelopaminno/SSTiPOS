@@ -5,6 +5,7 @@ import { getRequestMeta, writeAuditLog, writeLoginAttempt } from "@/lib/server/a
 import { AuthTimeoutError, withAuthTimeout } from "@/lib/server/auth-timeout";
 import { hasBranchFeatureSafe } from "@/lib/server/feature-gate-safe";
 import { consumeLoginContext } from "@/lib/server/login-context";
+import { resolveDeviceSessionAccess } from "@/lib/server/pos-device-session-rules";
 import { createPosSession, createSessionHandoffToken, resolvePosRedirectTarget, resolveSessionCookieConfig } from "@/lib/server/pos-session";
 import { hasPermission, resolveEmployeeByUserId } from "@/lib/server/pre-entry-auth";
 import { clearPreEntryFlowState, hasFlowStage, readPreEntryFlowState } from "@/lib/server/pre-entry-state";
@@ -190,14 +191,19 @@ export async function POST(request: Request) {
     }
 
     const activeSession = pickNewestActiveSession([activeSessionById.data, activeSessionByCode.data]);
+    let overrideApplied = false;
     if (activeSession) {
-      const isSameEmployee = activeSession.user_id === employee.userId;
-      const canOverride = hasPermission(employee.permissions, "pos.device.override_in_use");
-      if (!isSameEmployee && (!canOverride || !forceOverride)) {
-        return timedJsonError(409, "device_in_use", "เครื่องนี้กำลังถูกใช้งานอยู่");
+      const accessDecision = resolveDeviceSessionAccess({
+        activeSessionUserId: activeSession.user_id,
+        employeeUserId: employee.userId,
+        employeePermissions: employee.permissions
+      });
+      if (!accessDecision.ok) {
+        return timedJsonError(accessDecision.status, accessDecision.code, accessDecision.message);
       }
 
-      if (!isSameEmployee) {
+      overrideApplied = accessDecision.overrideApplied;
+      if (accessDecision.shouldRevokeExistingSession) {
         const [revokeByDeviceId, revokeByDeviceCode] = await withAuthTimeout(
           Promise.all([
             supabase
@@ -279,7 +285,10 @@ export async function POST(request: Request) {
         metadata: {
           source: "pre_entry_flow",
           employee_auth_method: flow.employeeAuthMethod ?? "employee_code",
-          employee_code: employee.employeeCode ?? flow.employeeCode ?? null
+          employee_code: employee.employeeCode ?? flow.employeeCode ?? null,
+          override_in_use_device: overrideApplied,
+          overridden_session_id: overrideApplied ? activeSession?.id ?? null : null,
+          force_override_requested: forceOverride
         }
       }),
       "device_session_create_timeout"
@@ -366,7 +375,9 @@ export async function POST(request: Request) {
           userAgent,
           metadata: {
             device_code: selectedDeviceCode,
-            device_name: device.device_name
+            device_name: device.device_name,
+            override_in_use_device: overrideApplied,
+            overridden_session_id: overrideApplied ? activeSession?.id ?? null : null
           }
         })
       ),
@@ -385,7 +396,9 @@ export async function POST(request: Request) {
           ipAddress,
           userAgent,
           metadata: {
-            login_method: loginMethod
+            login_method: loginMethod,
+            override_in_use_device: overrideApplied,
+            overridden_session_id: overrideApplied ? activeSession?.id ?? null : null
           }
         })
       )
