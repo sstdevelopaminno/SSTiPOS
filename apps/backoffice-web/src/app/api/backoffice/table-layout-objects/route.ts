@@ -1,7 +1,7 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
-import { floorObjectDefaults, floorObjectTypes } from "@/lib/table-management";
+import { canManageTables, floorObjectDefaults, floorObjectTypes } from "@/lib/table-management";
 import { resolveTableBranchScope } from "@/lib/table-branch-scope";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
@@ -58,6 +58,9 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
+    if (!canManageTables(auth.branchRole)) {
+      return fail("forbidden_role", "Only manager or owner can manage floor objects.", 403);
+    }
     const body = (await req.json()) as FloorObjectPayload;
     const supabase = getSupabaseServiceClient();
     const branchScope = await resolveTableBranchScope({

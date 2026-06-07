@@ -8,6 +8,30 @@ vi.mock("@/lib/auth-context", () => ({ getAuthContext }));
 vi.mock("@/lib/supabase-admin", () => ({ getSupabaseServiceClient }));
 vi.mock("@/lib/audit-log", () => ({ appendAuditLog }));
 
+type QueryResult<T> = {
+  data: T;
+  error: null;
+};
+
+type ChainableQuery<T> = {
+  select: (column?: string) => ChainableQuery<T>;
+  eq: (column: string, value: unknown) => ChainableQuery<T>;
+  in: (column: string, values: unknown[]) => ChainableQuery<T>;
+  order: (column: string, options?: unknown) => ChainableQuery<T>;
+  then: Promise<QueryResult<T>>["then"];
+};
+
+function createChainableQuery<T>(result: QueryResult<T>): ChainableQuery<T> {
+  const query = {} as ChainableQuery<T>;
+  query.select = vi.fn(() => query);
+  query.eq = vi.fn(() => query);
+  query.in = vi.fn(() => query);
+  query.order = vi.fn(() => query);
+  const promise = Promise.resolve(result);
+  query.then = promise.then.bind(promise);
+  return query;
+}
+
 describe("table management permission rules", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -56,7 +80,19 @@ describe("table management permission rules", () => {
     }));
     const select = vi.fn(() => ({ single }));
     const insert = vi.fn(() => ({ select }));
-    const from = vi.fn(() => ({ insert }));
+    const roleQuery = createChainableQuery({
+      data: [{ branch_id: "b1", role: "manager" }],
+      error: null
+    });
+    const branchQuery = createChainableQuery({
+      data: [{ id: "b1", code: "B1", name: "Branch 1", is_active: true }],
+      error: null
+    });
+    const from = vi.fn((tableName: string) => {
+      if (tableName === "user_branch_roles") return roleQuery;
+      if (tableName === "branches") return branchQuery;
+      return { insert };
+    });
     getSupabaseServiceClient.mockReturnValue({ from });
 
     const { POST } = await import("@/app/api/backoffice/tables/route");
