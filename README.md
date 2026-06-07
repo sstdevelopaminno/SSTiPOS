@@ -515,6 +515,7 @@ Use this section as the current source of truth before changing the Payment Sett
 ### What changed
 - Fixed the POS Users API so edit/save no longer reports success when profile settings fail to persist.
 - Narrowed the missing-table detector for `pos_user_profiles` so duplicate employee-code constraint errors are not mistaken for missing migration errors.
+- Added a tenant-wide employee-code precheck for staff, manager, and owner accounts before any user profile, role, or PIN mutation starts.
 - POS user profile, role, PIN, and active-status writes now select the updated row back from Supabase and fail if no row was actually updated.
 - Changing an employee code, creating a user with an employee code/PIN, or changing a PIN now requires a non-empty valid manager/owner approval PIN.
 
@@ -524,6 +525,9 @@ Use this section as the current source of truth before changing the Payment Sett
 
 ### UI behavior notes
 - If a cashier/admin enters a duplicate employee code, the POS Users submenu should now show the real API error instead of `บันทึกข้อมูลเรียบร้อย`.
+- The edit dialog exposes the employee-code field prominently and explains that changing it requires an approval PIN.
+- Saving shows a blocking progress dialog to prevent duplicate submissions, followed by a success or error dialog with the API result.
+- A duplicate employee code stops the save with HTTP `409` and displays a localized warning POP UP before any partial user update can occur.
 - PIN/password changes are intentionally not displayed back in the table for security; verify by logging in with the new PIN.
 - If the remote Supabase project is missing `pos_user_profiles`, the API now returns a migration error instead of silently ignoring the save.
 
@@ -531,3 +535,48 @@ Use this section as the current source of truth before changing the Payment Sett
 - Tenant, branch, role, and POS-session fallback guards remain unchanged.
 - Device scope, shift, order, tax, and payment flows were not changed.
 - Employee-code uniqueness is enforced by `pos_user_profiles` at tenant scope; do not bypass it in the UI.
+- The API precheck improves feedback, while the database unique constraint remains the final protection against concurrent duplicate submissions.
+
+## POS Tax Settings Live Binding Handoff (2026-06-07)
+
+### What changed
+- Tax settings are stored and edited independently for each branch using the existing `(tenant_id, branch_id)` database scope.
+- Owners can select a branch in the Tax Settings UI, configure different tax lines/rates, and enable or disable tax for that branch without changing another branch.
+- Cross-branch tax reads/writes require owner-level settings permission and validate that the target branch belongs to the authenticated tenant.
+- Saving branch tax settings now emits a same-tab event and a cross-tab storage signal.
+- The POS sales screen listens for tax-setting changes and reloads only the current branch tax settings through `/api/pos/sales?resource=tax-settings`.
+- Returning focus to the sales screen also refreshes tax settings, preventing stale values from the cached sales snapshot.
+- The refreshed settings update the cart tax lines and grand total immediately and replace the cached `tax_settings` snapshot.
+
+### Files/routes/components affected
+- Tax settings UI: `apps/backoffice-web/src/components/pos-preview/pos-settings-workspace.tsx`.
+- POS sales UI: `apps/backoffice-web/src/components/pos/pos-sales-module.tsx`.
+- POS sales API: `apps/backoffice-web/src/app/api/pos/sales/route.ts`.
+
+### Safety notes
+- Tax settings never use a branch id without the authenticated tenant filter; one store owner cannot read or update another tenant's branches.
+- Non-owner roles cannot use the branch selector to write another branch through a direct API request.
+- The lightweight tax-settings response still requires the existing `sales:enter` POS session guard and uses the active tenant/branch scope.
+- Final order tax remains recalculated by the server during order submission; client-side tax is used for immediate display and checkout preview.
+- Product, payment, shift, table, and order-state logic were not changed.
+
+## POS Login / Logout Activity Audit Handoff (2026-06-07)
+
+### What changed
+- Successful POS device login records the tenant, branch, user, role, POS device code/name, POS session id, login method, and server login time.
+- POS logout records the tenant, branch, user, role, POS device code, POS session id, logout mode, and server logout time.
+- The Usage Behavior Audit table now includes a dedicated POS device column, so owners/managers can see which cashier machine was used.
+
+### Files/routes/components affected
+- Login audit: `apps/backoffice-web/src/app/api/auth/devices/select/route.ts`.
+- Logout audit: `apps/backoffice-web/src/app/api/auth/session/logout/route.ts`.
+- Audit query/mapping: `apps/backoffice-web/src/lib/services/activity-audit-service.ts`.
+- Usage Behavior Audit UI: `apps/backoffice-web/src/components/pos-preview/pos-settings-workspace.tsx`.
+- Regression test: `apps/backoffice-web/tests/integration/pos-session-activity-audit.integration.test.ts`.
+
+### Safety notes
+- Audit timestamps are generated by the server; client-provided dates are not trusted.
+- Audit records keep the existing tenant, branch, user, device, and POS-session scope.
+- PINs, passwords, session cookies, and handoff tokens are never written to audit metadata.
+- Audit writing is best-effort during logout, so an audit storage interruption does not trap the cashier in an active browser session.
+- Sales, shift totals, payment calculations, order state, and device access rules were not changed.

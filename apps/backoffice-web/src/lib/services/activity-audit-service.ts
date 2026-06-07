@@ -19,6 +19,8 @@ type AuditLogRow = {
   action: string;
   target_table: string | null;
   target_id: string | null;
+  device_code: string | null;
+  pos_session_id: string | null;
   module: string | null;
   entity_type: string | null;
   entity_id: string | null;
@@ -79,6 +81,9 @@ export type ActivityAuditItem = {
   menu: string;
   target_table: string;
   target_id: string | null;
+  device_code: string;
+  device_name: string;
+  pos_session_id: string | null;
   created_at: string;
   metadata: JsonObject;
   is_delete_action: boolean;
@@ -242,7 +247,7 @@ export async function loadActivityAudit(auth: AuthContext, input: ActivityAuditI
   let query = supabase
     .from("audit_logs")
     .select(
-      "id,tenant_id,branch_id,actor_user_id,actor_role,target_user_id,action,target_table,target_id,module,entity_type,entity_id,override_by_user_id,created_at,metadata",
+      "id,tenant_id,branch_id,actor_user_id,actor_role,target_user_id,action,target_table,target_id,device_code,pos_session_id,module,entity_type,entity_id,override_by_user_id,created_at,metadata",
       { count: "exact" }
     )
     .eq("tenant_id", auth.tenantId)
@@ -291,6 +296,9 @@ export async function loadActivityAudit(auth: AuthContext, input: ActivityAuditI
       menu: inferMenu(row),
       target_table: trimText(row.target_table ?? row.entity_type),
       target_id: row.target_id ?? row.entity_id,
+      device_code: trimText(row.device_code ?? metadata.device_code),
+      device_name: trimText(metadata.device_name),
+      pos_session_id: row.pos_session_id,
       created_at: row.created_at,
       metadata,
       is_delete_action: isDeleteAction(row.action),

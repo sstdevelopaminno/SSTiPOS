@@ -19,6 +19,8 @@ import type { Language } from "@/lib/i18n";
 
 type SettingsView = "menu" | "store" | "branches" | "devices" | "activity" | "payments" | "taxes" | "users";
 type MenuIconName = "store" | "branch" | "payment" | "tax" | "users" | "display" | "terminal" | "activity" | "back" | "edit" | "trash" | "plus";
+const POS_TAX_SETTINGS_UPDATED_EVENT = "pos:tax-settings-updated";
+const POS_TAX_SETTINGS_UPDATED_KEY = "pos_tax_settings_updated_at_v001";
 
 type StoreForm = {
   display_name: string;
@@ -206,6 +208,10 @@ const TEXT = {
     qrPayload: "PromptPay payload",
     taxEnabled: "เปิดใช้งานภาษี",
     taxDisabled: "ยังไม่เปิดใช้งาน",
+    taxBranch: "สาขาที่ตั้งค่าภาษี",
+    taxBranchHint: "ภาษีและสถานะเปิดใช้งานจะแยกจากกันในแต่ละสาขา",
+    taxBranchLoading: "กำลังโหลดข้อมูลภาษีของสาขา...",
+    taxBranchDisabled: "ปิดภาษีสำหรับสาขานี้",
     taxLine: "รายการภาษี",
     taxRate: "อัตรา (%)",
     taxMode: "รูปแบบคำนวณ",
@@ -319,6 +325,10 @@ const TEXT = {
     qrPayload: "PromptPay payload",
     taxEnabled: "Enable tax",
     taxDisabled: "Tax is disabled",
+    taxBranch: "Tax settings branch",
+    taxBranchHint: "Tax lines and enabled status are stored separately for each branch.",
+    taxBranchLoading: "Loading branch tax settings...",
+    taxBranchDisabled: "Tax is disabled for this branch",
     taxLine: "Tax line",
     taxRate: "Rate (%)",
     taxMode: "Calculation",
@@ -1632,6 +1642,8 @@ function TaxPanel({
   labels,
   taxSettings,
   setTaxSettings,
+  branches,
+  activeBranchId,
   onBack,
   canManage,
   reportStatus
@@ -1639,13 +1651,20 @@ function TaxPanel({
   labels: Labels;
   taxSettings: TaxSettings;
   setTaxSettings: (settings: TaxSettings) => void;
+  branches: BranchSettings[];
+  activeBranchId: string | null;
   onBack: () => void;
   canManage: boolean;
   reportStatus: StatusReporter;
 }) {
+  const availableBranches = canManage ? branches : branches.filter((branch) => branch.id === activeBranchId);
+  const initialBranchId = availableBranches.find((branch) => branch.id === activeBranchId)?.id ?? availableBranches[0]?.id ?? "";
+  const [selectedBranchId, setSelectedBranchId] = useState(initialBranchId);
   const [form, setForm] = useState<TaxSettings>(taxSettings);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingBranch, setIsLoadingBranch] = useState(false);
   const previewBase = 1000;
+  const selectedBranch = availableBranches.find((branch) => branch.id === selectedBranchId) ?? null;
   const activeLines = form.is_enabled ? form.lines.filter((line) => line.is_active && Number(line.rate_pct) > 0) : [];
   const previewTaxTotal = Number(
     activeLines
@@ -1665,9 +1684,38 @@ function TaxPanel({
     }));
   }
 
+  useEffect(() => {
+    if (!selectedBranchId) return;
+    if (selectedBranchId === activeBranchId) {
+      setForm(taxSettings);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsLoadingBranch(true);
+    void (async () => {
+      try {
+        const data = await readApiData<{ branch_id: string; tax_settings: TaxSettings }>(
+          await fetchWithTimeout(`/api/pos/settings/tax?branch_id=${encodeURIComponent(selectedBranchId)}`, {
+            cache: "no-store",
+            signal: controller.signal
+          })
+        );
+        if (!controller.signal.aborted) setForm(data.tax_settings);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          reportStatus(error instanceof Error && error.message === "__request_timeout__" ? labels.requestTimeout : error instanceof Error ? error.message : labels.failed, { popup: true });
+        }
+      } finally {
+        if (!controller.signal.aborted) setIsLoadingBranch(false);
+      }
+    })();
+    return () => controller.abort();
+  }, [activeBranchId, labels.failed, labels.requestTimeout, reportStatus, selectedBranchId, taxSettings]);
+
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isSaving) return;
+    if (isSaving || isLoadingBranch || !selectedBranchId) return;
     setIsSaving(true);
     void (async () => {
       try {
@@ -1675,11 +1723,19 @@ function TaxPanel({
           await fetchWithTimeout("/api/pos/settings/tax", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(form)
+            body: JSON.stringify({ ...form, branch_id: selectedBranchId })
           })
         );
-        setTaxSettings(data.tax_settings);
+        if (selectedBranchId === activeBranchId) setTaxSettings(data.tax_settings);
         setForm(data.tax_settings);
+        if (typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem(POS_TAX_SETTINGS_UPDATED_KEY, new Date().toISOString());
+          } catch {
+            // The database save succeeded; storage is only a cross-tab refresh signal.
+          }
+          window.dispatchEvent(new CustomEvent(POS_TAX_SETTINGS_UPDATED_EVENT));
+        }
         reportStatus(labels.saved, { popup: true });
       } catch (error) {
         reportStatus(error instanceof Error && error.message === "__request_timeout__" ? labels.requestTimeout : error instanceof Error ? error.message : labels.failed, { popup: true });
@@ -1693,6 +1749,28 @@ function TaxPanel({
     <section>
       <PanelHeader title={labels.taxes} onBack={onBack} labels={labels} />
       <form onSubmit={save} className="grid gap-4">
+        <div className="grid gap-3 rounded-lg border border-blue-100 bg-blue-50/60 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <label className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
+            <span>{labels.taxBranch}</span>
+            <select
+              value={selectedBranchId}
+              disabled={isSaving || isLoadingBranch || availableBranches.length <= 1}
+              onChange={(event) => setSelectedBranchId(event.target.value)}
+              className="min-h-11 rounded-lg border border-blue-200 bg-white px-3 text-sm font-bold text-slate-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100"
+            >
+              {availableBranches.map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name} {branch.code ? `(${branch.code})` : ""}{branch.is_active ? "" : ` - ${labels.inactive}`}
+                </option>
+              ))}
+            </select>
+            <span className="text-xs font-medium text-slate-500">{labels.taxBranchHint}</span>
+          </label>
+          <div className={`rounded-lg border px-3 py-2 text-sm font-bold ${form.is_enabled ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-600"}`}>
+            {isLoadingBranch ? labels.taxBranchLoading : form.is_enabled ? labels.taxEnabled : labels.taxBranchDisabled}
+          </div>
+        </div>
+
         <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
@@ -1706,7 +1784,7 @@ function TaxPanel({
               <input
                 type="checkbox"
                 checked={form.is_enabled}
-                disabled={!canManage || isSaving}
+                disabled={!canManage || isSaving || isLoadingBranch}
                 onChange={(event) => setForm((current) => ({ ...current, is_enabled: event.target.checked }))}
               />
               {form.is_enabled ? labels.taxEnabled : labels.taxDisabled}
@@ -1716,13 +1794,13 @@ function TaxPanel({
           <div className="mt-4 grid gap-3">
             {form.lines.map((line, index) => (
               <div key={line.id} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-[1.2fr_140px_180px_110px] md:items-end">
-                <Field label={labels.taxLine} value={line.label} disabled={!canManage || isSaving} onChange={(value) => updateLine(index, { label: value })} />
-                <Field label={labels.taxRate} value={String(line.rate_pct)} type="number" disabled={!canManage || isSaving} onChange={(value) => updateLine(index, { rate_pct: Number(value) })} />
+                <Field label={labels.taxLine} value={line.label} disabled={!canManage || isSaving || isLoadingBranch} onChange={(value) => updateLine(index, { label: value })} />
+                <Field label={labels.taxRate} value={String(line.rate_pct)} type="number" disabled={!canManage || isSaving || isLoadingBranch} onChange={(value) => updateLine(index, { rate_pct: Number(value) })} />
                 <label className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
                   <span>{labels.taxMode}</span>
                   <select
                     value={line.mode}
-                    disabled={!canManage || isSaving}
+                    disabled={!canManage || isSaving || isLoadingBranch}
                     onChange={(event) => updateLine(index, { mode: event.target.value as TaxLineMode })}
                     className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                   >
@@ -1731,7 +1809,7 @@ function TaxPanel({
                   </select>
                 </label>
                 <label className="inline-flex min-h-10 items-center gap-2 text-sm font-bold text-slate-700">
-                  <input type="checkbox" checked={line.is_active} disabled={!canManage || isSaving} onChange={(event) => updateLine(index, { is_active: event.target.checked })} />
+                  <input type="checkbox" checked={line.is_active} disabled={!canManage || isSaving || isLoadingBranch} onChange={(event) => updateLine(index, { is_active: event.target.checked })} />
                   {labels.active}
                 </label>
               </div>
@@ -1761,8 +1839,8 @@ function TaxPanel({
           <ActionButton variant="plain" onClick={() => setForm(taxSettings)} disabled={isSaving}>
             {labels.cancel}
           </ActionButton>
-          <ActionButton type="submit" disabled={!canManage || isSaving}>
-            {isSaving ? labels.saving : labels.save}
+          <ActionButton type="submit" disabled={!canManage || isSaving || isLoadingBranch || !selectedBranch}>
+            {isSaving ? labels.saving : isLoadingBranch ? labels.taxBranchLoading : labels.save}
           </ActionButton>
         </div>
         {isSaving ? (
@@ -2006,17 +2084,18 @@ function ActivityAuditPanel({
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <div className="grid grid-cols-[150px_150px_1.2fr_1fr_1fr_120px] gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-black text-slate-500">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <div className="grid min-w-[1080px] grid-cols-[150px_140px_1.1fr_150px_1fr_1fr_120px] gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-black text-slate-500">
           <span>{labels.viewedAt}</span>
           <span>{labels.module}</span>
           <span>{labels.actor}</span>
+          <span>{labels.deviceCode}</span>
           <span>{labels.action}</span>
           <span>{labels.approver}</span>
           <span>{labels.branch}</span>
         </div>
         {items.map((item) => (
-          <div key={item.id} className="grid grid-cols-[150px_150px_1.2fr_1fr_1fr_120px] items-center gap-3 border-b border-slate-100 px-4 py-3 text-sm last:border-b-0">
+          <div key={item.id} className="grid min-w-[1080px] grid-cols-[150px_140px_1.1fr_150px_1fr_1fr_120px] items-center gap-3 border-b border-slate-100 px-4 py-3 text-sm last:border-b-0">
             <span className="text-xs font-bold text-slate-600">{formatAuditDate(item.created_at)}</span>
             <span className="min-w-0 truncate font-black text-slate-800">{auditMenuLabel(item, lang)}</span>
             <span className="min-w-0">
@@ -2024,6 +2103,10 @@ function ActivityAuditPanel({
               <span className="block truncate text-xs font-semibold text-slate-500">
                 {item.actor_employee_code || item.actor_role || "-"}
               </span>
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate font-bold text-slate-800">{item.device_name || item.device_code || "-"}</span>
+              {item.device_name && item.device_code ? <span className="block truncate text-xs font-semibold text-slate-500">{item.device_code}</span> : null}
             </span>
             <span className="min-w-0">
               <span
@@ -2627,6 +2710,8 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
             labels={labels}
             taxSettings={taxSettings}
             setTaxSettings={setTaxSettings}
+            branches={branches}
+            activeBranchId={initialData.metadata.branch_id}
             onBack={() => setView("menu")}
             canManage={canManage}
             reportStatus={reportStatus}

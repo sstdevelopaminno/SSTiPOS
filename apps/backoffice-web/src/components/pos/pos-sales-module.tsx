@@ -443,6 +443,8 @@ const DINE_IN_DRAFT_KEY = "pos_dine_in_draft_v001";
 const DINE_IN_SELECTED_TABLE_KEY = "pos_dine_in_selected_table_v001";
 const POS_SCOPE_KEY = "pos_scope_v001";
 const POS_PROMPTPAY_PHONE_KEY = "pos_promptpay_phone_v001";
+const POS_TAX_SETTINGS_UPDATED_EVENT = "pos:tax-settings-updated";
+const POS_TAX_SETTINGS_UPDATED_KEY = "pos_tax_settings_updated_at_v001";
 const DEFAULT_PROMPTPAY_PHONE = process.env.NEXT_PUBLIC_PROMPTPAY_PHONE ?? "0843374982";
 const DEFAULT_PROMPTPAY_PAYEE = process.env.NEXT_PUBLIC_PROMPTPAY_PAYEE_NAME ?? "";
 const DELIVERY_ACTION_DEBOUNCE_MS = 450;
@@ -1803,6 +1805,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const deliveryActionLastAtRef = useRef<Map<string, number>>(new Map());
   const deliveryActionPendingKeyRef = useRef<Set<string>>(new Set());
   const monitorPollInFlightRef = useRef(false);
+  const taxSettingsSyncInFlightRef = useRef(false);
   const tableListFetchInFlightRef = useRef<Promise<DiningTableItem[]> | null>(null);
   const tableListCacheRef = useRef<{ at: number; zones: TableZoneItem[]; tables: DiningTableItem[] } | null>(null);
   const lastPendingRef = useRef(false);
@@ -1818,6 +1821,30 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const selectedTableRef = useRef<DiningTableItem | null>(null);
   const cartRef = useRef<CartItem[]>([]);
   const dineInDraftByTableIdRef = useRef<Record<string, CartItem[]>>({});
+
+  const refreshTaxSettings = useCallback(async () => {
+    if (taxSettingsSyncInFlightRef.current || typeof window === "undefined" || !navigator.onLine) return;
+    taxSettingsSyncInFlightRef.current = true;
+    try {
+      const taxResponse = await fetchJsonWithTimeout<{ data?: { tax_settings?: TaxSettings }; error?: { message?: string } }>(
+        "/api/pos/sales?resource=tax-settings",
+        { cache: "no-store" },
+        10000,
+        0
+      );
+      if (!taxResponse.response.ok || taxResponse.body.error || !taxResponse.body.data?.tax_settings) return;
+      const nextTaxSettings = taxResponse.body.data.tax_settings;
+      setTaxSettings(nextTaxSettings);
+      const savedSales = readStoredJson<PosSalesSnapshot>(SALES_SNAPSHOT_KEY);
+      if (savedSales) {
+        localStorage.setItem(SALES_SNAPSHOT_KEY, JSON.stringify({ ...savedSales, tax_settings: nextTaxSettings }));
+      }
+    } catch {
+      // Keep the current sales screen usable; order submission still recalculates tax on the server.
+    } finally {
+      taxSettingsSyncInFlightRef.current = false;
+    }
+  }, []);
   const [lastCommittedCartSignature, setLastCommittedCartSignature] = useState<string | null>(null);
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const normalizedDeliveryPricesByProduct = useMemo(() => {
@@ -2539,6 +2566,31 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     if (!isHydrated || typeof window === "undefined") return;
     localStorage.setItem(POS_PROMPTPAY_PHONE_KEY, sanitizePromptPayPhone(promptPayPhone));
   }, [isHydrated, promptPayPhone]);
+
+  useEffect(() => {
+    if (!isHydrated || typeof window === "undefined") return;
+
+    const syncTaxSettings = () => {
+      void refreshTaxSettings();
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === POS_TAX_SETTINGS_UPDATED_KEY) syncTaxSettings();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") syncTaxSettings();
+    };
+
+    window.addEventListener(POS_TAX_SETTINGS_UPDATED_EVENT, syncTaxSettings);
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", syncTaxSettings);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener(POS_TAX_SETTINGS_UPDATED_EVENT, syncTaxSettings);
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", syncTaxSettings);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [isHydrated, refreshTaxSettings]);
 
   useEffect(() => {
     if (!isHydrated || typeof window === "undefined") return;

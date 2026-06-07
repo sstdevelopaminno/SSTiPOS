@@ -7,6 +7,11 @@ import { fetchWithTimeout } from "@/lib/client-fetch";
 type BranchRole = "owner" | "manager" | "staff" | "accountant";
 type ScopeMode = "all_devices" | "single_device";
 type Lang = "th" | "en";
+type AlertDialogState = {
+  tone: "success" | "error";
+  title: string;
+  message: string;
+};
 
 type Branch = {
   id: string;
@@ -95,6 +100,7 @@ const copy = {
     managers: "ผู้จัดการ",
     staff: "พนักงาน",
     employeeCode: "รหัสพนักงาน",
+    employeeCodeHint: "แก้ไขรหัสพนักงานได้ โดยต้องใช้ PIN ยืนยันเมื่อมีการเปลี่ยนรหัส",
     name: "ชื่อ",
     position: "ตำแหน่ง",
     permissionRole: "บทบาทสิทธิ์",
@@ -125,6 +131,12 @@ const copy = {
     deleted: "ลบผู้ใช้งานเรียบร้อย",
     loadError: "โหลดข้อมูลผู้ใช้งานไม่สำเร็จ",
     saveError: "บันทึกข้อมูลไม่สำเร็จ",
+    savingTitle: "กำลังบันทึกข้อมูล",
+    savingMessage: "กรุณารอสักครู่ ระบบกำลังตรวจสอบและบันทึกข้อมูลผู้ใช้งาน",
+    saveSuccessTitle: "บันทึกสำเร็จ",
+    saveErrorTitle: "บันทึกไม่สำเร็จ",
+    acknowledge: "ตกลง",
+    employeeCodeDuplicate: "รหัสพนักงานนี้ถูกใช้งานแล้ว กรุณากำหนดรหัสใหม่ที่ไม่ซ้ำกับผู้ใช้งานคนอื่น",
     deleteError: "ลบผู้ใช้งานไม่สำเร็จ",
     accessOwner: "",
     accessManager: "ผู้จัดการ: เห็นทุกสาขา เพิ่มผู้ใช้ได้ แก้ไขพนักงานได้ และลบไม่ได้",
@@ -149,6 +161,7 @@ const copy = {
     managers: "Managers",
     staff: "Staff",
     employeeCode: "Employee code",
+    employeeCodeHint: "You can change the employee code. An approval PIN is required when the code changes.",
     name: "Name",
     position: "Position",
     permissionRole: "Permission role",
@@ -179,6 +192,12 @@ const copy = {
     deleted: "User removed.",
     loadError: "Could not load users.",
     saveError: "Could not save user.",
+    savingTitle: "Saving user",
+    savingMessage: "Please wait while the user information is validated and saved.",
+    saveSuccessTitle: "Saved successfully",
+    saveErrorTitle: "Save failed",
+    acknowledge: "OK",
+    employeeCodeDuplicate: "This employee code is already in use. Enter a unique employee code.",
     deleteError: "Could not delete user.",
     accessOwner: "",
     accessManager: "Manager: all branches, can add and edit staff, cannot delete.",
@@ -240,6 +259,7 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
   const [roleFilter, setRoleFilter] = useState<"all" | BranchRole>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [form, setForm] = useState<FormState | null>(null);
+  const [alertDialog, setAlertDialog] = useState<AlertDialogState | null>(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -354,8 +374,11 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
       ...init,
       headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
     }, 15000);
-    const payload = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
-    if (!response.ok) throw new Error(payload.error?.message || t.saveError);
+    const payload = (await response.json().catch(() => ({}))) as { error?: { code?: string; message?: string } };
+    if (!response.ok) {
+      const message = payload.error?.code === "employee_code_duplicate" ? t.employeeCodeDuplicate : payload.error?.message || t.saveError;
+      throw new Error(message);
+    }
   }
 
   async function saveForm() {
@@ -363,6 +386,7 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
     setSaving(true);
     setError("");
     setNotice("");
+    setAlertDialog(null);
     try {
       if (!form.user_id) {
         await requestJson("/api/pos/users", {
@@ -425,11 +449,23 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
           });
         }
       }
-      setNotice(t.saved);
       setForm(null);
       await loadUsers();
+      setSaving(false);
+      setAlertDialog({
+        tone: "success",
+        title: t.saveSuccessTitle,
+        message: t.saved,
+      });
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : t.saveError);
+      const message = nextError instanceof Error ? nextError.message : t.saveError;
+      setError(message);
+      setSaving(false);
+      setAlertDialog({
+        tone: "error",
+        title: t.saveErrorTitle,
+        message,
+      });
     } finally {
       setSaving(false);
     }
@@ -690,8 +726,15 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
                   ))}
                 </select>
               </Field>
-              <Field label={t.employeeCode}>
-                <input value={form.employee_code} onChange={(event) => setForm({ ...form, employee_code: event.target.value.toUpperCase() })} className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+              <Field label={t.employeeCode} hint={t.employeeCodeHint}>
+                <input
+                  type="text"
+                  value={form.employee_code}
+                  onChange={(event) => setForm({ ...form, employee_code: event.target.value.toUpperCase() })}
+                  placeholder={lang === "en" ? "Enter employee code" : "กรอกรหัสพนักงาน"}
+                  autoComplete="off"
+                  className="h-11 w-full rounded-md border border-blue-300 bg-blue-50/40 px-3 text-sm font-bold text-slate-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
               </Field>
               <Field label={t.fullName}>
                 <input value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
@@ -739,10 +782,10 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
                 </select>
               </Field>
               <Field label={t.pin}>
-                <input value={form.pin} onChange={(event) => setForm({ ...form, pin: event.target.value })} placeholder={t.pinHint} className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                <input type="password" inputMode="numeric" value={form.pin} onChange={(event) => setForm({ ...form, pin: event.target.value })} placeholder={t.pinHint} autoComplete="new-password" className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
               </Field>
               <Field label={t.approvalPin}>
-                <input value={form.approval_pin} onChange={(event) => setForm({ ...form, approval_pin: event.target.value })} placeholder={t.approvalPinHint} className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                <input type="password" inputMode="numeric" value={form.approval_pin} onChange={(event) => setForm({ ...form, approval_pin: event.target.value })} placeholder={t.approvalPinHint} autoComplete="current-password" className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
               </Field>
             </div>
 
@@ -754,6 +797,43 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
                 {saving ? "Saving..." : t.save}
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {saving && form ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 px-4" role="dialog" aria-modal="true" aria-labelledby="pos-user-saving-title">
+          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white px-6 py-7 text-center shadow-2xl">
+            <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" aria-hidden="true" />
+            <h2 id="pos-user-saving-title" className="mt-4 text-lg font-bold text-slate-950">{t.savingTitle}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{t.savingMessage}</p>
+          </div>
+        </div>
+      ) : null}
+
+      {alertDialog ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 px-4" role="dialog" aria-modal="true" aria-labelledby="pos-user-alert-title">
+          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white px-6 py-6 text-center shadow-2xl">
+            <div
+              className={`mx-auto flex h-11 w-11 items-center justify-center rounded-full text-xl font-bold ${
+                alertDialog.tone === "success" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+              }`}
+              aria-hidden="true"
+            >
+              {alertDialog.tone === "success" ? "✓" : "!"}
+            </div>
+            <h2 id="pos-user-alert-title" className="mt-4 text-lg font-bold text-slate-950">{alertDialog.title}</h2>
+            <p className="mt-2 break-words text-sm leading-6 text-slate-600">{alertDialog.message}</p>
+            <button
+              type="button"
+              onClick={() => setAlertDialog(null)}
+              autoFocus
+              className={`mt-5 w-full rounded-md px-4 py-2.5 text-sm font-bold text-white ${
+                alertDialog.tone === "success" ? "bg-blue-600 hover:bg-blue-700" : "bg-red-600 hover:bg-red-700"
+              }`}
+            >
+              {t.acknowledge}
+            </button>
           </div>
         </div>
       ) : null}
@@ -770,11 +850,12 @@ function StatCard({ label, value }: { label: string; value: number }) {
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className="block">
       <span className="mb-2 block text-xs font-bold text-slate-600">{label}</span>
       {children}
+      {hint ? <span className="mt-1.5 block text-xs leading-5 text-slate-500">{hint}</span> : null}
     </label>
   );
 }

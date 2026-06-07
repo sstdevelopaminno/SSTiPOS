@@ -3,7 +3,8 @@ import { cookies } from "next/headers";
 import { clearPreEntryFlowState, createFlowState, readPreEntryFlowState, writePreEntryFlowState } from "@/lib/server/pre-entry-state";
 import { resolveEmployeeByUserId } from "@/lib/server/pre-entry-auth";
 import { withAuthTimeout } from "@/lib/server/auth-timeout";
-import { PosGuardError, requirePosSession } from "@/lib/pos-session-guard";
+import { PosGuardError, requirePosSession, type PosSessionScope } from "@/lib/pos-session-guard";
+import { getRequestMeta, writeAuditLog } from "@/lib/server/audit-log";
 import { resolveSessionCookieConfig } from "@/lib/server/pos-session";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
@@ -79,6 +80,38 @@ async function revokeUserBranchSessions(input: { tenantId: string; branchId: str
   }
 }
 
+async function writeLogoutAudit(request: Request, scope: PosSessionScope, mode: NonNullable<LogoutPayload["mode"]>) {
+  const loggedOutAt = new Date().toISOString();
+  const { ipAddress, userAgent } = getRequestMeta(request);
+
+  try {
+    await writeAuditLog({
+      tenantId: scope.session.tenant_id,
+      branchId: scope.session.branch_id,
+      actorUserId: scope.session.user_id,
+      actorRole: scope.session.role,
+      targetUserId: scope.session.user_id,
+      deviceCode: scope.session.device_code,
+      posSessionId: scope.session.id,
+      action: "session_logout",
+      targetType: "pos_session",
+      targetId: scope.session.id,
+      ipAddress,
+      userAgent,
+      metadata: {
+        device_code: scope.session.device_code,
+        logout_mode: mode,
+        logged_out_at: loggedOutAt
+      }
+    });
+  } catch (error) {
+    console.warn("[auth/session/logout] audit warning", {
+      sessionId: scope.session.id,
+      error: error instanceof Error ? error.message : "Unknown audit error."
+    });
+  }
+}
+
 export async function POST(request: Request) {
   const payload = (await request.json().catch(() => null)) as LogoutPayload | null;
   const mode =
@@ -90,6 +123,7 @@ export async function POST(request: Request) {
     try {
       const scope = await requirePosSession();
       await withAuthTimeout(revokePosSessionById(scope.session.id), "logout_revoke_timeout", 3000);
+      await writeLogoutAudit(request, scope, mode);
     } catch {
       // If the browser no longer has a valid POS session cookie, still clear local login state.
     }
@@ -110,6 +144,7 @@ export async function POST(request: Request) {
   try {
     const scope = await requirePosSession();
     await revokePosSessionById(scope.session.id);
+    await writeLogoutAudit(request, scope, mode);
     if (mode === "switch_employee") {
       await withAuthTimeout(
         revokeUserBranchSessions({

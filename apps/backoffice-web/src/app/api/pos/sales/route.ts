@@ -699,10 +699,22 @@ async function updateQueuedPosOrder(args: {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const startedAt = Date.now();
   try {
     const { auth, devicePolicy, scope } = await requireSalesSessionContext("sales:enter");
+    const { searchParams } = new URL(request.url);
+    if (searchParams.get("resource") === "tax-settings") {
+      const taxSettings = await loadTaxSettings(auth);
+      const response = ok({
+        tenant_id: auth.tenantId,
+        branch_id: auth.branchId,
+        tax_settings: taxSettings
+      });
+      response.headers.set("x-pos-sales-ms", String(Date.now() - startedAt));
+      return response;
+    }
+
     const supabase = getSupabaseServiceClient();
 
     const [

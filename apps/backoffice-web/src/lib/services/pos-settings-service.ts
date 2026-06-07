@@ -164,7 +164,9 @@ export type PaymentAccountInput = {
   is_active?: boolean;
 };
 
-export type TaxSettingsInput = Partial<TaxSettings>;
+export type TaxSettingsInput = Partial<TaxSettings> & {
+  branch_id?: string;
+};
 
 export const DEFAULT_TAX_SETTINGS: TaxSettings = {
   is_enabled: false,
@@ -274,10 +276,14 @@ export function buildPromptPayPayload(phone: unknown) {
   return digits ? `https://promptpay.io/${digits}` : "";
 }
 
-export async function loadTaxSettings(auth: AuthContext): Promise<TaxSettings> {
+export async function loadTaxSettings(auth: AuthContext, requestedBranchId?: string | null): Promise<TaxSettings> {
   if (!auth.tenantId) return DEFAULT_TAX_SETTINGS;
   const supabase = getSupabaseServiceClient();
-  const branchId = auth.branchId ?? null;
+  const branchId = trimText(requestedBranchId) || auth.branchId || null;
+  if (branchId && branchId !== auth.branchId) {
+    assertCanManageSettings(auth);
+    await assertBranchInTenant(auth.tenantId, branchId);
+  }
   let query = supabase
     .from("tenant_tax_settings")
     .select("is_enabled,calculation_base,settings")
@@ -812,8 +818,9 @@ export async function saveTaxSettings(auth: AuthContext, input: TaxSettingsInput
   assertCanManageSettings(auth);
   if (!auth.tenantId) throw new Error("Missing tenant scope.");
   const tenantId = auth.tenantId;
-  const branchId = trimText(auth.branchId);
+  const branchId = trimText(input.branch_id) || trimText(auth.branchId);
   if (!branchId) throw new Error("Branch is required for tax settings.");
+  await assertBranchInTenant(tenantId, branchId);
   const settings = normalizeTaxSettings(input);
   const supabase = getSupabaseServiceClient();
   const { data, error } = await supabase

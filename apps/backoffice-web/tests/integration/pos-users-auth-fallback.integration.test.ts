@@ -121,7 +121,7 @@ describe("POS users auth fallback", () => {
     expect(getAuthContext).toHaveBeenCalledWith({ requireBranchScope: true });
   });
 
-  it("does not report success when POS profile settings fail with a duplicate employee code", async () => {
+  it("rejects a duplicate employee code before updating the user profile", async () => {
     getPosApiAuthContext.mockResolvedValue({
       userId: "owner-user",
       platformRole: "tenant_user",
@@ -136,33 +136,20 @@ describe("POS users auth fallback", () => {
       { maybeSingleResult: { data: { role: "staff" }, error: null } }
     );
     const profileSettingsLoadQuery = createChainableQuery({ data: [], error: null });
-    const profileSettingsWriteQuery = createChainableQuery(
-      { data: null, error: null },
-      {
-        singleResult: {
-          data: null,
-          error: {
-            code: "23505",
-            message: 'duplicate key value violates unique constraint "pos_user_profiles_tenant_id_employee_code_key"'
-          }
-        }
-      }
+    const duplicateCodeQuery = createChainableQuery(
+      { data: [], error: null },
+      { maybeSingleResult: { data: { user_id: "another-user" }, error: null } }
     );
     const profileLookupQuery = createChainableQuery(
       { data: [], error: null },
       { maybeSingleResult: { data: { email: "staff@demo.local" }, error: null } }
     );
-    const profileUpdateQuery = createChainableQuery(
-      { data: [], error: null },
-      { maybeSingleResult: { data: { id: "staff-user", full_name: "Staff Updated", email: "staff-updated@demo.local" }, error: null } }
-    );
 
-    const usersProfileQueries = [profileLookupQuery, profileUpdateQuery];
-    const posProfileQueries = [profileSettingsLoadQuery, profileSettingsWriteQuery];
+    const posProfileQueries = [profileSettingsLoadQuery, duplicateCodeQuery];
     const from = vi.fn((tableName: string) => {
       if (tableName === "user_branch_roles") return roleQuery;
-      if (tableName === "users_profiles") return usersProfileQueries.shift() ?? profileUpdateQuery;
-      if (tableName === "pos_user_profiles") return posProfileQueries.shift() ?? profileSettingsWriteQuery;
+      if (tableName === "users_profiles") return profileLookupQuery;
+      if (tableName === "pos_user_profiles") return posProfileQueries.shift() ?? duplicateCodeQuery;
       return createChainableQuery({ data: [], error: null });
     });
     getSupabaseServiceClient.mockReturnValue({ from });
@@ -187,8 +174,8 @@ describe("POS users auth fallback", () => {
     );
     const body = await response.json();
 
-    expect(response.status).toBe(500);
-    expect(body.error.code).toBe("pos_user_profile_update_failed");
-    expect(body.error.message).toContain("duplicate key value");
+    expect(response.status).toBe(409);
+    expect(body.error.code).toBe("employee_code_duplicate");
+    expect(profileLookupQuery.update).not.toHaveBeenCalled();
   });
 });

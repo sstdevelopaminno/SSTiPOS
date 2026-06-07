@@ -223,6 +223,25 @@ async function upsertProfileSettings(input: {
   }
 }
 
+async function findEmployeeCodeOwner(input: { tenantId: string; employeeCode: string }) {
+  const supabase = getSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("pos_user_profiles")
+    .select("user_id")
+    .eq("tenant_id", input.tenantId)
+    .eq("employee_code", input.employeeCode)
+    .maybeSingle<{ user_id: string }>();
+
+  if (error) {
+    if (isMissingRelationError(error, "pos_user_profiles")) {
+      throw new Error("POS user profile table is missing. Please run Supabase migrations.");
+    }
+    throw new Error(error.message);
+  }
+
+  return data?.user_id ?? null;
+}
+
 export async function GET(request: Request) {
   try {
     const auth = await getPosUsersAuthContext("users:view");
@@ -403,6 +422,17 @@ export async function PATCH(request: Request) {
         return fail("invalid_profile", "Full name and valid email are required.", 422);
       }
 
+      if (employeeCodeChanged) {
+        try {
+          const employeeCodeOwner = await findEmployeeCodeOwner({ tenantId: auth.tenantId!, employeeCode });
+          if (employeeCodeOwner && employeeCodeOwner !== userId) {
+            return fail("employee_code_duplicate", "This employee code is already assigned to another POS user.", 409);
+          }
+        } catch (error) {
+          return fail("employee_code_check_failed", error instanceof Error ? error.message : "Unable to verify employee code.", 500);
+        }
+      }
+
       const pinApproval = employeeCodeChanged ? await requireApprovalPin({ pin: payload.approval_pin, tenantId: auth.tenantId!, branchId }) : { approved: true };
       if (employeeCodeChanged && !pinApproval.approved) {
         return fail("approval_pin_required", "PIN approval is required to update employee code.", 403);
@@ -564,6 +594,16 @@ export async function POST(request: Request) {
     if (existingError) return fail("user_lookup_failed", existingError.message, 500);
 
     const userId = existingProfile?.id ?? crypto.randomUUID();
+    const employeeCode = employeeCodeInput || deriveEmployeeCode(userId);
+    try {
+      const employeeCodeOwner = await findEmployeeCodeOwner({ tenantId: auth.tenantId!, employeeCode });
+      if (employeeCodeOwner && employeeCodeOwner !== userId) {
+        return fail("employee_code_duplicate", "This employee code is already assigned to another POS user.", 409);
+      }
+    } catch (error) {
+      return fail("employee_code_check_failed", error instanceof Error ? error.message : "Unable to verify employee code.", 500);
+    }
+
     if (!existingProfile) {
       const pinHash = pin ? await bcrypt.hash(pin, 10) : null;
       const { error: insertProfileError } = await supabase.from("users_profiles").insert({
@@ -577,7 +617,6 @@ export async function POST(request: Request) {
       if (insertProfileError) return fail("user_create_failed", insertProfileError.message, 500);
     }
 
-    const employeeCode = employeeCodeInput || deriveEmployeeCode(userId);
     const { error: roleError } = await supabase.from("user_branch_roles").upsert(
       {
         user_id: userId,

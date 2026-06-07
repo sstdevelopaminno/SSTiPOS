@@ -397,6 +397,9 @@ export async function POST(request: Request) {
           userAgent,
           metadata: {
             login_method: loginMethod,
+            device_code: selectedDeviceCode,
+            device_name: device.device_name,
+            logged_in_at: nowIso,
             override_in_use_device: overrideApplied,
             overridden_session_id: overrideApplied ? activeSession?.id ?? null : null
           }
