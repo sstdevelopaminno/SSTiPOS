@@ -16,7 +16,9 @@ const getAuthContext = vi.fn();
 const getPosApiAuthContext = vi.fn();
 const getSupabaseServiceClient = vi.fn();
 const validateManagerPin = vi.fn();
+const appendAuditLog = vi.fn();
 
+vi.mock("@/lib/audit-log", () => ({ appendAuditLog }));
 vi.mock("@/lib/auth-context", () => ({ getAuthContext }));
 vi.mock("@/lib/pos-api-auth", () => ({ getPosApiAuthContext }));
 vi.mock("@/lib/pos-session-guard", () => ({ PosGuardError }));
@@ -177,5 +179,97 @@ describe("POS users auth fallback", () => {
     expect(response.status).toBe(409);
     expect(body.error.code).toBe("employee_code_duplicate");
     expect(profileLookupQuery.update).not.toHaveBeenCalled();
+  });
+
+  it("blocks a manager from assigning a PIN directly to staff", async () => {
+    getPosApiAuthContext.mockResolvedValue({
+      userId: "manager-user",
+      platformRole: "tenant_user",
+      tenantId: "tenant-1",
+      branchId: "branch-1",
+      branchRole: "manager"
+    });
+
+    const roleQuery = createChainableQuery(
+      { data: [], error: null },
+      { maybeSingleResult: { data: { role: "staff" }, error: null } }
+    );
+    getSupabaseServiceClient.mockReturnValue({
+      from: vi.fn(() => roleQuery)
+    });
+
+    const { PATCH } = await import("@/app/api/pos/users/route");
+    const response = await PATCH(
+      new Request("http://localhost/api/pos/users", {
+        method: "PATCH",
+        body: JSON.stringify({
+          action: "set_pin",
+          user_id: "staff-user",
+          branch_id: "branch-1",
+          pin: "1234",
+          approval_pin: "2468"
+        })
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error.code).toBe("staff_pin_requires_owner_grant");
+    expect(validateManagerPin).not.toHaveBeenCalled();
+  });
+
+  it("lets an owner grant staff cancel-bill PIN authority through the scoped RPC", async () => {
+    getPosApiAuthContext.mockResolvedValue({
+      userId: "owner-user",
+      platformRole: "tenant_user",
+      tenantId: "tenant-1",
+      branchId: "branch-1",
+      branchRole: "owner"
+    });
+    validateManagerPin.mockResolvedValue({
+      approved: true,
+      approverUserId: "owner-user",
+      approverRole: "owner"
+    });
+
+    const roleQuery = createChainableQuery(
+      { data: [], error: null },
+      { maybeSingleResult: { data: { role: "staff" }, error: null } }
+    );
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    getSupabaseServiceClient.mockReturnValue({
+      from: vi.fn(() => roleQuery),
+      rpc
+    });
+
+    const { PATCH } = await import("@/app/api/pos/users/route");
+    const response = await PATCH(
+      new Request("http://localhost/api/pos/users", {
+        method: "PATCH",
+        body: JSON.stringify({
+          action: "set_cancel_bill_approval",
+          user_id: "staff-user",
+          branch_id: "branch-1",
+          is_enabled: true,
+          pin: "7890",
+          approval_pin: "1357"
+        })
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.is_enabled).toBe(true);
+    expect(rpc).toHaveBeenCalledWith(
+      "configure_staff_cancel_bill_approval",
+      expect.objectContaining({
+        p_tenant_id: "tenant-1",
+        p_branch_id: "branch-1",
+        p_user_id: "staff-user",
+        p_is_enabled: true,
+        p_granted_by: "owner-user",
+        p_pin_hash: expect.any(String)
+      })
+    );
   });
 });

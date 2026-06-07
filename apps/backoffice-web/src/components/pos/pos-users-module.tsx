@@ -39,6 +39,7 @@ type PosUser = {
   full_name: string;
   email: string;
   is_active: boolean;
+  can_approve_cancel_bill: boolean;
   can_edit: boolean;
   can_delete: boolean;
   device_scope: {
@@ -74,6 +75,8 @@ type FormState = {
   device_id: string;
   pin: string;
   approval_pin: string;
+  can_approve_cancel_bill: boolean;
+  initial_can_approve_cancel_bill: boolean;
 };
 
 const roleOptions: BranchRole[] = ["owner", "manager", "staff", "accountant"];
@@ -118,6 +121,12 @@ const copy = {
     approvalPin: "PIN ยืนยัน",
     pinHint: "กรอกเมื่อต้องการตั้ง/เปลี่ยน PIN",
     approvalPinHint: "PIN เจ้าของร้านหรือผู้จัดการสำหรับยืนยันรหัส",
+    cancelBillApproval: "สิทธิ์ PIN ยกเลิกบิล",
+    cancelBillApprovalEnabled: "อนุญาตให้พนักงานใช้ PIN ยืนยันการยกเลิกบิล",
+    cancelBillApprovalDisabled: "ไม่ได้รับสิทธิ์ยืนยันการยกเลิกบิล",
+    cancelBillApprovalOwnerOnly: "เฉพาะเจ้าของร้านเท่านั้นที่เปิดหรือปิดสิทธิ์นี้ได้",
+    staffPinHint: "กำหนด PIN 4-12 หลักสำหรับยืนยันการยกเลิกบิล",
+    staffPinRequired: "กรุณากำหนด PIN พนักงาน 4-12 หลักเมื่อเปิดสิทธิ์ยกเลิกบิล",
     email: "อีเมล",
     fullName: "ชื่อผู้ใช้งาน",
     allDevices: "ทุกเครื่องในสาขา",
@@ -179,6 +188,12 @@ const copy = {
     approvalPin: "Approval PIN",
     pinHint: "Fill only when setting/changing PIN",
     approvalPinHint: "Owner or manager PIN for code confirmation",
+    cancelBillApproval: "Cancel-bill PIN authority",
+    cancelBillApprovalEnabled: "Allow this staff member to approve bill cancellation with a PIN",
+    cancelBillApprovalDisabled: "No bill-cancellation approval authority",
+    cancelBillApprovalOwnerOnly: "Only the store owner can enable or disable this authority",
+    staffPinHint: "Set a 4-12 digit PIN for bill-cancellation approval",
+    staffPinRequired: "Enter a 4-12 digit staff PIN when enabling bill-cancellation approval.",
     email: "Email",
     fullName: "Full name",
     allDevices: "All branch devices",
@@ -241,6 +256,8 @@ function buildEmptyForm(defaultBranchId: string): FormState {
     device_id: "",
     pin: "",
     approval_pin: "",
+    can_approve_cancel_bill: false,
+    initial_can_approve_cancel_bill: false,
   };
 }
 
@@ -364,6 +381,8 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
       device_id: item.device_scope.device_id ?? "",
       pin: "",
       approval_pin: "",
+      can_approve_cancel_bill: item.can_approve_cancel_bill,
+      initial_can_approve_cancel_bill: item.can_approve_cancel_bill,
     });
     setNotice("");
     setError("");
@@ -383,6 +402,18 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
 
   async function saveForm() {
     if (!form) return;
+    const staffApprovalChanged =
+      form.role === "staff" &&
+      (form.can_approve_cancel_bill !== form.initial_can_approve_cancel_bill || Boolean(form.pin.trim()));
+    if (
+      form.role === "staff" &&
+      form.can_approve_cancel_bill &&
+      (!form.user_id || staffApprovalChanged) &&
+      !/^\d{4,12}$/.test(form.pin.trim())
+    ) {
+      setAlertDialog({ tone: "error", title: t.saveErrorTitle, message: t.staffPinRequired });
+      return;
+    }
     setSaving(true);
     setError("");
     setNotice("");
@@ -401,6 +432,7 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
             role: form.role,
             pin: form.pin,
             approval_pin: form.approval_pin,
+            can_approve_cancel_bill: form.can_approve_cancel_bill,
             is_active: form.is_active,
             scope_mode: form.scope_mode,
             device_id: form.scope_mode === "single_device" ? form.device_id : null,
@@ -436,7 +468,20 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
             device_id: form.scope_mode === "single_device" ? form.device_id : null,
           }),
         });
-        if (form.pin.trim()) {
+        const shouldConfigureStaffCancelApproval = currentRole === "owner" && form.role === "staff" && staffApprovalChanged;
+        if (shouldConfigureStaffCancelApproval) {
+          await requestJson("/api/pos/users", {
+            method: "PATCH",
+            body: JSON.stringify({
+              action: "set_cancel_bill_approval",
+              user_id: form.user_id,
+              branch_id: form.branch_id,
+              is_enabled: form.can_approve_cancel_bill,
+              pin: form.pin,
+              approval_pin: form.approval_pin,
+            }),
+          });
+        } else if (form.role !== "staff" && form.pin.trim()) {
           await requestJson("/api/pos/users", {
             method: "PATCH",
             body: JSON.stringify({
@@ -544,7 +589,7 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
           {notice ? <div className="mx-4 mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{notice}</div> : null}
 
           <div className="overflow-x-auto">
-            <table className="min-w-[1240px] text-left text-sm">
+            <table className="min-w-[1380px] text-left text-sm">
               <thead className="bg-slate-100 text-xs font-bold uppercase text-slate-500">
                 <tr>
                   <th className="px-4 py-3">{t.employeeCode}</th>
@@ -554,6 +599,7 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
                   <th className="px-4 py-3">{t.branch}</th>
                   <th className="px-4 py-3">{t.chooseDevice}</th>
                   <th className="px-4 py-3">{t.role}</th>
+                  <th className="px-4 py-3">{t.cancelBillApproval}</th>
                   <th className="px-4 py-3">{t.status}</th>
                   <th className="px-4 py-3 text-right">{t.actions}</th>
                 </tr>
@@ -561,7 +607,7 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td className="px-4 py-10 text-center text-slate-500" colSpan={9}>
+                    <td className="px-4 py-10 text-center text-slate-500" colSpan={10}>
                       Loading...
                     </td>
                   </tr>
@@ -592,6 +638,15 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
                         </span>
                       </td>
                       <td className="px-4 py-4">
+                        {item.role === "staff" ? (
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${item.can_approve_cancel_bill ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
+                            {item.can_approve_cancel_bill ? t.activeOnly : t.inactiveOnly}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-semibold text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
                         <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${item.is_active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
                           {item.is_active ? t.activeOnly : t.inactiveOnly}
                         </span>
@@ -614,7 +669,7 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
                   ))
                 ) : (
                   <tr>
-                    <td className="px-4 py-12 text-center text-slate-500" colSpan={9}>
+                    <td className="px-4 py-12 text-center text-slate-500" colSpan={10}>
                       {t.empty}
                     </td>
                   </tr>
@@ -749,7 +804,20 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
                 <input value={form.permission_role} onChange={(event) => setForm({ ...form, permission_role: event.target.value })} className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
               </Field>
               <Field label={t.role}>
-                <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as BranchRole })} disabled={currentRole !== "owner" && (form.role === "owner" || form.role === "manager")} className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100">
+                <select
+                  value={form.role}
+                  onChange={(event) => {
+                    const role = event.target.value as BranchRole;
+                    setForm({
+                      ...form,
+                      role,
+                      can_approve_cancel_bill: role === "staff" ? form.can_approve_cancel_bill : false,
+                      pin: role === "staff" ? form.pin : ""
+                    });
+                  }}
+                  disabled={currentRole !== "owner" && (form.role === "owner" || form.role === "manager")}
+                  className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100"
+                >
                   {roleOptions
                     .filter((role) => currentRole === "owner" || (role !== "owner" && role !== "manager"))
                     .map((role) => (
@@ -781,9 +849,33 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
                   ))}
                 </select>
               </Field>
-              <Field label={t.pin}>
-                <input type="password" inputMode="numeric" value={form.pin} onChange={(event) => setForm({ ...form, pin: event.target.value })} placeholder={t.pinHint} autoComplete="new-password" className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
-              </Field>
+              {form.role === "staff" ? (
+                <Field label={t.cancelBillApproval} hint={currentRole === "owner" ? undefined : t.cancelBillApprovalOwnerOnly}>
+                  <label className="flex min-h-11 items-center gap-3 rounded-md border border-slate-200 px-3 text-sm font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={form.can_approve_cancel_bill}
+                      disabled={currentRole !== "owner"}
+                      onChange={(event) => setForm({ ...form, can_approve_cancel_bill: event.target.checked, pin: "" })}
+                      className="h-4 w-4"
+                    />
+                    {form.can_approve_cancel_bill ? t.cancelBillApprovalEnabled : t.cancelBillApprovalDisabled}
+                  </label>
+                </Field>
+              ) : null}
+              {form.role !== "staff" || (currentRole === "owner" && form.can_approve_cancel_bill) ? (
+                <Field label={t.pin}>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    value={form.pin}
+                    onChange={(event) => setForm({ ...form, pin: event.target.value })}
+                    placeholder={form.role === "staff" ? t.staffPinHint : t.pinHint}
+                    autoComplete="new-password"
+                    className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  />
+                </Field>
+              ) : null}
               <Field label={t.approvalPin}>
                 <input type="password" inputMode="numeric" value={form.approval_pin} onChange={(event) => setForm({ ...form, approval_pin: event.target.value })} placeholder={t.approvalPinHint} autoComplete="current-password" className="h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
               </Field>

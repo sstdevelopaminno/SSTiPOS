@@ -580,3 +580,49 @@ Use this section as the current source of truth before changing the Payment Sett
 - PINs, passwords, session cookies, and handoff tokens are never written to audit metadata.
 - Audit writing is best-effort during logout, so an audit storage interruption does not trap the cashier in an active browser session.
 - Sales, shift totals, payment calculations, order state, and device access rules were not changed.
+
+## Staff Cancel-Bill PIN Authority Handoff (2026-06-07)
+
+### Business rule
+- Staff does not receive or change a PIN from the POS Users submenu by default.
+- Only an owner in the same tenant and branch can grant or revoke a staff member's PIN authority for `cancel_bill`.
+- The owner must confirm the change with the owner's PIN. A manager cannot grant this authority or assign a staff PIN.
+- An authorized staff PIN is accepted only for bill cancellation. It cannot approve stock adjustments, shift overrides, payment overrides, user changes, table changes, or other protected actions.
+
+### UI behavior
+- POS Users shows a branch-scoped `สิทธิ์ PIN ยกเลิกบิล` status for staff.
+- The authority toggle is editable only when the current user is an owner.
+- The staff PIN field appears only after the owner enables cancel-bill authority.
+- Each branch grant stores its own cancel-bill approval PIN hash. Revoking a grant removes that branch's approval PIN without changing another branch.
+
+### Server and database enforcement
+- `pos_user_approval_permissions` stores the grant and its dedicated PIN hash by tenant, branch, user, and approval action.
+- `configure_staff_cancel_bill_approval` updates the grant and PIN atomically and verifies that the granting user is an owner and the target user is staff in the same branch.
+- The approval validator checks the branch-scoped grant before accepting a staff PIN for `cancel_bill`.
+- The staff approval PIN is separate from `users_profiles.pin_hash`, so granting cancel-bill authority does not create a staff PIN-login credential.
+- The `manager_pin_approvals` database guard permits staff only when the action is `cancel_bill` and the matching grant is active.
+- Changing a granted staff user to another role automatically revokes that branch grant.
+- Grant and revoke actions are written to the audit log without storing plaintext PIN values.
+
+### Files affected
+- Migration: `supabase/migrations/202606070001_staff_cancel_bill_pin_approval.sql`.
+- POS Users API/UI: `apps/backoffice-web/src/app/api/pos/users/route.ts`, `apps/backoffice-web/src/components/pos/pos-users-module.tsx`.
+- PIN approval flow: `apps/backoffice-web/src/lib/pin-approval.ts`, `apps/backoffice-web/src/lib/services/approval-service.ts`.
+- Cancel-bill messaging and approval modal: `apps/backoffice-web/src/app/api/pos/orders/[orderId]/cancel/route.ts`, `apps/backoffice-web/src/components/pos/manager-override-modal.tsx`.
+- Regression tests: `apps/backoffice-web/tests/integration/pos-users-auth-fallback.integration.test.ts`, `apps/backoffice-web/tests/integration/staff-cancel-bill-pin-approval.integration.test.ts`.
+
+## Branch Settings Popup UI Handoff (2026-06-07)
+
+### What changed
+- The Tax Settings branch selector now uses a compact desktop width while remaining full width on small screens.
+- The Branches submenu no longer keeps the add/edit form open beside the branch list.
+- A dedicated `เพิ่มสาขา` button opens a responsive modal form; branch edit actions reuse the same modal.
+- Creating a branch shows a blocking `กำลังเพิ่มสาขา...` popup to prevent duplicate submissions, then shows `เพิ่มสาขาสำเร็จ` after the existing API confirms the save.
+
+### Files/components affected
+- Settings UI: `apps/backoffice-web/src/components/pos-preview/pos-settings-workspace.tsx`.
+
+### Safety and responsive notes
+- Existing branch create, update, delete, tenant scope, role guards, and API routes are unchanged.
+- The branch list remains horizontally scrollable on narrow screens, while the popup fits within the viewport and allows vertical scrolling only when required.
+- Tax calculations, branch-specific tax persistence, POS sales binding, payment flow, shifts, and order state logic were not changed.

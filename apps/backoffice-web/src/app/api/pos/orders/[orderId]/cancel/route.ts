@@ -24,7 +24,7 @@ export async function POST(req: Request, context: { params: Promise<{ orderId: s
 
     const cancellationApprovalId = body.cancellation_approval_id?.trim();
     if (!cancellationApprovalId) {
-      return fail("cancellation_approval_required", "Manager/owner/IT Admin PIN approval is required before cancelling bill.", 422);
+      return fail("cancellation_approval_required", "An authorized PIN approval is required before cancelling bill.", 422);
     }
 
     const { data: approvalRow, error: approvalError } = await supabase

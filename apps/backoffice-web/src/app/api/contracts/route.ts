@@ -31,7 +31,7 @@ const contracts = {
     {
       method: "POST",
       path: "/api/backoffice/approvals/pin",
-      description: "Escalation approval for cancel bill, stock adjustment, employee delete, shift override"
+      description: "Scoped PIN approval for cancel bill, stock adjustment, employee delete, and shift override"
     },
     {
       method: "GET",

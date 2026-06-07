@@ -6,7 +6,7 @@ import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 export type PinApprovalResult = {
   approved: boolean;
   approverUserId?: string;
-  approverRole?: "manager" | "owner" | "it_admin";
+  approverRole?: "staff" | "manager" | "owner" | "it_admin";
 };
 
 type PinScope = {
@@ -32,6 +32,11 @@ type PinCandidate = {
 type PinProfile = {
   pin_hash: string | null;
   is_active: boolean;
+};
+
+type StaffApprovalPermission = {
+  user_id: string;
+  pin_hash: string | null;
 };
 
 function normalizeProfile(profile: PinCandidate["users_profiles"]): PinProfile | null {
@@ -122,11 +127,11 @@ export async function validateManagerPin(action: ApprovalAction, pin: string, sc
     .in("role", ["manager", "owner"])
     .order("role", { ascending: false });
 
-  if (error || !data?.length) {
+  if (error) {
     return { approved: false };
   }
 
-  const rows = (data as unknown as PinCandidate[]).map(normalizeCandidate);
+  const rows = ((data ?? []) as unknown as PinCandidate[]).map(normalizeCandidate);
 
   for (const candidate of rows) {
     if (!candidate.profile?.is_active || !candidate.profile.pin_hash) {
@@ -159,6 +164,46 @@ export async function validateManagerPin(action: ApprovalAction, pin: string, sc
           approverUserId: admin.id,
           approverRole: "it_admin"
         };
+      }
+    }
+  }
+
+  if (action === "cancel_bill") {
+    const { data: staffPermissions, error: staffPermissionError } = await supabase
+      .from("pos_user_approval_permissions")
+      .select("user_id,pin_hash")
+      .eq("tenant_id", scope.tenantId)
+      .eq("branch_id", scope.branchId)
+      .eq("action", "cancel_bill")
+      .eq("is_enabled", true);
+
+    if (!staffPermissionError && staffPermissions?.length) {
+      const staffPinByUserId = new Map(
+        (staffPermissions as StaffApprovalPermission[])
+          .map((row) => [String(row.user_id), row.pin_hash] as const)
+          .filter((entry): entry is readonly [string, string] => Boolean(entry[0] && entry[1]))
+      );
+      const staffUserIds = [...staffPinByUserId.keys()];
+      const { data: staffRows, error: staffRowsError } = await supabase
+        .from("user_branch_roles")
+        .select("role,user_id,users_profiles!inner(is_active)")
+        .eq("tenant_id", scope.tenantId)
+        .eq("branch_id", scope.branchId)
+        .eq("role", "staff")
+        .in("user_id", staffUserIds);
+
+      if (!staffRowsError) {
+        for (const candidate of (staffRows ?? []) as unknown as PinCandidate[]) {
+          const profile = normalizeProfile(candidate.users_profiles);
+          const staffApprovalPinHash = staffPinByUserId.get(candidate.user_id);
+          if (!profile?.is_active || !staffApprovalPinHash) continue;
+          if (!(await bcrypt.compare(pin, staffApprovalPinHash))) continue;
+          return {
+            approved: true,
+            approverUserId: candidate.user_id,
+            approverRole: "staff"
+          };
+        }
       }
     }
   }

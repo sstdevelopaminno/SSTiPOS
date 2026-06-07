@@ -162,6 +162,9 @@ const TEXT = {
     saving: "กำลังบันทึก...",
     cancel: "ยกเลิก",
     add: "เพิ่ม",
+    addBranch: "เพิ่มสาขา",
+    savingBranch: "กำลังเพิ่มสาขา...",
+    branchSaved: "เพิ่มสาขาสำเร็จ",
     delete: "ลบ",
     active: "ใช้งาน",
     inactive: "ปิดใช้งาน",
@@ -279,6 +282,9 @@ const TEXT = {
     saving: "Saving...",
     cancel: "Cancel",
     add: "Add",
+    addBranch: "Add branch",
+    savingBranch: "Adding branch...",
+    branchSaved: "Branch added successfully",
     delete: "Delete",
     active: "Active",
     inactive: "Inactive",
@@ -982,11 +988,13 @@ function MenuLink({ icon, title, desc, href }: { icon: MenuIconName; title: stri
 function PanelHeader({
   title,
   onBack,
-  labels
+  labels,
+  action
 }: {
   title: string;
   onBack: () => void;
   labels: Labels;
+  action?: ReactNode;
 }) {
   return (
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -1002,6 +1010,7 @@ function PanelHeader({
         </button>
         <h2 className="text-xl font-black text-slate-950">{title}</h2>
       </div>
+      {action}
     </div>
   );
 }
@@ -1173,6 +1182,7 @@ function BranchPanel({
 }) {
   const [form, setForm] = useState<BranchForm>(emptyBranchForm);
   const [isBusy, setIsBusy] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const sortedBranches = useMemo(
     () => [...branches].sort((a, b) => Number(b.is_active) - Number(a.is_active) || a.name.localeCompare(b.name)),
     [branches]
@@ -1181,6 +1191,7 @@ function BranchPanel({
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isBusy) return;
+    const isCreating = !form.id;
     const method = form.id ? "PATCH" : "POST";
     setIsBusy(true);
     void (async () => {
@@ -1194,13 +1205,30 @@ function BranchPanel({
         );
         setBranches(branches.some((branch) => branch.id === data.branch.id) ? branches.map((branch) => (branch.id === data.branch.id ? data.branch : branch)) : [...branches, data.branch]);
         setForm(emptyBranchForm);
-        reportStatus(labels.saved, { popup: true });
+        setIsFormOpen(false);
+        reportStatus(isCreating ? labels.branchSaved : labels.saved, { popup: true });
       } catch (error) {
         reportStatus(error instanceof Error ? error.message : labels.failed, { popup: true });
       } finally {
         setIsBusy(false);
       }
     })();
+  }
+
+  function openCreateForm() {
+    setForm(emptyBranchForm);
+    setIsFormOpen(true);
+  }
+
+  function openEditForm(branch: BranchSettings) {
+    setForm(branchToForm(branch));
+    setIsFormOpen(true);
+  }
+
+  function closeForm() {
+    if (isBusy) return;
+    setForm(emptyBranchForm);
+    setIsFormOpen(false);
   }
 
   function deleteBranch(branch: BranchSettings) {
@@ -1223,9 +1251,19 @@ function BranchPanel({
 
   return (
     <section>
-      <PanelHeader title={labels.branches} onBack={onBack} labels={labels} />
-      <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <PanelHeader
+        title={labels.branches}
+        onBack={onBack}
+        labels={labels}
+        action={
+          <ActionButton onClick={openCreateForm} disabled={!canManage || isBusy}>
+            <Icon name="plus" />
+            {labels.addBranch}
+          </ActionButton>
+        }
+      />
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <div className="min-w-[680px]">
           <div className="grid grid-cols-[1fr_1fr_110px_120px] gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-black text-slate-500">
             <span>{labels.branchName}</span>
             <span>{labels.branchCode}</span>
@@ -1241,7 +1279,7 @@ function BranchPanel({
               <p className="truncate text-sm font-bold text-slate-700">{branch.code}</p>
               <StatusPill active={branch.is_active} labels={labels} />
               <div className="flex justify-end gap-2">
-                <button type="button" onClick={() => setForm(branchToForm(branch))} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50" title={labels.edit}>
+                <button type="button" onClick={() => openEditForm(branch)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50" title={labels.edit} aria-label={`${labels.edit} ${branch.name}`}>
                   <Icon name="edit" />
                 </button>
                 <button
@@ -1257,28 +1295,55 @@ function BranchPanel({
             </div>
           ))}
         </div>
-        <form onSubmit={save} className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4">
-          <div className="flex items-center gap-2 text-base font-black text-slate-950">
-            <Icon name="plus" />
-            {form.id ? labels.edit : labels.add}
-          </div>
-          <Field label={labels.branchCode} value={form.code} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, code: value }))} />
-          <Field label={labels.branchName} value={form.name} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, name: value }))} />
-          <TextArea label={labels.address} value={form.address} disabled={!canManage} onChange={(value) => setForm((current) => ({ ...current, address: value }))} />
-          <label className="inline-flex items-center gap-2 text-sm font-bold text-slate-700">
-            <input type="checkbox" checked={form.is_active} disabled={!canManage} onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))} />
-            {labels.active}
-          </label>
-          <div className="flex gap-2">
-            <ActionButton type="submit" disabled={!canManage || isBusy}>
-              {labels.save}
-            </ActionButton>
-            <ActionButton variant="plain" onClick={() => setForm(emptyBranchForm)}>
-              {labels.cancel}
-            </ActionButton>
-          </div>
-        </form>
       </div>
+      {isFormOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-3 sm:p-4" role="dialog" aria-modal="true" aria-label={form.id ? labels.edit : labels.addBranch}>
+          <form onSubmit={save} className="grid max-h-[calc(100vh-24px)] w-full max-w-lg gap-4 overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-xl sm:max-h-[90vh]">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-base font-black text-slate-950">
+                <Icon name={form.id ? "edit" : "plus"} />
+                {form.id ? labels.edit : labels.addBranch}
+              </div>
+              <button
+                type="button"
+                onClick={closeForm}
+                disabled={isBusy}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                aria-label={labels.cancel}
+                title={labels.cancel}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M18 6 6 18" />
+                  <path d="m6 6 12 12" />
+                </svg>
+              </button>
+            </div>
+            <Field label={labels.branchCode} value={form.code} disabled={!canManage || isBusy} onChange={(value) => setForm((current) => ({ ...current, code: value }))} />
+            <Field label={labels.branchName} value={form.name} disabled={!canManage || isBusy} onChange={(value) => setForm((current) => ({ ...current, name: value }))} />
+            <TextArea label={labels.address} value={form.address} disabled={!canManage || isBusy} onChange={(value) => setForm((current) => ({ ...current, address: value }))} />
+            <label className="inline-flex items-center gap-2 text-sm font-bold text-slate-700">
+              <input type="checkbox" checked={form.is_active} disabled={!canManage || isBusy} onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))} />
+              {labels.active}
+            </label>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+              <ActionButton variant="plain" onClick={closeForm} disabled={isBusy}>
+                {labels.cancel}
+              </ActionButton>
+              <ActionButton type="submit" disabled={!canManage || isBusy}>
+                {isBusy ? (form.id ? labels.saving : labels.savingBranch) : labels.save}
+              </ActionButton>
+            </div>
+            {isBusy ? (
+              <div className="store-v2-popup-overlay" role="dialog" aria-modal="true" aria-live="polite">
+                <div className="store-v2-popup-card">
+                  <div className="store-v2-popup-spinner" aria-hidden="true" />
+                  <p className="store-v2-popup-title">{form.id ? labels.saving : labels.savingBranch}</p>
+                </div>
+              </div>
+            ) : null}
+          </form>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1749,8 +1814,8 @@ function TaxPanel({
     <section>
       <PanelHeader title={labels.taxes} onBack={onBack} labels={labels} />
       <form onSubmit={save} className="grid gap-4">
-        <div className="grid gap-3 rounded-lg border border-blue-100 bg-blue-50/60 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-          <label className="grid gap-1.5 text-[13px] font-semibold text-slate-700">
+        <div className="flex flex-col gap-3 rounded-lg border border-blue-100 bg-blue-50/60 p-4 md:flex-row md:items-end md:justify-between">
+          <label className="grid w-full max-w-md gap-1.5 text-[13px] font-semibold text-slate-700">
             <span>{labels.taxBranch}</span>
             <select
               value={selectedBranchId}

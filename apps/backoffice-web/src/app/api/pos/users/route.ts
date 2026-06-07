@@ -25,6 +25,13 @@ type UserProfileSettingsRow = {
   permission_role: string | null;
 };
 
+type UserApprovalPermissionRow = {
+  user_id: string;
+  branch_id: string;
+  action: "cancel_bill";
+  is_enabled: boolean;
+};
+
 type BranchRow = {
   id: string;
   code: string | null;
@@ -46,6 +53,14 @@ type PatchPayload =
       approval_pin?: string;
     }
   | { action: "set_pin"; user_id?: string; branch_id?: string; pin?: string; approval_pin?: string }
+  | {
+      action: "set_cancel_bill_approval";
+      user_id?: string;
+      branch_id?: string;
+      is_enabled?: boolean;
+      pin?: string;
+      approval_pin?: string;
+    }
   | { action: "set_active"; user_id?: string; branch_id?: string; is_active?: boolean }
   | { action: "set_device_scope"; user_id?: string; branch_id?: string; scope_mode?: ScopeMode; device_id?: string | null };
 
@@ -62,6 +77,7 @@ type CreatePayload = {
   position_title?: string;
   permission_role?: string;
   approval_pin?: string;
+  can_approve_cancel_bill?: boolean;
 };
 
 function isMissingRelationError(error: { code?: string | null; message?: string | null } | null | undefined, relationName: string) {
@@ -71,9 +87,18 @@ function isMissingRelationError(error: { code?: string | null; message?: string 
   const relation = relationName.toLowerCase();
   return (
     code === "42P01" ||
+    (code === "PGRST205" && message.includes(relation)) ||
     (message.includes("does not exist") &&
       (message.includes(`"${relation}"`) || message.includes(`.${relation}"`) || message.includes(`'${relation}'`) || message.includes(relation)))
   );
+}
+
+function isMissingRpcError(error: { code?: string | null; message?: string | null } | null | undefined, functionName: string) {
+  if (!error) return false;
+  const code = String(error.code ?? "");
+  const message = String(error.message ?? "").toLowerCase();
+  const functionKey = functionName.toLowerCase();
+  return code === "PGRST202" || (message.includes(functionKey) && (message.includes("schema cache") || message.includes("could not find")));
 }
 
 function normalizeRole(value: string): BranchRole {
@@ -153,6 +178,11 @@ async function requireApprovalPin(input: { pin?: string; tenantId: string; branc
     branchId: input.branchId
   });
   return approval;
+}
+
+async function requireOwnerApprovalPin(input: { pin?: string; tenantId: string; branchId: string }) {
+  const approval = await requireApprovalPin(input);
+  return approval.approved && approval.approverRole === "owner" ? approval : { approved: false as const };
 }
 
 async function getTargetRole(input: { tenantId: string; branchId: string; userId: string }) {
@@ -277,17 +307,25 @@ export async function GET(request: Request) {
       .select("user_id,branch_id,scope_mode,device_id")
       .eq("tenant_id", auth.tenantId!);
 
+    let approvalPermissionQuery = supabase
+      .from("pos_user_approval_permissions")
+      .select("user_id,branch_id,action,is_enabled")
+      .eq("tenant_id", auth.tenantId!)
+      .eq("action", "cancel_bill");
+
     if (branchFilter && branchFilter !== "all") {
       userQuery = userQuery.eq("branch_id", branchFilter);
       deviceQuery = deviceQuery.eq("branch_id", branchFilter);
       scopeQuery = scopeQuery.eq("branch_id", branchFilter);
+      approvalPermissionQuery = approvalPermissionQuery.eq("branch_id", branchFilter);
     }
 
-    const [branchesResult, usersResult, devicesResult, scopesResult] = await Promise.all([
+    const [branchesResult, usersResult, devicesResult, scopesResult, approvalPermissionsResult] = await Promise.all([
       branchesQuery,
       userQuery,
       deviceQuery,
-      scopeQuery
+      scopeQuery,
+      approvalPermissionQuery
     ]);
 
     if (branchesResult.error) return fail("branches_query_failed", branchesResult.error.message, 500);
@@ -296,12 +334,19 @@ export async function GET(request: Request) {
     if (scopesResult.error && !isMissingRelationError(scopesResult.error, "pos_user_device_scopes")) {
       return fail("pos_user_scope_query_failed", scopesResult.error.message, 500);
     }
+    if (approvalPermissionsResult.error && !isMissingRelationError(approvalPermissionsResult.error, "pos_user_approval_permissions")) {
+      return fail("pos_user_approval_permission_query_failed", approvalPermissionsResult.error.message, 500);
+    }
 
     const branches = ((branchesResult.data ?? []) as BranchRow[]).filter((branch) => branch.is_active !== false);
     const branchById = new Map(branches.map((branch) => [branch.id, branch]));
     const scopeByKey = new Map<string, UserScopeRow>();
     for (const row of ((scopesResult.error ? [] : scopesResult.data) ?? []) as UserScopeRow[]) {
       scopeByKey.set(`${row.branch_id}:${row.user_id}`, row);
+    }
+    const cancelBillApprovalByKey = new Map<string, boolean>();
+    for (const row of ((approvalPermissionsResult.error ? [] : approvalPermissionsResult.data) ?? []) as UserApprovalPermissionRow[]) {
+      cancelBillApprovalByKey.set(`${row.branch_id}:${row.user_id}`, row.is_enabled);
     }
 
     const rawRows = (usersResult.data ?? []) as Array<{
@@ -350,6 +395,7 @@ export async function GET(request: Request) {
           targetRole: role
         }),
         can_delete: canActorDelete(auth.branchRole) && auth.userId !== row.user_id,
+        can_approve_cancel_bill: role === "staff" && cancelBillApprovalByKey.get(`${row.branch_id}:${row.user_id}`) === true,
         device_scope: {
           scope_mode: scope?.scope_mode ?? "all_devices",
           device_id: scope?.device_id ?? null
@@ -490,6 +536,13 @@ export async function PATCH(request: Request) {
       const payload = body as Extract<PatchPayload, { action: "set_pin" }>;
       const pin = String(payload.pin ?? "").trim();
       if (!/^\d{4,12}$/.test(pin)) return fail("invalid_pin", "PIN must be 4-12 digits.", 422);
+      if (targetRole === "staff") {
+        return fail(
+          "staff_pin_requires_owner_grant",
+          "Staff PIN must be configured by the owner together with cancel-bill approval.",
+          403
+        );
+      }
       const approval = await requireApprovalPin({ pin: payload.approval_pin, tenantId: auth.tenantId!, branchId });
       if (!approval.approved) return fail("approval_pin_required", "PIN approval is required to update user PIN.", 403);
       const pinHash = await bcrypt.hash(pin, 10);
@@ -502,6 +555,64 @@ export async function PATCH(request: Request) {
       if (error) return fail("user_pin_update_failed", error.message, 500);
       if (!updatedProfile) return fail("user_profile_not_found", "User profile was not found.", 404);
       return ok({ user_id: userId, branch_id: branchId, action: "set_pin" });
+    }
+
+    if (action === "set_cancel_bill_approval") {
+      if (auth.branchRole !== "owner") {
+        return fail("owner_approval_required", "Only the owner can grant staff cancel-bill PIN authority.", 403);
+      }
+      if (targetRole !== "staff") {
+        return fail("staff_role_required", "Cancel-bill PIN authority can only be assigned to staff.", 422);
+      }
+
+      const payload = body as Extract<PatchPayload, { action: "set_cancel_bill_approval" }>;
+      const isEnabled = Boolean(payload.is_enabled);
+      const pin = String(payload.pin ?? "").trim();
+      if (isEnabled && !/^\d{4,12}$/.test(pin)) {
+        return fail("staff_pin_required", "A 4-12 digit staff PIN is required when enabling cancel-bill approval.", 422);
+      }
+      const ownerApproval = await requireOwnerApprovalPin({
+        pin: payload.approval_pin,
+        tenantId: auth.tenantId!,
+        branchId
+      });
+      if (!ownerApproval.approved) {
+        return fail("owner_pin_required", "Owner PIN approval is required to change staff cancel-bill authority.", 403);
+      }
+
+      const pinHash = isEnabled ? await bcrypt.hash(pin, 10) : null;
+      const { error: permissionError } = await supabase.rpc("configure_staff_cancel_bill_approval", {
+        p_tenant_id: auth.tenantId!,
+        p_branch_id: branchId,
+        p_user_id: userId,
+        p_is_enabled: isEnabled,
+        p_pin_hash: pinHash,
+        p_granted_by: auth.userId
+      });
+      if (permissionError) {
+        if (isMissingRpcError(permissionError, "configure_staff_cancel_bill_approval")) {
+          return fail("staff_approval_table_missing", "Staff approval permission table is missing. Please run Supabase migrations.", 500);
+        }
+        return fail("staff_approval_update_failed", permissionError.message, 500);
+      }
+
+      void appendAuditLog({
+        tenantId: auth.tenantId!,
+        branchId,
+        actorUserId: auth.userId,
+        actorRole: "owner",
+        targetUserId: userId,
+        action: isEnabled ? "staff_cancel_bill_approval_granted" : "staff_cancel_bill_approval_revoked",
+        targetTable: "pos_user_approval_permissions",
+        targetId: userId,
+        metadata: {
+          approval_action: "cancel_bill",
+          is_enabled: isEnabled,
+          approved_by: ownerApproval.approverUserId
+        }
+      });
+
+      return ok({ user_id: userId, branch_id: branchId, action, is_enabled: isEnabled });
     }
 
     if (action === "set_active") {
@@ -573,15 +684,35 @@ export async function POST(request: Request) {
     const employeeCodeInput = normalizeEmployeeCode(body.employee_code ?? "");
     const positionTitle = String(body.position_title ?? "").trim();
     const permissionRole = normalizePermissionRole(body.permission_role, role);
+    const canApproveCancelBill = role === "staff" && Boolean(body.can_approve_cancel_bill);
 
     if (!fullName || !branchId) return fail("invalid_profile", "Full name and branch are required.", 422);
     if (pin && !/^\d{4,12}$/.test(pin)) return fail("invalid_pin", "PIN must be 4-12 digits.", 422);
     if (scopeMode === "single_device" && !deviceId) return fail("invalid_scope_device", "device_id is required for single_device mode.", 422);
 
+    if (role === "staff" && pin && !canApproveCancelBill) {
+      return fail("staff_pin_requires_owner_grant", "Staff PIN requires owner-granted cancel-bill authority.", 403);
+    }
+    if (canApproveCancelBill && !/^\d{4,12}$/.test(pin)) {
+      return fail("staff_pin_required", "A 4-12 digit staff PIN is required when enabling cancel-bill approval.", 422);
+    }
+    if (canApproveCancelBill && auth.branchRole !== "owner") {
+      return fail("owner_approval_required", "Only the owner can grant staff cancel-bill PIN authority.", 403);
+    }
+
+    const needsOwnerApproval = canApproveCancelBill;
     const needsApproval = Boolean(employeeCodeInput || pin);
-    const approval = needsApproval ? await requireApprovalPin({ pin: body.approval_pin, tenantId: auth.tenantId!, branchId }) : { approved: true };
-    if (needsApproval && !approval.approved) {
-      return fail("approval_pin_required", "PIN approval is required to create user code or PIN.", 403);
+    const approval = needsOwnerApproval
+      ? await requireOwnerApprovalPin({ pin: body.approval_pin, tenantId: auth.tenantId!, branchId })
+      : needsApproval
+        ? await requireApprovalPin({ pin: body.approval_pin, tenantId: auth.tenantId!, branchId })
+        : { approved: true };
+    if ((needsApproval || needsOwnerApproval) && !approval.approved) {
+      return fail(
+        needsOwnerApproval ? "owner_pin_required" : "approval_pin_required",
+        needsOwnerApproval ? "Owner PIN approval is required to grant staff cancel-bill authority." : "PIN approval is required to create user code or PIN.",
+        403
+      );
     }
 
     const supabase = getSupabaseServiceClient();
@@ -605,7 +736,7 @@ export async function POST(request: Request) {
     }
 
     if (!existingProfile) {
-      const pinHash = pin ? await bcrypt.hash(pin, 10) : null;
+      const pinHash = role === "staff" ? null : pin ? await bcrypt.hash(pin, 10) : null;
       const { error: insertProfileError } = await supabase.from("users_profiles").insert({
         id: userId,
         email,
@@ -649,6 +780,24 @@ export async function POST(request: Request) {
       return fail("pos_user_scope_create_failed", scopeWrite.error.message, 500);
     }
 
+    if (canApproveCancelBill) {
+      const pinHash = await bcrypt.hash(pin, 10);
+      const { error: permissionError } = await supabase.rpc("configure_staff_cancel_bill_approval", {
+        p_tenant_id: auth.tenantId!,
+        p_branch_id: branchId,
+        p_user_id: userId,
+        p_is_enabled: true,
+        p_pin_hash: pinHash,
+        p_granted_by: auth.userId
+      });
+      if (permissionError) {
+        if (isMissingRpcError(permissionError, "configure_staff_cancel_bill_approval")) {
+          return fail("staff_approval_table_missing", "Staff approval permission table is missing. Please run Supabase migrations.", 500);
+        }
+        return fail("staff_approval_create_failed", permissionError.message, 500);
+      }
+    }
+
     void appendAuditLog({
       tenantId: auth.tenantId!,
       branchId,
@@ -658,7 +807,13 @@ export async function POST(request: Request) {
       action: "pos_user_created",
       targetTable: "users_profiles",
       targetId: userId,
-      metadata: { role, employee_code: employeeCode, position_title: positionTitle, reused_profile: Boolean(existingProfile) }
+      metadata: {
+        role,
+        employee_code: employeeCode,
+        position_title: positionTitle,
+        reused_profile: Boolean(existingProfile),
+        can_approve_cancel_bill: canApproveCancelBill
+      }
     });
 
     return ok({ user_id: userId, branch_id: branchId, role }, 201);

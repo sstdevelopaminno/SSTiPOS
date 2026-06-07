@@ -39,7 +39,7 @@ const MODAL_LABELS: Record<"th" | "en", ManagerOverrideModalLabels> = {
     closeAriaLabel: "ปิดหน้าต่าง PIN"
   },
   en: {
-    pinLabel: "Manager PIN",
+    pinLabel: "Approver PIN",
     pinKeypadHint: "Enter PIN to auto-verify and approve",
     pinLengthError: "PIN must be at least 4 digits.",
     pinRejected: "PIN is invalid or not authorized for this action.",
@@ -260,7 +260,7 @@ export function ManagerOverrideModal({
           x
         </button>
         <div className="grid posui-modal-form" style={{ gap: 10 }}>
-          <div className="posui-pin-panel" role="group" aria-label="Manager PIN input" tabIndex={0} onKeyDown={handlePinHotkeys}>
+          <div className="posui-pin-panel" role="group" aria-label="Approver PIN input" tabIndex={0} onKeyDown={handlePinHotkeys}>
             <label className="posui-pin-panel__label">{text.pinLabel}</label>
             <div className="posui-pin-panel__display" aria-live="polite" aria-label={`PIN length ${pin.length} digits`}>
               {pinMasked || "______"}

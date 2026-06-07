@@ -22,7 +22,7 @@ export async function executePinApproval(args: {
 }): Promise<
   | {
       ok: true;
-      data: { approved: true; approved_by: string; approver_role: "manager" | "owner" | "it_admin"; action: string; approved_at: string };
+      data: { approved: true; approved_by: string; approver_role: "staff" | "manager" | "owner" | "it_admin"; action: string; approved_at: string };
     }
   | { ok: false; code: string; message: string; status: number }
 > {
