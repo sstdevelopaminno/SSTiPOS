@@ -15,6 +15,10 @@ const notificationSettingsMigration = readFileSync(
   resolve(workspaceRoot, "supabase/migrations/202606080002_pos_notification_settings.sql"),
   "utf8"
 );
+const publicRpcWrapperMigration = readFileSync(
+  resolve(workspaceRoot, "supabase/migrations/202606080003_table_qr_order_public_rpc_wrapper.sql"),
+  "utf8"
+);
 const posSalesRoute = readFileSync(
   resolve(process.cwd(), "src/app/api/pos/sales/route.ts"),
   "utf8"
@@ -54,7 +58,10 @@ describe("table QR ordering isolation", () => {
     expect(migration).toContain("from products p");
     expect(migration).toContain("p.tenant_id = v_qr.tenant_id");
     expect(migration).toContain("p.branch_id = v_qr.branch_id");
-    expect(qrService).toContain('schema("app").rpc("submit_table_qr_order_tx"');
+    expect(qrService).toContain('rpc("submit_table_qr_order_tx"');
+    expect(publicRpcWrapperMigration).toContain("public.submit_table_qr_order_tx");
+    expect(publicRpcWrapperMigration).toContain("app.submit_table_qr_order_tx($1, $2, $3, $4)");
+    expect(publicRpcWrapperMigration).toContain("grant execute on function public.submit_table_qr_order_tx(uuid, text, jsonb, text) to service_role");
   });
 
   it("stores table service requests without creating fake order items", () => {

@@ -259,7 +259,7 @@ export async function submitTableQrOrder(args: {
 }) {
   const { context, requestId, items, note } = args;
   const supabase = getSupabaseServiceClient();
-  const { data, error } = await supabase.schema("app").rpc("submit_table_qr_order_tx", {
+  const { data, error } = await supabase.rpc("submit_table_qr_order_tx", {
     p_qr_session_id: context.id,
     p_request_id: requestId,
     p_items: items,

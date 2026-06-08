@@ -704,7 +704,12 @@ Use this section as the current source of truth before changing the Payment Sett
 ### QR ordering usability fix (2026-06-08)
 - `QR สั่งอาหาร` now opens as a centered modal overlay instead of expanding inside the POS sales layout.
 - Table service alerts use Thai speech when supported: `เรียกโต๊ะ [เลขโต๊ะ]` or `[เลขโต๊ะ] ต้องการชำระบิล`; the generated tone remains the fallback when speech synthesis is unavailable.
-- Customer order submission now calls `app.submit_table_qr_order_tx` explicitly, preventing PostgREST from resolving the transaction function against the wrong schema.
+- Customer order submission now calls the exposed `public.submit_table_qr_order_tx` wrapper, preventing PostgREST from resolving the transaction function against the wrong schema.
 - The mobile order footer is more compact and the free-text note field is removed from the visible flow.
 - Customers can open `ดูรายการตะกร้า`, adjust quantities, or remove individual products before confirming the order.
 - Client totals remain display-only. Product prices, tenant/branch/table scope, open bill, shift, taxes, and final totals continue to be revalidated by the server/database transaction.
+
+### QR ordering RPC wrapper fix (2026-06-08)
+- Added migration `supabase/migrations/202606080003_table_qr_order_public_rpc_wrapper.sql`.
+- The public API now calls a `public.submit_table_qr_order_tx` wrapper that delegates to `app.submit_table_qr_order_tx`; execute permission is granted only to `service_role`.
+- This keeps the transaction logic in the protected `app` schema while allowing Supabase/PostgREST production RPC resolution through the exposed `public` schema.
