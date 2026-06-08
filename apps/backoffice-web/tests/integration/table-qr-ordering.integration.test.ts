@@ -54,6 +54,7 @@ describe("table QR ordering isolation", () => {
     expect(migration).toContain("from products p");
     expect(migration).toContain("p.tenant_id = v_qr.tenant_id");
     expect(migration).toContain("p.branch_id = v_qr.branch_id");
+    expect(qrService).toContain('schema("app").rpc("submit_table_qr_order_tx"');
   });
 
   it("stores table service requests without creating fake order items", () => {

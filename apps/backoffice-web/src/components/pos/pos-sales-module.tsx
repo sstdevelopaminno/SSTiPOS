@@ -1977,10 +1977,28 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     }
   }, [orderType, selectedTable?.active_session_id, tableBrowserOpen]);
 
-  const playTableQrAlertSound = useCallback(() => {
+  const playTableQrAlertSound = useCallback((alert: { type: "call_staff" | "request_checkout"; tableCode: string }) => {
     const settings = tableQrNotificationSettings;
     if (!settings.table_qr_sound_enabled || typeof window === "undefined") return;
+    const phrase = alert.type === "call_staff"
+      ? `เรียกโต๊ะ ${alert.tableCode}`
+      : `โต๊ะ ${alert.tableCode} ต้องการชำระบิล`;
     try {
+      if ("speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined") {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(phrase);
+        utterance.lang = "th-TH";
+        utterance.rate = 0.95;
+        utterance.pitch = 1;
+        utterance.volume = Math.max(0, Math.min(1, settings.table_qr_sound_volume));
+        const thaiVoice = window.speechSynthesis
+          .getVoices()
+          .find((voice) => voice.lang.toLowerCase().startsWith("th"));
+        if (thaiVoice) utterance.voice = thaiVoice;
+        window.speechSynthesis.speak(utterance);
+        return;
+      }
+
       const AudioContextConstructor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioContextConstructor) return;
       const audioContext = tableQrAudioContextRef.current ?? new AudioContextConstructor();
@@ -2014,7 +2032,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           setTableQrAlert((current) => (current?.id === alert.id ? null : current));
         }, 9000);
       }
-      playTableQrAlertSound();
+      playTableQrAlertSound(alert);
     },
     [playTableQrAlertSound, tableQrNotificationSettings.table_qr_popup_enabled]
   );

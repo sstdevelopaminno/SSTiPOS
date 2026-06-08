@@ -51,7 +51,7 @@ export function TableOrderMobile({ token }: { token: string }) {
   const [activeCategory, setActiveCategory] = useState("ทั้งหมด");
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<Record<string, number>>({});
-  const [note, setNote] = useState("");
+  const [cartOpen, setCartOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serviceSubmitting, setServiceSubmitting] = useState<ServiceRequestAction | null>(null);
   const [successOrderNo, setSuccessOrderNo] = useState<string | null>(null);
@@ -105,6 +105,15 @@ export function TableOrderMobile({ token }: { token: string }) {
     });
   }
 
+  function removeItem(productId: string) {
+    if (submitting || serviceSubmitting) return;
+    setCart((current) => {
+      const next = { ...current };
+      delete next[productId];
+      return next;
+    });
+  }
+
   async function submitOrder() {
     if (!menu || cartItems.length === 0 || submitting || serviceSubmitting) return;
     setSubmitting(true);
@@ -118,7 +127,7 @@ export function TableOrderMobile({ token }: { token: string }) {
         body: JSON.stringify({
           action: "order",
           request_id: requestId,
-          note: note.trim() || null,
+          note: null,
           items: cartItems.map((item) => ({ product_id: item.id, quantity: item.quantity }))
         })
       });
@@ -126,7 +135,7 @@ export function TableOrderMobile({ token }: { token: string }) {
       if (!response.ok || !body.data) throw new Error(body.error?.message || "ส่งรายการไม่สำเร็จ");
       setSuccessOrderNo(body.data.order_no ?? "-");
       setCart({});
-      setNote("");
+      setCartOpen(false);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "ส่งรายการไม่สำเร็จ");
     } finally {
@@ -147,7 +156,7 @@ export function TableOrderMobile({ token }: { token: string }) {
         body: JSON.stringify({
           action,
           request_id: requestId,
-          note: note.trim() || null
+          note: null
         })
       });
       const body = (await response.json()) as SubmitResponse;
@@ -274,17 +283,63 @@ export function TableOrderMobile({ token }: { token: string }) {
             {serviceSubmitting === "request_checkout" ? "กำลังแจ้ง..." : "ต้องการชำระบิล"}
           </button>
         </div>
-        <textarea
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-          maxLength={500}
-          placeholder="หมายเหตุถึงร้าน เช่น ไม่เผ็ด"
-          aria-label="หมายเหตุถึงร้าน"
-        />
+        <button
+          type="button"
+          className={styles.cartOpenButton}
+          onClick={() => setCartOpen(true)}
+          disabled={cartCount === 0 || submitting || Boolean(serviceSubmitting)}
+        >
+          ดูรายการตะกร้า ({cartCount})
+        </button>
         <button type="button" className={styles.submitButton} onClick={submitOrder} disabled={submitting || cartCount === 0}>
           {submitting ? "กำลังส่งรายการ..." : "ยืนยันสั่งอาหาร"}
         </button>
       </section>
+
+      {cartOpen ? (
+        <div className={styles.cartModalBackdrop} role="presentation" onMouseDown={() => setCartOpen(false)}>
+          <section
+            className={styles.cartModal}
+            role="dialog"
+            aria-modal="true"
+            aria-label="รายการในตะกร้า"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className={styles.cartModalHead}>
+              <div>
+                <strong>รายการในตะกร้า</strong>
+                <span>{cartCount} รายการ</span>
+              </div>
+              <button type="button" onClick={() => setCartOpen(false)} aria-label="ปิดรายการตะกร้า">×</button>
+            </header>
+            <div className={styles.cartRows}>
+              {cartItems.map((item) => (
+                <article className={styles.cartRow} key={item.id}>
+                  <div className={styles.cartRowMeta}>
+                    <strong>{item.name}</strong>
+                    <span>{money(item.price * item.quantity)}</span>
+                  </div>
+                  <div className={styles.cartRowControls}>
+                    <div className={styles.stepper}>
+                      <button type="button" onClick={() => changeQuantity(item.id, -1)} aria-label={`ลดจำนวน ${item.name}`}>−</button>
+                      <span>{item.quantity}</span>
+                      <button type="button" onClick={() => changeQuantity(item.id, 1)} aria-label={`เพิ่มจำนวน ${item.name}`}>+</button>
+                    </div>
+                    <button type="button" className={styles.deleteItemButton} onClick={() => removeItem(item.id)}>
+                      ลบ
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <footer className={styles.cartModalFooter}>
+              <span>ยอดชำระ</span>
+              <strong>{money(cartTotal)}</strong>
+              <button type="button" onClick={() => setCartOpen(false)}>เลือกเมนูต่อ</button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
 
       {submitting ? (
         <div className={styles.processing} role="status" aria-live="polite">

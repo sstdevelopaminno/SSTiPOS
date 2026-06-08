@@ -700,3 +700,11 @@ Use this section as the current source of truth before changing the Payment Sett
 - `/api/pos/sales` includes notification settings so cashier/staff POS screens can read alert behavior without needing settings-management permission.
 - When a customer taps `เรียกพนักงาน` or `ต้องการชำระบิล`, the active dine-in POS screen shows a popup alert and plays a short generated alert tone when enabled.
 - Alert settings are tenant/branch scoped and default to popup + sound enabled if the settings table has not been configured yet.
+
+### QR ordering usability fix (2026-06-08)
+- `QR สั่งอาหาร` now opens as a centered modal overlay instead of expanding inside the POS sales layout.
+- Table service alerts use Thai speech when supported: `เรียกโต๊ะ [เลขโต๊ะ]` or `[เลขโต๊ะ] ต้องการชำระบิล`; the generated tone remains the fallback when speech synthesis is unavailable.
+- Customer order submission now calls `app.submit_table_qr_order_tx` explicitly, preventing PostgREST from resolving the transaction function against the wrong schema.
+- The mobile order footer is more compact and the free-text note field is removed from the visible flow.
+- Customers can open `ดูรายการตะกร้า`, adjust quantities, or remove individual products before confirming the order.
+- Client totals remain display-only. Product prices, tenant/branch/table scope, open bill, shift, taxes, and final totals continue to be revalidated by the server/database transaction.
