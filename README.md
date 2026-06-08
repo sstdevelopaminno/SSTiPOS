@@ -713,3 +713,8 @@ Use this section as the current source of truth before changing the Payment Sett
 - Added migration `supabase/migrations/202606080003_table_qr_order_public_rpc_wrapper.sql`.
 - The public API now calls a `public.submit_table_qr_order_tx` wrapper that delegates to `app.submit_table_qr_order_tx`; execute permission is granted only to `service_role`.
 - This keeps the transaction logic in the protected `app` schema while allowing Supabase/PostgREST production RPC resolution through the exposed `public` schema.
+- Production runtime verification recorded a successful customer order submission with HTTP `201` after the wrapper migration and deployment.
+
+### Deployment housekeeping (2026-06-08)
+- Production remains aliased to `https://sstipos-ten.vercel.app`.
+- After the current release is deployed and verified, obsolete Vercel deployments may be removed while retaining the newest active production deployment.
