@@ -26,8 +26,11 @@ type Props = {
   onManagerOverride?: () => void;
   onCancelBill?: () => void;
   onHoldBill?: () => void;
+  onTableQrOrder?: () => void;
   onPromotion?: () => void;
   showHoldBill?: boolean;
+  showTableQrOrder?: boolean;
+  tableQrOrderLabel?: string;
   checkoutLabel?: string;
   checkoutDisabled?: boolean;
   retryDisabled?: boolean;
@@ -72,8 +75,11 @@ export function PosPaymentPanel({
   onManagerOverride,
   onCancelBill,
   onHoldBill,
+  onTableQrOrder,
   onPromotion,
   showHoldBill = true,
+  showTableQrOrder = false,
+  tableQrOrderLabel = "QR สั่งอาหาร",
   checkoutLabel,
   checkoutDisabled,
   retryDisabled,
@@ -97,6 +103,15 @@ export function PosPaymentPanel({
           onClick: onHoldBill,
           disabled: actionsDisabled,
           label: text.holdBill
+        }
+      : null,
+    showTableQrOrder
+      ? {
+          key: "table-qr",
+          className: "posui-btn posui-btn--table-qr",
+          onClick: onTableQrOrder,
+          disabled: actionsDisabled,
+          label: tableQrOrderLabel
         }
       : null,
     {

@@ -215,7 +215,7 @@ export function PosHeldBillsModal({
                           type="button"
                           className="posui-btn posui-btn--danger"
                           onClick={() => onCancelPendingDeliveryBill(heldBill)}
-                          disabled={!canCancel || queueStatus === "sending" || actionLocked}
+                          disabled={isBusy || !canCancel || queueStatus === "sending" || actionLocked}
                         >
                           {text.deliveryPendingBillCancel}
                         </button>

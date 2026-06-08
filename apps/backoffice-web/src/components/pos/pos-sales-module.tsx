@@ -8,6 +8,7 @@ import { PosHeldBillsModal } from "@/components/pos/pos-held-bills-modal";
 import { PosPaymentModals } from "@/components/pos/pos-payment-modals";
 import { PosProductCatalog } from "@/components/pos/pos-product-catalog";
 import { PosRealtimeClock } from "@/components/pos/pos-realtime-clock";
+import { TableQrOrderModal } from "@/components/pos/table-qr-order-modal";
 import { buildCheckoutSubmitPayload, buildReviewOrder, getCheckoutBlockingReason, shouldSkipDineInSubmit } from "@/components/pos/features/checkout-flow";
 import { applyStagedDeliveryToHeldBills, buildNewStagedDeliveryHeldBill, getDeliveryStageBlockingReason } from "@/components/pos/features/delivery-flow";
 import { runPendingPaymentRetry, runPendingSubmitRetry } from "@/components/pos/features/retry-flow";
@@ -569,6 +570,9 @@ const uiText = {
     remove: "ลบสินค้า",
     checkout: "สร้างออเดอร์ POS",
     deliveryQueueCheckout: "รอส่งออเดอร์",
+    deliveryQueueProcessing: "กำลังบันทึกบิลรอส่งออเดอร์...",
+    tableQrOrder: "QR สั่งอาหาร",
+    tableQrOrderReceived: "ได้รับรายการสั่งอาหารจาก QR",
     dineInCheckout: "ชำระเงิน",
     orderCreated: "สร้างบิลแล้ว",
     orderUpdated: "อัปเดตบิลเดิมแล้ว",
@@ -612,6 +616,9 @@ const uiText = {
     submitting: "กำลังส่ง...",
     pendingSaved: "บันทึกรายการรอส่งไว้แล้ว",
     loading: "กำลังโหลดหน้าขาย...",
+    processing: "กำลังประมวลผล...",
+    openingTableBill: "กำลังเปิดบิลโต๊ะ...",
+    paymentProcessing: "กำลังบันทึกการชำระเงิน...",
     openShiftRequired: "ต้องเปิดกะก่อนสร้างออเดอร์",
     addItemsFirst: "กรุณาเพิ่มสินค้าเข้าตะกร้าก่อน",
     offlineStaged: "ออฟไลน์อยู่: บันทึกรายการรอส่งไว้แล้ว",
@@ -881,6 +888,9 @@ const uiText = {
     remove: "Remove item",
     checkout: "Create POS order",
     deliveryQueueCheckout: "Queue For Dispatch",
+    deliveryQueueProcessing: "Saving pending dispatch bill...",
+    tableQrOrder: "Table QR",
+    tableQrOrderReceived: "Table QR order received",
     dineInCheckout: "Pay",
     orderCreated: "Order created",
     orderUpdated: "Order updated",
@@ -924,6 +934,9 @@ const uiText = {
     submitting: "Submitting...",
     pendingSaved: "Pending local submit saved. Safe to retry.",
     loading: "Loading POS sales...",
+    processing: "Processing...",
+    openingTableBill: "Opening table bill...",
+    paymentProcessing: "Saving payment...",
     openShiftRequired: "Open shift is required before creating order.",
     addItemsFirst: "Add items to cart first.",
     offlineStaged: "Offline mode: order is staged locally. Retry when connection is back.",
@@ -1705,6 +1718,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [tableMoveReason, setTableMoveReason] = useState("");
   const [tableMoveBusy, setTableMoveBusy] = useState(false);
   const [tableSwitching, setTableSwitching] = useState(false);
+  const [tableQrModalOpen, setTableQrModalOpen] = useState(false);
+  const [tableQrBusy, setTableQrBusy] = useState(false);
   const [tableMoveError, setTableMoveError] = useState<string | null>(null);
   const [tableLoading, setTableLoading] = useState(false);
   const [tableLoadError, setTableLoadError] = useState<string | null>(null);
@@ -1805,7 +1820,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const deliveryActionLastAtRef = useRef<Map<string, number>>(new Map());
   const deliveryActionPendingKeyRef = useRef<Set<string>>(new Set());
   const monitorPollInFlightRef = useRef(false);
-  const taxSettingsSyncInFlightRef = useRef(false);
+  const taxSettingsSyncInFlightRef = useRef<Promise<TaxSettings | null> | null>(null);
   const tableListFetchInFlightRef = useRef<Promise<DiningTableItem[]> | null>(null);
   const tableListCacheRef = useRef<{ at: number; zones: TableZoneItem[]; tables: DiningTableItem[] } | null>(null);
   const lastPendingRef = useRef(false);
@@ -1816,33 +1831,50 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const tableBillPrefetchInFlightRef = useRef<Set<string>>(new Set());
   const tableBillLoadInFlightRef = useRef<Set<string>>(new Set());
   const tableBillIntentPrefetchedAtRef = useRef<Map<string, number>>(new Map());
+  const tableQrOrderSeenRef = useRef<Set<string>>(new Set());
+  const tableQrOrderPollCursorRef = useRef<string>(new Date().toISOString());
+  const tableQrOrderPollInFlightRef = useRef(false);
+  const loadTableBillContextRef = useRef<(table: DiningTableItem) => Promise<void>>(async () => {
+    throw new Error("table_bill_loader_not_ready");
+  });
   const endpointPerfPostLastAtRef = useRef<Map<string, number>>(new Map());
   const tableContextVersionRef = useRef(0);
   const selectedTableRef = useRef<DiningTableItem | null>(null);
   const cartRef = useRef<CartItem[]>([]);
   const dineInDraftByTableIdRef = useRef<Record<string, CartItem[]>>({});
+  loadTableBillContextRef.current = loadTableBillContext;
 
-  const refreshTaxSettings = useCallback(async () => {
-    if (taxSettingsSyncInFlightRef.current || typeof window === "undefined" || !navigator.onLine) return;
-    taxSettingsSyncInFlightRef.current = true;
-    try {
-      const taxResponse = await fetchJsonWithTimeout<{ data?: { tax_settings?: TaxSettings }; error?: { message?: string } }>(
-        "/api/pos/sales?resource=tax-settings",
-        { cache: "no-store" },
-        10000,
-        0
-      );
-      if (!taxResponse.response.ok || taxResponse.body.error || !taxResponse.body.data?.tax_settings) return;
-      const nextTaxSettings = taxResponse.body.data.tax_settings;
-      setTaxSettings(nextTaxSettings);
-      const savedSales = readStoredJson<PosSalesSnapshot>(SALES_SNAPSHOT_KEY);
-      if (savedSales) {
-        localStorage.setItem(SALES_SNAPSHOT_KEY, JSON.stringify({ ...savedSales, tax_settings: nextTaxSettings }));
+  const refreshTaxSettings = useCallback(async (): Promise<TaxSettings | null> => {
+    if (typeof window === "undefined" || !navigator.onLine) return null;
+    if (taxSettingsSyncInFlightRef.current) return taxSettingsSyncInFlightRef.current;
+    const syncRequest = (async (): Promise<TaxSettings | null> => {
+      try {
+        const taxResponse = await fetchJsonWithTimeout<{ data?: { tax_settings?: TaxSettings }; error?: { message?: string } }>(
+          "/api/pos/sales?resource=tax-settings",
+          { cache: "no-store" },
+          10000,
+          0
+        );
+        if (!taxResponse.response.ok || taxResponse.body.error || !taxResponse.body.data?.tax_settings) return null;
+        const nextTaxSettings = taxResponse.body.data.tax_settings;
+        setTaxSettings(nextTaxSettings);
+        const savedSales = readStoredJson<PosSalesSnapshot>(SALES_SNAPSHOT_KEY);
+        if (savedSales) {
+          localStorage.setItem(SALES_SNAPSHOT_KEY, JSON.stringify({ ...savedSales, tax_settings: nextTaxSettings }));
+        }
+        return nextTaxSettings;
+      } catch {
+        // Keep the current sales screen usable; order submission still recalculates tax on the server.
+        return null;
       }
-    } catch {
-      // Keep the current sales screen usable; order submission still recalculates tax on the server.
+    })();
+    taxSettingsSyncInFlightRef.current = syncRequest;
+    try {
+      return await syncRequest;
     } finally {
-      taxSettingsSyncInFlightRef.current = false;
+      if (taxSettingsSyncInFlightRef.current === syncRequest) {
+        taxSettingsSyncInFlightRef.current = null;
+      }
     }
   }, []);
   const [lastCommittedCartSignature, setLastCommittedCartSignature] = useState<string | null>(null);
@@ -1918,6 +1950,116 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   useEffect(() => {
     dineInDraftByTableIdRef.current = dineInDraftByTableId;
   }, [dineInDraftByTableId]);
+
+  useEffect(() => {
+    if (orderType !== "dine_in" || tableBrowserOpen || !selectedTable?.active_session_id) {
+      setTableQrModalOpen(false);
+    }
+  }, [orderType, selectedTable?.active_session_id, tableBrowserOpen]);
+
+  useEffect(() => {
+    const table = selectedTable;
+    if (
+      !isHydrated ||
+      orderType !== "dine_in" ||
+      tableBrowserOpen ||
+      !table?.id ||
+      !table.active_session_id
+    ) {
+      tableQrOrderSeenRef.current.clear();
+      tableQrOrderPollCursorRef.current = new Date().toISOString();
+      return;
+    }
+
+    let disposed = false;
+    tableQrOrderSeenRef.current.clear();
+    tableQrOrderPollCursorRef.current = new Date().toISOString();
+
+    const pollTableQrOrders = async () => {
+      if (disposed || tableQrOrderPollInFlightRef.current || document.visibilityState !== "visible") return;
+      tableQrOrderPollInFlightRef.current = true;
+      try {
+        const after = encodeURIComponent(tableQrOrderPollCursorRef.current);
+        const response = await fetch(`/api/pos/tables/${table.id}/qr-orders?after=${after}`, { cache: "no-store" });
+        const body = (await response.json()) as {
+          data?: {
+            items?: Array<{
+              id: string;
+              payload?: {
+                items?: Array<{ product_id?: string; quantity?: number }>;
+              };
+            }>;
+            server_time?: string;
+          };
+        };
+        if (!response.ok || disposed) return;
+        const unseen = (body.data?.items ?? []).filter((entry) => {
+          if (!entry.id || tableQrOrderSeenRef.current.has(entry.id)) return false;
+          tableQrOrderSeenRef.current.add(entry.id);
+          return true;
+        });
+        if (body.data?.server_time) {
+          tableQrOrderPollCursorRef.current = body.data.server_time;
+        }
+        if (unseen.length === 0) return;
+
+        const incomingItems = unseen.flatMap((entry) =>
+          (entry.payload?.items ?? []).flatMap((item) => {
+            const productId = String(item.product_id ?? "").trim();
+            const quantity = Math.max(1, Math.floor(Number(item.quantity ?? 0)));
+            const product = productById.get(productId);
+            if (!product || !Number.isFinite(quantity)) return [];
+            return [{
+              product_id: product.id,
+              quantity,
+              price: Number(product.price),
+              name: product.name
+            } satisfies CartItem];
+          })
+        );
+        if (incomingItems.length === 0) return;
+
+        setCart((current) => {
+          const next = current.map((item) => ({ ...item }));
+          for (const incoming of incomingItems) {
+            const existingIndex = next.findIndex((item) => item.product_id === incoming.product_id);
+            if (existingIndex >= 0) {
+              next[existingIndex] = {
+                ...next[existingIndex],
+                quantity: next[existingIndex].quantity + incoming.quantity
+              };
+            } else {
+              next.push(incoming);
+            }
+          }
+          rememberDineInDraft(table.id, next);
+          return next;
+        });
+        pushSubmitMessageRef.current(`${text.tableQrOrderReceived}: ${table.table_code}`);
+        void loadTableBillContextRef.current(table).catch(() => undefined);
+      } catch {
+        // QR polling is best-effort; normal table bill loading remains available.
+      } finally {
+        tableQrOrderPollInFlightRef.current = false;
+      }
+    };
+
+    const firstPoll = window.setTimeout(() => void pollTableQrOrders(), 1200);
+    const interval = window.setInterval(() => void pollTableQrOrders(), 4000);
+    return () => {
+      disposed = true;
+      window.clearTimeout(firstPoll);
+      window.clearInterval(interval);
+      tableQrOrderPollInFlightRef.current = false;
+    };
+  }, [
+    isHydrated,
+    orderType,
+    productById,
+    selectedTable,
+    tableBrowserOpen,
+    text.tableQrOrderReceived
+  ]);
 
   useEffect(() => {
     if (orderType !== "dine_in") return;
@@ -2231,6 +2373,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     const payments = (data.payments ?? []) as TableBillPaymentPayload[];
     const transferVerifications = (data.transfer_verifications ?? []) as TableBillTransferVerificationPayload[];
     const draftItems = dineInDraftByTableIdRef.current[table.id] ?? [];
+    const isActiveSelectedTable = selectedTableRef.current?.id === table.id;
+    const activeCartSnapshot = isActiveSelectedTable ? cartRef.current.map((item) => ({ ...item })) : [];
     const orderTaxLines = normalizeTaxLineSnapshots(order?.metadata?.tax_lines);
     const orderTaxTotal = Number(order?.tax_total ?? orderTaxLines.reduce((sum, line) => sum + line.amount, 0));
     const mappedOrderItems = items.map((item) => ({
@@ -2260,7 +2404,11 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     if (!order?.id || !order.order_no || !order.status) {
       setActiveOrder(null);
       setLastCommittedCartSignature(null);
-      setCart(draftItems);
+      if (draftItems.length > 0) {
+        setCart(draftItems);
+      } else {
+        setCart(activeCartSnapshot);
+      }
       return;
     }
 
@@ -2296,7 +2444,13 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       return;
     }
 
-    // Keep empty for now, but do not force-clear valid drafts for non-closed statuses.
+    // Avoid clearing cashier-entered items when a slow open-table response returns after product taps.
+    if (activeCartSnapshot.length > 0) {
+      rememberDineInDraft(table.id, activeCartSnapshot);
+      setCart(activeCartSnapshot);
+      return;
+    }
+
     setCart([]);
   }
 
@@ -2590,6 +2744,11 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       window.removeEventListener("focus", syncTaxSettings);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
+  }, [isHydrated, refreshTaxSettings]);
+
+  useEffect(() => {
+    if (!isHydrated || typeof window === "undefined") return;
+    void refreshTaxSettings();
   }, [isHydrated, refreshTaxSettings]);
 
   useEffect(() => {
@@ -3245,7 +3404,24 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const taxBreakdown = useMemo(() => calculateClientTaxBreakdown(taxBaseTotal, taxSettings), [taxBaseTotal, taxSettings]);
   const total = taxBreakdown.grand_total;
   const summaryDiscount = discountAmount;
-  const isBusy = submitting || cancelBillSubmitting || stockAdjusting || cashSubmitting || transferSubmitting || receiptSaving;
+  const isBusy =
+    submitting ||
+    cancelBillSubmitting ||
+    stockAdjusting ||
+    cashSubmitting ||
+    transferSubmitting ||
+    receiptSaving ||
+    tableSwitching ||
+    tableQrBusy;
+  const processingOverlayLabel = tableSwitching
+    ? text.openingTableBill
+    : cashSubmitting || transferSubmitting || receiptSaving
+      ? text.paymentProcessing
+      : submitting && !takeawayCreatingPreview
+        ? orderType === "delivery_manual"
+          ? text.deliveryQueueProcessing
+          : text.processing
+        : null;
   const hasBlockingPaymentOverlay =
     Boolean(takeawayCreatingPreview) ||
     Boolean(reviewOrder) ||
@@ -4552,8 +4728,15 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       return;
     }
     if (orderType === "delivery_manual") {
-      stageCurrentDeliveryOrder();
-      checkoutRequestLockRef.current = false;
+      setSubmitting(true);
+      pushSubmitMessage(text.deliveryQueueProcessing);
+      try {
+        await waitFor(180);
+        stageCurrentDeliveryOrder();
+      } finally {
+        setSubmitting(false);
+        checkoutRequestLockRef.current = false;
+      }
       return;
     }
     if (!shift || shift.status !== "open") {
@@ -4563,6 +4746,11 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     }
     setSubmitting(true);
     pushSubmitMessage(text.submitting);
+    const latestTaxSettings = await refreshTaxSettings();
+    const effectiveTaxBreakdown = latestTaxSettings
+      ? calculateClientTaxBreakdown(taxBaseTotal, latestTaxSettings)
+      : taxBreakdown;
+    const effectiveTotal = effectiveTaxBreakdown.grand_total;
     const cartSnapshot = cart.map((item) => ({ ...item }));
     const cartSnapshotSignature = buildCartSignature(cartSnapshot);
     const currentQueuedOrder = activeOrder?.status === "queued" ? activeOrder : null;
@@ -4572,7 +4760,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       selectedTable: selectedTable ? { id: selectedTable.id, active_session_id: selectedTable.active_session_id } : null,
       lastCommittedCartSignature,
       cartSnapshotSignature,
-      total
+      total: effectiveTotal
     });
 
     if (canSkipDineInSubmit && currentQueuedOrder) {
@@ -4581,11 +4769,11 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           order: currentQueuedOrder,
           fallbackOrderType: orderType,
           fallbackTableId: selectedTable?.id ?? null,
-          fallbackTotal: total,
+          fallbackTotal: effectiveTotal,
           items: cartSnapshot,
           discountAmount: summaryDiscount,
-          taxTotal: currentQueuedOrder.tax_total ?? taxBreakdown.tax_total,
-          taxLines: currentQueuedOrder.tax_lines?.length ? currentQueuedOrder.tax_lines : taxBreakdown.lines
+          taxTotal: currentQueuedOrder.tax_total ?? effectiveTaxBreakdown.tax_total,
+          taxLines: currentQueuedOrder.tax_lines?.length ? currentQueuedOrder.tax_lines : effectiveTaxBreakdown.lines
         })
       );
       setTakeawayCreatingPreview(null);
@@ -4612,14 +4800,14 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       summaryDiscount,
       cart
     });
-    payload.payload.tax_total = taxBreakdown.tax_total;
-    payload.payload.grand_total = total;
-    payload.payload.tax_lines = taxBreakdown.lines;
+    payload.payload.tax_total = effectiveTaxBreakdown.tax_total;
+    payload.payload.grand_total = effectiveTotal;
+    payload.payload.tax_lines = effectiveTaxBreakdown.lines;
 
     if (orderType === "takeaway") {
       setTakeawayCreatingPreview({
         items: cartSnapshot,
-        total_amount: total
+        total_amount: effectiveTotal
       });
     }
 
@@ -4650,11 +4838,11 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
             order: createdOrder,
             fallbackOrderType: orderType,
             fallbackTableId: selectedTable?.id ?? null,
-            fallbackTotal: total,
+            fallbackTotal: effectiveTotal,
             items: cartSnapshot,
             discountAmount: summaryDiscount,
-            taxTotal: createdOrder.tax_total ?? taxBreakdown.tax_total,
-            taxLines: createdOrder.tax_lines?.length ? createdOrder.tax_lines : taxBreakdown.lines
+            taxTotal: createdOrder.tax_total ?? effectiveTaxBreakdown.tax_total,
+            taxLines: createdOrder.tax_lines?.length ? createdOrder.tax_lines : effectiveTaxBreakdown.lines
           })
         );
         setCashReviewOrder(null);
@@ -4843,12 +5031,13 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           ? buildDineInSessionBillNo(nextTable.table_code, openedSession.opened_at, openedSession.id)
           : null
       );
-      setCart([]);
+      const liveCartAfterOpen = selectedTableRef.current?.id === nextTable.id ? cartRef.current.map((item) => ({ ...item })) : [];
+      setCart(liveCartAfterOpen);
       setActiveOrder(null);
       setLastCommittedCartSignature(null);
       setTableTransferVerifications([]);
       setBillPaymentMethod(null);
-      rememberDineInDraft(nextTable.id, []);
+      rememberDineInDraft(nextTable.id, liveCartAfterOpen);
       setQuickMode("dine_in");
       setOrderType("dine_in");
       setTableBrowserOpen(false);
@@ -5155,7 +5344,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       revokeTransferSlipPreviewUrl: (url) => URL.revokeObjectURL(url),
       setTransferSlipPreviewUrl, setTransferSlipParsed, setTransferSlipChecks, setTransferSlipIssues, setTransferSlipVerified,
       setTransferSlipVerifiedAgainst, setTransferSlipVerificationId, setTransferOverrideApprovalId, setReceiptSession, setReceiptSaving,
-      setReceiptSaved, setBillPaymentMethod, setReceiptError, returnToDineInTableBrowserAfterPayment,
+      setReceiptSaved, setBillPaymentMethod, setReceiptError,
       pushSubmitMessage
     });
   }
@@ -5321,6 +5510,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   }
 
   function closeReceiptPopup() {
+    const shouldReturnToTableBrowser =
+      receiptSession?.payment_method === "bank_transfer" && (orderType === "dine_in" || quickMode === "dine_in");
     receiptModalClosedRef.current = true;
     setReceiptSession(null);
     setReceiptSaved(false);
@@ -5328,6 +5519,9 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     setReceiptSaving(false);
     if (!activeOrder && cartRef.current.length === 0) {
       setBillPaymentMethod(null);
+    }
+    if (shouldReturnToTableBrowser) {
+      returnToDineInTableBrowserAfterPayment();
     }
   }
 
@@ -5442,7 +5636,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         reference_no: null,
         transfer_verification_id: null,
         transfer_override_approval_id: null,
-        skip_transfer_verification: true
+        skip_transfer_verification: true,
+        receipt_items: transferReviewOrder.items.map((item) => ({ ...item }))
       },
       queued_at: new Date().toISOString(),
       retry_count: 0,
@@ -6216,8 +6411,15 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           onRetry={showEmergencyRetry ? handleEmergencyRetry : undefined}
           onCancelBill={requestCancelBill}
           onHoldBill={holdBill}
+          onTableQrOrder={() => setTableQrModalOpen(true)}
           onPromotion={openDiscountPopup}
           showHoldBill={quickMode === "home"}
+          showTableQrOrder={
+            orderType === "dine_in" &&
+            !tableBrowserOpen &&
+            Boolean(selectedTable?.id && selectedTable.active_session_id)
+          }
+          tableQrOrderLabel={text.tableQrOrder}
           checkoutLabel={orderType === "dine_in" ? text.dineInCheckout : orderType === "delivery_manual" ? text.deliveryQueueCheckout : text.checkout}
           checkoutDisabled={
             isBusy ||
@@ -6226,7 +6428,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
             (orderType === "dine_in" && (!selectedTable || !selectedTable.active_session_id)) ||
             (orderType === "delivery_manual" && (!selectedDeliveryApp || !deliveryExternalCode.trim()))
           }
-          submitting={submitting || cancelBillSubmitting || transferSubmitting}
+          submitting={isBusy}
           submittingLabel={text.submitting}
           retryDisabled={isBusy}
           pendingLabel={text.pendingSaved}
@@ -7087,6 +7289,14 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         </section>
       ) : null}
 
+      <TableQrOrderModal
+        open={tableQrModalOpen}
+        tableId={selectedTable?.id ?? null}
+        tableCode={selectedTable?.table_code ?? null}
+        onClose={() => setTableQrModalOpen(false)}
+        onBusyChange={setTableQrBusy}
+      />
+
       <PosHeldBillsModal
         open={heldBillsModalOpen}
         text={text}
@@ -7110,7 +7320,6 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         onRemoveHeldBill={removeHeldBill}
         onSendPendingDeliveryBill={(heldBill) => {
           sendPendingDeliveryBill(heldBill);
-          setHeldBillsModalOpen(false);
         }}
         onCancelPendingDeliveryBill={cancelPendingDeliveryBill}
         onDeliveryLogoError={(appId) =>
@@ -7125,6 +7334,14 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           <div className="table-loading-dialog">
             <span className="table-loading-spinner" aria-hidden="true" />
             <p>{text.loading}</p>
+          </div>
+        </div>
+      ) : null}
+      {processingOverlayLabel ? (
+        <div className="table-loading-overlay" role="status" aria-live="polite" aria-label={processingOverlayLabel}>
+          <div className="table-loading-dialog">
+            <span className="table-loading-spinner" aria-hidden="true" />
+            <p>{processingOverlayLabel}</p>
           </div>
         </div>
       ) : null}

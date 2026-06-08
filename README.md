@@ -626,3 +626,63 @@ Use this section as the current source of truth before changing the Payment Sett
 - Existing branch create, update, delete, tenant scope, role guards, and API routes are unchanged.
 - The branch list remains horizontally scrollable on narrow screens, while the popup fits within the viewport and allows vertical scrolling only when required.
 - Tax calculations, branch-specific tax persistence, POS sales binding, payment flow, shifts, and order state logic were not changed.
+
+## POS Sales Stability Handoff (2026-06-07)
+
+### What changed
+- The POS sales checkout flow now refreshes the current branch tax settings before creating a checkout payload, so the bill preview uses the latest Tax Settings submenu values.
+- Dine-in transfer payment keeps the receipt session visible after payment succeeds, allowing the cashier to print the receipt before returning to the table browser.
+- Checkout, delivery pending staging, transfer/cash payment saving, and table bill opening now share a blocking processing popup so cashiers cannot double-submit or tap through slow network work.
+- Opening a dine-in table bill now preserves any cashier-entered cart items if a slow table-open/bill-context response returns after product taps.
+- Sending a pending delivery bill keeps the pending-bill modal open while processing and removes the sent bill from the list only after the order/payment flow succeeds.
+
+### Files/routes/components affected
+- POS sales UI: `apps/backoffice-web/src/components/pos/pos-sales-module.tsx`.
+- Pending delivery bills modal: `apps/backoffice-web/src/components/pos/pos-held-bills-modal.tsx`.
+- POS sales side-effect service: `apps/backoffice-web/src/components/pos/services/pos-sales-service-module.ts`.
+
+### UI behavior notes
+- Tax display in the order summary still updates live from the current branch settings; checkout performs one more refresh for stale-cache protection.
+- The table-open popup uses the existing table loading overlay and locks POS actions until the table session has opened or failed.
+- Delivery pending send/edit/cancel actions remain queued per bill to prevent duplicate taps; successful send clears the specific bill from the pending list.
+- The transfer QR modal can show a processing overlay while the payment API is saving, then the receipt popup remains available for printing.
+
+### Safety notes
+- Server order submission continues to recalculate tax totals; client tax refresh is display/preview protection only.
+- Payment confirmation still uses the existing `/api/pos/payments` flow and idempotency keys.
+- Shift, tenant, branch, POS session, table, and delivery order guards were not loosened.
+- No client-side amount is trusted as final payment truth; server-calculated order/payment totals remain authoritative.
+
+## Dine-In Table QR Ordering Handoff (2026-06-07)
+
+### What changed
+- A dine-in table with an open bill now shows `QR สั่งอาหาร` before the discount action in the POS payment panel.
+- The QR action creates or reuses one active signed ordering link for the current table bill session.
+- The POS QR modal can copy the customer link and print a compact 58mm QR ticket through the configured Bluetooth bridge, with browser print fallback.
+- Customers can scan the printed QR, browse branch-scoped product categories, search products, manage quantities, add an order note, and submit from mobile without a POS login.
+- Accepted customer items are appended transactionally to the queued dine-in order, update branch tax totals, enter the open table bill, and queue a kitchen-only ticket.
+- The active POS table view polls only its own table for new QR submissions every four seconds and merges new items into the table cart without clearing cashier-entered drafts.
+
+### Security and tenant isolation
+- Public links use `table_qr_sessions.id` plus an HMAC signature. Raw tenant, branch, table, and bill identifiers cannot be changed in the URL to switch scope.
+- Every public menu read and order submit validates the signed token against the stored tenant, branch, table, and exact `table_bill_sessions` row.
+- The database transaction revalidates the open table, active bill session, open shift, product tenant/branch ownership, product active state, quantities, and request id.
+- `table_qr_orders` enforces one submission per `(qr_session_id, request_id)`, preventing duplicate orders from retries or repeated button taps.
+- Public requests are rate limited per client/link. The public API never accepts client prices, tax values, branch ids, table ids, or order totals.
+- When the table bill session becomes `closed` or `cancelled`, a database trigger revokes the QR immediately. QR sessions also have an 18-hour maximum lifetime.
+
+### Files/routes/components affected
+- Migration: `supabase/migrations/202606070002_table_qr_ordering.sql`.
+- QR signing, menu resolution, transaction call, and kitchen print: `apps/backoffice-web/src/lib/table-qr-ordering.ts`.
+- POS QR issue and polling APIs: `apps/backoffice-web/src/app/api/pos/tables/[tableId]/qr-order/route.ts`, `apps/backoffice-web/src/app/api/pos/tables/[tableId]/qr-orders/route.ts`.
+- Public customer API/page: `apps/backoffice-web/src/app/api/table-order/[token]/route.ts`, `apps/backoffice-web/src/app/table-order/[token]/page.tsx`.
+- Mobile ordering UI: `apps/backoffice-web/src/components/table-order/table-order-mobile.tsx`.
+- POS modal and payment action: `apps/backoffice-web/src/components/pos/table-qr-order-modal.tsx`, `apps/backoffice-web/src/components/pos-ui/pos-payment-panel.tsx`, `apps/backoffice-web/src/components/pos/pos-sales-module.tsx`.
+- Kitchen-only print helper: `apps/backoffice-web/src/lib/printing/print-service.ts`.
+
+### Operational notes
+- Recommended production environment variable: `TABLE_QR_SIGNING_SECRET`. If absent, the server falls back to `SUPABASE_SERVICE_ROLE_KEY` as the HMAC key; neither value is sent to the browser.
+- The public route is `/table-order/[signed-token]`; it intentionally sits outside the POS login middleware.
+- QR ordering requires an open branch shift and an open table bill. The button is hidden before the table bill session exists.
+- Kitchen print failure does not roll back or duplicate an accepted customer order. The order remains visible in POS and print failures remain observable in the existing print queue.
+- Server/database totals remain authoritative. The mobile cart total is display-only and the transaction reloads product prices and branch tax settings.

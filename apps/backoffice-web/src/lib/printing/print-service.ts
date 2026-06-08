@@ -922,3 +922,52 @@ export async function enqueuePrintJobsForOrderSnapshot(args: {
 
   return queuedJobs;
 }
+
+export async function enqueueKitchenTicketForOrderSnapshot(args: {
+  auth: AuthContext;
+  order: {
+    id: string;
+    order_no: string;
+  };
+  items: Array<{ product_name: string; quantity: number; note?: string | null }>;
+  station?: string;
+}) {
+  const { auth, order, items, station = "Table QR" } = args;
+  const queuedJobs: PrintJobRow[] = [];
+  const storeProfile = await loadReceiptStoreProfile(auth.tenantId!);
+  const branchName = await loadReceiptBranchName(auth, storeProfile?.display_name ?? storeProfile?.name);
+  const kitchenPrinters = await getEnabledPrintersByRole(auth, "kitchen");
+
+  for (const printer of kitchenPrinters) {
+    const kitchenPayload = renderKitchenTicketTemplate(
+      {
+        order_id: order.id,
+        order_no: order.order_no,
+        branch_name: branchName,
+        ticket_at_iso: nowIso(),
+        station,
+        items: items.map((item) => ({
+          name: item.product_name,
+          qty: item.quantity,
+          note: item.note ?? undefined
+        }))
+      },
+      printer.paper_width_mm
+    );
+    const job = await enqueuePrintJob({
+      auth,
+      printer,
+      orderId: order.id,
+      printerRole: "kitchen",
+      payloadText: kitchenPayload,
+      metadata: {
+        request_source: "table_qr_order",
+        station
+      }
+    });
+    queuedJobs.push(job);
+    await processPrintJob(job.id);
+  }
+
+  return queuedJobs;
+}

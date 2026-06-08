@@ -260,7 +260,6 @@ export async function submitTransferPaymentWithEffects(args: {
   setReceiptSaved: (next: boolean) => void;
   setBillPaymentMethod: (next: "bank_transfer") => void;
   setReceiptError: (next: string | null) => void;
-  returnToDineInTableBrowserAfterPayment: () => void;
   pushSubmitMessage: (message: string) => void;
 }): Promise<void> {
   const {
@@ -299,7 +298,6 @@ export async function submitTransferPaymentWithEffects(args: {
     setReceiptSaved,
     setBillPaymentMethod,
     setReceiptError,
-    returnToDineInTableBrowserAfterPayment,
     pushSubmitMessage
   } = args;
 
@@ -383,13 +381,6 @@ export async function submitTransferPaymentWithEffects(args: {
   setBillPaymentMethod("bank_transfer");
   setReceiptError(null);
   pushSubmitMessage(`${text.receiptSaved}: ${pendingPaymentEntry.payload.order_no}`);
-  if (pendingPaymentEntry.payload.order_type === "dine_in") {
-    setReceiptSession(null);
-    setReceiptSaved(false);
-    setReceiptError(null);
-    setReceiptSaving(false);
-    returnToDineInTableBrowserAfterPayment();
-  }
 }
 
 export async function sendPendingDeliveryBillNowWithEffects(args: {
@@ -600,6 +591,7 @@ export async function sendPendingDeliveryBillNowWithEffects(args: {
     setTransferSubmitting(true);
     try {
       await submitTransferPayment(pendingPaymentEntry, true);
+      setHeldBills((current) => current.filter((entry) => entry.id !== heldBill.id));
       setDeliveryFlowState("completed");
     } catch (transferPayError) {
       const paymentMessage = toErrorMessage(transferPayError, "Failed to complete transfer payment.");

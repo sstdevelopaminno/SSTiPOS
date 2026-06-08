@@ -6501,6 +6501,98 @@ a {
   animation: table-loading-spin 0.9s linear infinite;
 }
 
+.posui-table-qr-modal {
+  width: min(92vw, 540px);
+}
+
+.posui-table-qr-modal__body {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 18px;
+}
+
+.posui-table-qr-modal__state {
+  min-height: 280px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.posui-table-qr-modal__state.is-error {
+  color: #a52323;
+}
+
+.posui-table-qr-ticket {
+  width: min(100%, 290px);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 18px 16px;
+  border: 1px solid #cbd8e6;
+  background: #fff;
+  color: #111827;
+  text-align: center;
+  box-shadow: 0 10px 28px rgba(19, 50, 81, 0.11);
+}
+
+.posui-table-qr-ticket > strong {
+  color: #105f9f;
+  font-size: 18px;
+}
+
+.posui-table-qr-ticket > b {
+  font-size: 24px;
+}
+
+.posui-table-qr-ticket hr {
+  width: 100%;
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px dashed #8596a8;
+}
+
+.posui-table-qr-ticket img {
+  width: min(100%, 250px);
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: contain;
+}
+
+.posui-table-qr-modal__expiry {
+  margin: 0;
+  color: #60758a;
+  font-size: 13px;
+  text-align: center;
+}
+
+.posui-table-qr-modal__error {
+  margin: 0;
+  color: #a52323;
+  text-align: center;
+}
+
+.posui-table-qr-modal__actions {
+  width: min(100%, 360px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 8px;
+}
+
+.posui-btn--table-qr {
+  border-color: #1781bd;
+  color: #075b91;
+  background: #edf8ff;
+}
+
+@media (max-width: 560px) {
+  .posui-table-qr-modal__actions {
+    grid-template-columns: 1fr;
+  }
+}
+
 @keyframes table-loading-spin {
   to {
     transform: rotate(360deg);
