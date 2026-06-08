@@ -98,10 +98,22 @@ type TaxSettings = {
   lines: TaxLineSettings[];
 };
 
+type TableQrNotificationSettings = {
+  table_qr_popup_enabled: boolean;
+  table_qr_sound_enabled: boolean;
+  table_qr_sound_volume: number;
+};
+
 const DEFAULT_TAX_SETTINGS: TaxSettings = {
   is_enabled: false,
   calculation_base: "net_after_discount",
   lines: []
+};
+
+const DEFAULT_TABLE_QR_NOTIFICATION_SETTINGS: TableQrNotificationSettings = {
+  table_qr_popup_enabled: true,
+  table_qr_sound_enabled: true,
+  table_qr_sound_volume: 0.8
 };
 
 type PosSalesDevicePolicy = {
@@ -124,6 +136,7 @@ type PosSalesSnapshot = {
   store_profile?: StoreProfile | null;
   payment_account?: PaymentAccountSnapshot | null;
   tax_settings?: TaxSettings | null;
+  notification_settings?: TableQrNotificationSettings | null;
   device_policy?: PosSalesDevicePolicy | null;
   delivery_configs?: DeliveryChannelConfigRow[];
   delivery_prices_by_product?: Record<string, Record<string, number>>;
@@ -573,6 +586,8 @@ const uiText = {
     deliveryQueueProcessing: "กำลังบันทึกบิลรอส่งออเดอร์...",
     tableQrOrder: "QR สั่งอาหาร",
     tableQrOrderReceived: "ได้รับรายการสั่งอาหารจาก QR",
+    tableQrCallStaff: "โต๊ะเรียกพนักงาน",
+    tableQrRequestCheckout: "โต๊ะแจ้งต้องการชำระบิล",
     dineInCheckout: "ชำระเงิน",
     orderCreated: "สร้างบิลแล้ว",
     orderUpdated: "อัปเดตบิลเดิมแล้ว",
@@ -891,6 +906,8 @@ const uiText = {
     deliveryQueueProcessing: "Saving pending dispatch bill...",
     tableQrOrder: "Table QR",
     tableQrOrderReceived: "Table QR order received",
+    tableQrCallStaff: "Table calls staff",
+    tableQrRequestCheckout: "Table requests checkout",
     dineInCheckout: "Pay",
     orderCreated: "Order created",
     orderUpdated: "Order updated",
@@ -1736,6 +1753,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [promptPayPhone, setPromptPayPhone] = useState(DEFAULT_PROMPTPAY_PHONE);
   const [paymentAccount, setPaymentAccount] = useState<PaymentAccountSnapshot | null>(null);
   const [taxSettings, setTaxSettings] = useState<TaxSettings>(DEFAULT_TAX_SETTINGS);
+  const [tableQrNotificationSettings, setTableQrNotificationSettings] = useState<TableQrNotificationSettings>(DEFAULT_TABLE_QR_NOTIFICATION_SETTINGS);
+  const [tableQrAlert, setTableQrAlert] = useState<{ id: string; type: "call_staff" | "request_checkout"; tableCode: string; note?: string | null } | null>(null);
   const [devicePolicy, setDevicePolicy] = useState<PosSalesDevicePolicy | null>(null);
   const [transferSlipFile, setTransferSlipFile] = useState<File | null>(null);
   const [transferSlipPreviewUrl, setTransferSlipPreviewUrl] = useState<string | null>(null);
@@ -1834,6 +1853,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const tableQrOrderSeenRef = useRef<Set<string>>(new Set());
   const tableQrOrderPollCursorRef = useRef<string>(new Date().toISOString());
   const tableQrOrderPollInFlightRef = useRef(false);
+  const tableQrAudioContextRef = useRef<AudioContext | null>(null);
   const loadTableBillContextRef = useRef<(table: DiningTableItem) => Promise<void>>(async () => {
     throw new Error("table_bill_loader_not_ready");
   });
@@ -1957,6 +1977,48 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     }
   }, [orderType, selectedTable?.active_session_id, tableBrowserOpen]);
 
+  const playTableQrAlertSound = useCallback(() => {
+    const settings = tableQrNotificationSettings;
+    if (!settings.table_qr_sound_enabled || typeof window === "undefined") return;
+    try {
+      const AudioContextConstructor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextConstructor) return;
+      const audioContext = tableQrAudioContextRef.current ?? new AudioContextConstructor();
+      tableQrAudioContextRef.current = audioContext;
+      const now = audioContext.currentTime;
+      const volume = Math.max(0, Math.min(1, settings.table_qr_sound_volume));
+      for (let index = 0; index < 2; index += 1) {
+        const oscillator = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        const startAt = now + index * 0.18;
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(index === 0 ? 880 : 1120, startAt);
+        gain.gain.setValueAtTime(0.001, startAt);
+        gain.gain.linearRampToValueAtTime(0.18 * volume, startAt + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.14);
+        oscillator.connect(gain);
+        gain.connect(audioContext.destination);
+        oscillator.start(startAt);
+        oscillator.stop(startAt + 0.15);
+      }
+    } catch {
+      // Some browsers block audio until a user gesture. Popup notification remains available.
+    }
+  }, [tableQrNotificationSettings]);
+
+  const notifyTableQrServiceRequest = useCallback(
+    (alert: { id: string; type: "call_staff" | "request_checkout"; tableCode: string; note?: string | null }) => {
+      if (tableQrNotificationSettings.table_qr_popup_enabled) {
+        setTableQrAlert(alert);
+        window.setTimeout(() => {
+          setTableQrAlert((current) => (current?.id === alert.id ? null : current));
+        }, 9000);
+      }
+      playTableQrAlertSound();
+    },
+    [playTableQrAlertSound, tableQrNotificationSettings.table_qr_popup_enabled]
+  );
+
   useEffect(() => {
     const table = selectedTable;
     if (
@@ -1985,7 +2047,9 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           data?: {
             items?: Array<{
               id: string;
+              event_type?: "order" | "call_staff" | "request_checkout";
               payload?: {
+                note?: string | null;
                 items?: Array<{ product_id?: string; quantity?: number }>;
               };
             }>;
@@ -2003,7 +2067,18 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         }
         if (unseen.length === 0) return;
 
-        const incomingItems = unseen.flatMap((entry) =>
+        for (const entry of unseen) {
+          if (entry.event_type === "call_staff") {
+            pushSubmitMessageRef.current(`${text.tableQrCallStaff}: ${table.table_code}`);
+            notifyTableQrServiceRequest({ id: entry.id, type: "call_staff", tableCode: table.table_code, note: entry.payload?.note ?? null });
+          } else if (entry.event_type === "request_checkout") {
+            pushSubmitMessageRef.current(`${text.tableQrRequestCheckout}: ${table.table_code}`);
+            notifyTableQrServiceRequest({ id: entry.id, type: "request_checkout", tableCode: table.table_code, note: entry.payload?.note ?? null });
+          }
+        }
+
+        const orderEvents = unseen.filter((entry) => !entry.event_type || entry.event_type === "order");
+        const incomingItems = orderEvents.flatMap((entry) =>
           (entry.payload?.items ?? []).flatMap((item) => {
             const productId = String(item.product_id ?? "").trim();
             const quantity = Math.max(1, Math.floor(Number(item.quantity ?? 0)));
@@ -2054,11 +2129,14 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     };
   }, [
     isHydrated,
+    notifyTableQrServiceRequest,
     orderType,
     productById,
     selectedTable,
     tableBrowserOpen,
-    text.tableQrOrderReceived
+    text.tableQrCallStaff,
+    text.tableQrOrderReceived,
+    text.tableQrRequestCheckout
   ]);
 
   useEffect(() => {
@@ -2700,6 +2778,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       setStoreProfile(savedSales.store_profile ?? null);
       setPaymentAccount(savedSales.payment_account ?? null);
       setTaxSettings(savedSales.tax_settings ?? DEFAULT_TAX_SETTINGS);
+      setTableQrNotificationSettings(savedSales.notification_settings ?? DEFAULT_TABLE_QR_NOTIFICATION_SETTINGS);
       setDevicePolicy(savedSales.device_policy ?? null);
       if (savedSales.payment_account?.promptpay_phone) {
         setPromptPayPhone(sanitizePromptPayPhone(savedSales.payment_account.promptpay_phone));
@@ -3165,6 +3244,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         const nextStoreProfile = salesResponse.body.data?.store_profile ?? null;
         const nextPaymentAccount = salesResponse.body.data?.payment_account ?? null;
         const nextTaxSettings = salesResponse.body.data?.tax_settings ?? DEFAULT_TAX_SETTINGS;
+        const nextNotificationSettings = salesResponse.body.data?.notification_settings ?? DEFAULT_TABLE_QR_NOTIFICATION_SETTINGS;
         const nextDevicePolicy = salesResponse.body.data?.device_policy ?? null;
         const nextDeliveryConfigs = Array.isArray(salesResponse.body.data?.delivery_configs)
           ? salesResponse.body.data.delivery_configs
@@ -3208,6 +3288,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         setStoreProfile(nextStoreProfile);
         setPaymentAccount(nextPaymentAccount);
         setTaxSettings(nextTaxSettings);
+        setTableQrNotificationSettings(nextNotificationSettings);
         setDevicePolicy(nextDevicePolicy);
         if (nextPaymentAccount?.promptpay_phone) {
           setPromptPayPhone(sanitizePromptPayPhone(nextPaymentAccount.promptpay_phone));
@@ -3231,6 +3312,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
               store_profile: nextStoreProfile,
               payment_account: nextPaymentAccount,
               tax_settings: nextTaxSettings,
+              notification_settings: nextNotificationSettings,
               device_policy: nextDevicePolicy,
               delivery_configs: nextDeliveryConfigs,
               delivery_prices_by_product: nextDeliveryPricesByProduct,
@@ -7296,6 +7378,24 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         onClose={() => setTableQrModalOpen(false)}
         onBusyChange={setTableQrBusy}
       />
+
+      {tableQrAlert ? (
+        <div className="posui-table-alert-popup" role="alert" aria-live="assertive" aria-label={tableQrAlert.type === "call_staff" ? text.tableQrCallStaff : text.tableQrRequestCheckout}>
+          <section className="posui-table-alert">
+            <div className="posui-table-alert__icon" aria-hidden="true">
+              !
+            </div>
+            <div className="posui-table-alert__content">
+              <strong>{tableQrAlert.type === "call_staff" ? text.tableQrCallStaff : text.tableQrRequestCheckout}</strong>
+              <p>{tableQrAlert.tableCode}</p>
+              {tableQrAlert.note ? <span>{tableQrAlert.note}</span> : null}
+            </div>
+            <button type="button" onClick={() => setTableQrAlert(null)} aria-label={text.clear}>
+              x
+            </button>
+          </section>
+        </div>
+      ) : null}
 
       <PosHeldBillsModal
         open={heldBillsModalOpen}

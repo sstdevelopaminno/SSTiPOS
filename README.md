@@ -686,3 +686,17 @@ Use this section as the current source of truth before changing the Payment Sett
 - QR ordering requires an open branch shift and an open table bill. The button is hidden before the table bill session exists.
 - Kitchen print failure does not roll back or duplicate an accepted customer order. The order remains visible in POS and print failures remain observable in the existing print queue.
 - Server/database totals remain authoritative. The mobile cart total is display-only and the transaction reloads product prices and branch tax settings.
+
+### Follow-up update (2026-06-08)
+- Added migration `supabase/migrations/202606080001_table_qr_service_requests.sql` so `table_qr_orders` can store non-food QR events with `event_type = order | call_staff | request_checkout`; `order_id` is nullable only for service request events.
+- The customer mobile page now keeps the cart/payment summary visible at the bottom, shows the client-side display total, and lets customers tap the whole product card or the stepper to add items.
+- Added customer actions `เรียกพนักงาน` and `ต้องการชำระบิล`; both use the signed table QR token and write a table-scoped event for the active table bill session.
+- POS QR polling now separates service-request events from food-order events. Food events still merge into the table cart, while service requests show a cashier notification and do not mutate order items.
+- Server/database totals remain authoritative for payment; the mobile total is only a customer display preview.
+
+### Notification update (2026-06-08)
+- Added migration `supabase/migrations/202606080002_pos_notification_settings.sql` for branch-scoped POS notification settings.
+- Settings submenu now includes `ตั้งค่าการแจ้งเตือน`, allowing each branch to enable/disable table QR popup alerts, enable/disable sound, and adjust sound volume.
+- `/api/pos/sales` includes notification settings so cashier/staff POS screens can read alert behavior without needing settings-management permission.
+- When a customer taps `เรียกพนักงาน` or `ต้องการชำระบิล`, the active dine-in POS screen shows a popup alert and plays a short generated alert tone when enabled.
+- Alert settings are tenant/branch scoped and default to popup + sound enabled if the settings table has not been configured yet.

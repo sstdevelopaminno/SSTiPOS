@@ -14,7 +14,7 @@ import { invalidatePosScopeRuntimeCaches } from "@/lib/pos-cache-invalidation";
 import { POS_GUARDS } from "@/lib/pos-resilience";
 import { invalidatePosSalesListCacheForScope } from "@/lib/services/pos-sales-list-service";
 import { executeCreatePosOrderTransaction } from "@/lib/services/pos-sales-service";
-import { calculateTaxBreakdown, loadTaxSettings } from "@/lib/services/pos-settings-service";
+import { calculateTaxBreakdown, loadPosNotificationSettings, loadTaxSettings } from "@/lib/services/pos-settings-service";
 import { loadReceiptStoreProfile } from "@/lib/services/store-profile-service";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
@@ -725,7 +725,8 @@ export async function GET(request: Request) {
       { data: deliveryPrices, error: deliveryPricesError },
       { data: recipeProductRows, error: recipeProductRowsError },
       { data: paymentAccounts, error: paymentAccountsError },
-      taxSettings
+      taxSettings,
+      notificationSettings
     ] = await Promise.all([
       supabase
         .from("shifts")
@@ -811,7 +812,8 @@ export async function GET(request: Request) {
         .or(`branch_id.eq.${auth.branchId!},applies_to_all_branches.eq.true`)
         .order("applies_to_all_branches", { ascending: true })
         .order("updated_at", { ascending: false }),
-      loadTaxSettings(auth)
+      loadTaxSettings(auth),
+      loadPosNotificationSettings(auth)
     ]);
 
     if (productError) {
@@ -883,6 +885,7 @@ export async function GET(request: Request) {
       store_profile: storeProfile,
       payment_account: activePaymentAccount,
       tax_settings: taxSettings,
+      notification_settings: notificationSettings,
       device_policy: devicePolicy,
       delivery_configs: activeDeliveryConfigs,
       delivery_prices_by_product: deliveryPricesByProduct

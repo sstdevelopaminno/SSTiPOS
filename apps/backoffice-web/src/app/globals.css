@@ -6587,6 +6587,85 @@ a {
   background: #edf8ff;
 }
 
+.posui-table-alert-popup {
+  position: fixed;
+  top: max(18px, env(safe-area-inset-top));
+  left: 50%;
+  z-index: 180;
+  width: min(520px, calc(100vw - 28px));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.posui-table-alert {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #fb923c;
+  border-radius: 12px;
+  background: #fff7ed;
+  box-shadow: 0 18px 38px rgba(154, 52, 18, 0.24);
+  padding: 12px;
+  pointer-events: auto;
+  animation: posuiToastIn 0.22s ease-out;
+}
+
+.posui-table-alert__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 999px;
+  background: #ff6b12;
+  color: #ffffff;
+  font-size: 26px;
+  font-weight: 900;
+}
+
+.posui-table-alert__content {
+  min-width: 0;
+}
+
+.posui-table-alert__content strong,
+.posui-table-alert__content p,
+.posui-table-alert__content span {
+  display: block;
+}
+
+.posui-table-alert__content strong {
+  color: #9a3412;
+  font-size: 16px;
+}
+
+.posui-table-alert__content p {
+  margin: 2px 0 0;
+  color: #172554;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.posui-table-alert__content span {
+  margin-top: 3px;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.posui-table-alert button {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #9a3412;
+  font-size: 18px;
+  font-weight: 900;
+}
+
 @media (max-width: 560px) {
   .posui-table-qr-modal__actions {
     grid-template-columns: 1fr;

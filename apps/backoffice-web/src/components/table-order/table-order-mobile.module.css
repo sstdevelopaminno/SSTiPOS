@@ -1,6 +1,6 @@
 .page {
   min-height: 100vh;
-  padding: 0 0 210px;
+  padding: 0 0 260px;
   background: #f4f7fb;
   color: #14213d;
   font-family: Arial, "Noto Sans Thai", sans-serif;
@@ -108,6 +108,25 @@
   box-shadow: 0 5px 16px rgba(22, 55, 88, 0.08);
 }
 
+.productPickButton {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.productPickButton:disabled {
+  cursor: wait;
+}
+
+.productPickButton:focus-visible {
+  outline: 3px solid rgba(255, 107, 18, 0.45);
+  outline-offset: -3px;
+}
+
 .productVisual {
   display: grid;
   aspect-ratio: 4 / 3;
@@ -135,6 +154,10 @@
 
 .productBody {
   padding: 10px;
+}
+
+.productActions {
+  padding: 0 10px 10px;
 }
 
 .productCategory {
@@ -195,14 +218,9 @@
   max-width: 680px;
   margin: auto;
   padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
-  transform: translateY(110%);
   border-top: 1px solid #cad7e4;
   background: #fff;
   box-shadow: 0 -12px 35px rgba(15, 42, 70, 0.18);
-  transition: transform 180ms ease;
-}
-
-.cartSheetVisible {
   transform: translateY(0);
 }
 
@@ -215,6 +233,34 @@
 .cartSummary strong {
   color: #e65300;
   font-size: 20px;
+}
+
+.serviceActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.serviceActions button {
+  min-height: 42px;
+  border: 1px solid #0b7fd4;
+  border-radius: 6px;
+  background: #eef7ff;
+  color: #0b3159;
+  font-weight: 800;
+}
+
+.serviceActions button:last-child {
+  border-color: #ff6b12;
+  background: #fff4ed;
+  color: #b94300;
+}
+
+.serviceActions button:disabled {
+  border-color: #c3cfdb;
+  background: #edf2f7;
+  color: #7d8da0;
 }
 
 .cartSheet textarea {

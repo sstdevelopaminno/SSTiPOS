@@ -13,7 +13,7 @@ export async function GET(request: Request, context: { params: Promise<{ tableId
     const cursorBoundary = new Date().toISOString();
     let query = supabase
       .from("table_qr_orders")
-      .select("id,order_id,table_session_id,item_count,subtotal,payload,created_at")
+      .select("id,event_type,order_id,table_session_id,item_count,subtotal,payload,created_at")
       .eq("tenant_id", auth.tenantId!)
       .eq("branch_id", auth.branchId!)
       .eq("table_id", tableId)

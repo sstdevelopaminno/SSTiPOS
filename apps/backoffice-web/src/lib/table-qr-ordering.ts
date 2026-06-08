@@ -41,6 +41,8 @@ type SubmitQrOrderRow = {
   duplicate_request: boolean;
 };
 
+type TableQrServiceRequestType = "call_staff" | "request_checkout";
+
 function signingSecret(): string {
   const explicit = readEnv("TABLE_QR_SIGNING_SECRET");
   const serviceRoleFallback = readEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -310,4 +312,52 @@ export async function submitTableQrOrder(args: {
   }
 
   return row;
+}
+
+export async function submitTableQrServiceRequest(args: {
+  context: QrContext;
+  requestId: string;
+  requestType: TableQrServiceRequestType;
+  note?: string | null;
+}) {
+  const { context, requestId, requestType, note } = args;
+  const cleanRequestId = requestId.trim();
+  if (!cleanRequestId) throw new Error("REQUEST_ID_REQUIRED");
+
+  const supabase = getSupabaseServiceClient();
+  const { data: existing, error: existingError } = await supabase
+    .from("table_qr_orders")
+    .select("id,created_at")
+    .eq("qr_session_id", context.id)
+    .eq("request_id", cleanRequestId)
+    .maybeSingle<{ id: string; created_at: string }>();
+  if (existingError) throw new Error(existingError.message);
+  if (existing) {
+    return { submission_id: existing.id, duplicate_request: true };
+  }
+
+  const { data, error } = await supabase
+    .from("table_qr_orders")
+    .insert({
+      tenant_id: context.tenant_id,
+      branch_id: context.branch_id,
+      table_id: context.table_id,
+      table_session_id: context.table_session_id,
+      qr_session_id: context.id,
+      order_id: null,
+      request_id: cleanRequestId,
+      event_type: requestType,
+      item_count: 0,
+      subtotal: 0,
+      payload: {
+        type: requestType,
+        note: note?.trim() ? note.trim().slice(0, 500) : null,
+        table_code: context.table_code
+      }
+    })
+    .select("id")
+    .single<{ id: string }>();
+  if (error) throw new Error(error.message);
+
+  return { submission_id: data.id, duplicate_request: false };
 }

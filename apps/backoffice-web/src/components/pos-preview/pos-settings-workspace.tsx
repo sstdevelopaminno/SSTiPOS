@@ -9,6 +9,7 @@ import type {
   BranchSettings,
   PaymentAccountSettings,
   PosDeviceSettings,
+  PosNotificationSettings,
   PosSettingsSnapshot,
   StoreSettings,
   TaxSettings,
@@ -17,8 +18,8 @@ import type {
 import type { ActivityAuditItem, ActivityAuditPeriod } from "@/lib/services/activity-audit-service";
 import type { Language } from "@/lib/i18n";
 
-type SettingsView = "menu" | "store" | "branches" | "devices" | "activity" | "payments" | "taxes" | "users";
-type MenuIconName = "store" | "branch" | "payment" | "tax" | "users" | "display" | "terminal" | "activity" | "back" | "edit" | "trash" | "plus";
+type SettingsView = "menu" | "store" | "branches" | "devices" | "activity" | "payments" | "taxes" | "notifications" | "users";
+type MenuIconName = "store" | "branch" | "payment" | "tax" | "users" | "display" | "terminal" | "activity" | "bell" | "back" | "edit" | "trash" | "plus";
 const POS_TAX_SETTINGS_UPDATED_EVENT = "pos:tax-settings-updated";
 const POS_TAX_SETTINGS_UPDATED_KEY = "pos_tax_settings_updated_at_v001";
 
@@ -440,6 +441,14 @@ function Icon({ name }: { name: MenuIconName }) {
         <path d="M9 13h3" />
         <path d="M15 13l1.5 1.5L19 12" />
         <path d="M9 17h6" />
+      </svg>
+    );
+  }
+  if (name === "bell") {
+    return (
+      <svg {...common}>
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+        <path d="M10 21h4" />
       </svg>
     );
   }
@@ -1921,6 +1930,183 @@ function TaxPanel({
   );
 }
 
+function NotificationPanel({
+  labels,
+  lang,
+  settings,
+  setSettings,
+  branches,
+  activeBranchId,
+  onBack,
+  canManage,
+  reportStatus
+}: {
+  labels: Labels;
+  lang: Language;
+  settings: PosNotificationSettings;
+  setSettings: (settings: PosNotificationSettings) => void;
+  branches: BranchSettings[];
+  activeBranchId: string | null;
+  onBack: () => void;
+  canManage: boolean;
+  reportStatus: StatusReporter;
+}) {
+  const text =
+    lang === "en"
+      ? {
+          title: "Notification Settings",
+          desc: "Configure table QR customer call alerts on the POS sales screen.",
+          branch: "Notification branch",
+          branchHint: "Popup and sound settings are stored separately for each branch.",
+          popup: "Show popup on sales screen",
+          sound: "Play alert sound",
+          volume: "Sound volume",
+          saved: "Notification settings saved.",
+          loading: "Loading notification settings..."
+        }
+      : {
+          title: "ตั้งค่าการแจ้งเตือน",
+          desc: "กำหนด POP UP และเสียงแจ้งเตือนเมื่อลูกค้ากดเรียกจาก QR โต๊ะ",
+          branch: "สาขาที่ตั้งค่าการแจ้งเตือน",
+          branchHint: "การแจ้งเตือนและเสียงจะแยกการตั้งค่าตามสาขา",
+          popup: "แสดง POP UP บนหน้าขาย",
+          sound: "เปิดเสียงแจ้งเตือน",
+          volume: "ระดับเสียง",
+          saved: "บันทึกการตั้งค่าการแจ้งเตือนแล้ว",
+          loading: "กำลังโหลดการแจ้งเตือนของสาขา..."
+        };
+  const availableBranches = canManage ? branches : branches.filter((branch) => branch.id === activeBranchId);
+  const initialBranchId = availableBranches.find((branch) => branch.id === activeBranchId)?.id ?? availableBranches[0]?.id ?? "";
+  const [selectedBranchId, setSelectedBranchId] = useState(initialBranchId);
+  const [form, setForm] = useState<PosNotificationSettings>(settings);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingBranch, setIsLoadingBranch] = useState(false);
+
+  useEffect(() => {
+    if (!selectedBranchId) return;
+    if (selectedBranchId === activeBranchId) {
+      setForm(settings);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsLoadingBranch(true);
+    void (async () => {
+      try {
+        const data = await readApiData<{ branch_id: string; notification_settings: PosNotificationSettings }>(
+          await fetchWithTimeout(`/api/pos/settings/notifications?branch_id=${encodeURIComponent(selectedBranchId)}`, {
+            cache: "no-store",
+            signal: controller.signal
+          })
+        );
+        if (!controller.signal.aborted) setForm(data.notification_settings);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          reportStatus(error instanceof Error && error.message === "__request_timeout__" ? labels.requestTimeout : error instanceof Error ? error.message : labels.failed, { popup: true });
+        }
+      } finally {
+        if (!controller.signal.aborted) setIsLoadingBranch(false);
+      }
+    })();
+    return () => controller.abort();
+  }, [activeBranchId, labels.failed, labels.requestTimeout, reportStatus, selectedBranchId, settings]);
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isSaving || isLoadingBranch || !selectedBranchId) return;
+    setIsSaving(true);
+    void (async () => {
+      try {
+        const data = await readApiData<{ notification_settings: PosNotificationSettings }>(
+          await fetchWithTimeout("/api/pos/settings/notifications", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...form, branch_id: selectedBranchId })
+          })
+        );
+        if (selectedBranchId === activeBranchId) setSettings(data.notification_settings);
+        setForm(data.notification_settings);
+        reportStatus(text.saved, { popup: true });
+      } catch (error) {
+        reportStatus(error instanceof Error && error.message === "__request_timeout__" ? labels.requestTimeout : error instanceof Error ? error.message : labels.failed, { popup: true });
+      } finally {
+        setIsSaving(false);
+      }
+    })();
+  }
+
+  return (
+    <section>
+      <PanelHeader title={text.title} onBack={onBack} labels={labels} />
+      <form onSubmit={save} className="grid gap-4">
+        <div className="flex flex-col gap-3 rounded-lg border border-blue-100 bg-blue-50/60 p-4 md:flex-row md:items-end md:justify-between">
+          <label className="grid w-full max-w-md gap-1.5 text-[13px] font-semibold text-slate-700">
+            <span>{text.branch}</span>
+            <select
+              value={selectedBranchId}
+              disabled={isSaving || isLoadingBranch || availableBranches.length <= 1}
+              onChange={(event) => setSelectedBranchId(event.target.value)}
+              className="min-h-11 rounded-lg border border-blue-200 bg-white px-3 text-sm font-bold text-slate-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100"
+            >
+              {availableBranches.map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name} {branch.code ? `(${branch.code})` : ""}{branch.is_active ? "" : ` - ${labels.inactive}`}
+                </option>
+              ))}
+            </select>
+            <span className="text-xs font-medium text-slate-500">{text.branchHint}</span>
+          </label>
+          <div className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-2 text-sm font-bold text-orange-700">
+            {isLoadingBranch ? text.loading : text.desc}
+          </div>
+        </div>
+
+        <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-bold text-slate-800">
+            <span>{text.popup}</span>
+            <input
+              type="checkbox"
+              checked={form.table_qr_popup_enabled}
+              disabled={!canManage || isSaving || isLoadingBranch}
+              onChange={(event) => setForm((current) => ({ ...current, table_qr_popup_enabled: event.target.checked }))}
+            />
+          </label>
+          <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-bold text-slate-800">
+            <span>{text.sound}</span>
+            <input
+              type="checkbox"
+              checked={form.table_qr_sound_enabled}
+              disabled={!canManage || isSaving || isLoadingBranch}
+              onChange={(event) => setForm((current) => ({ ...current, table_qr_sound_enabled: event.target.checked }))}
+            />
+          </label>
+          <label className="grid gap-2 rounded-lg border border-slate-200 bg-white p-4 text-sm font-bold text-slate-800">
+            <span>{text.volume}: {Math.round(form.table_qr_sound_volume * 100)}%</span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={form.table_qr_sound_volume}
+              disabled={!canManage || isSaving || isLoadingBranch || !form.table_qr_sound_enabled}
+              onChange={(event) => setForm((current) => ({ ...current, table_qr_sound_volume: Number(event.target.value) }))}
+            />
+          </label>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <ActionButton variant="plain" onClick={() => setForm(settings)} disabled={isSaving}>
+            {labels.cancel}
+          </ActionButton>
+          <ActionButton type="submit" disabled={!canManage || isSaving || isLoadingBranch || !selectedBranchId}>
+            {isSaving ? labels.saving : isLoadingBranch ? text.loading : labels.save}
+          </ActionButton>
+        </div>
+      </form>
+    </section>
+  );
+}
+
 function ActivityAuditPanel({
   labels,
   lang,
@@ -2684,6 +2870,7 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
   const [branches, setBranches] = useState(initialData.branches);
   const [accounts, setAccounts] = useState(initialData.payment_accounts);
   const [taxSettings, setTaxSettings] = useState<TaxSettings>(initialData.tax_settings);
+  const [notificationSettings, setNotificationSettings] = useState<PosNotificationSettings>(initialData.notification_settings);
   const [devices, setDevices] = useState<PosDeviceSettings[]>([]);
   const [devicesLoaded, setDevicesLoaded] = useState(false);
   const [status, setStatus] = useState("");
@@ -2715,6 +2902,12 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
             <MenuButton icon="activity" title={labels.activityAudit} desc={labels.activityAuditDesc} onClick={() => setView("activity")} />
             <MenuButton icon="payment" title={labels.payments} desc={labels.paymentsDesc} onClick={() => setView("payments")} />
             <MenuButton icon="tax" title={labels.taxes} desc={labels.taxesDesc} onClick={() => setView("taxes")} />
+            <MenuButton
+              icon="bell"
+              title={lang === "en" ? "Notification Settings" : "ตั้งค่าการแจ้งเตือน"}
+              desc={lang === "en" ? "Popup and sound alerts for table QR customer calls" : "POP UP และเสียงแจ้งเตือนเมื่อลูกค้าเรียกจาก QR โต๊ะ"}
+              onClick={() => setView("notifications")}
+            />
             <MenuButton icon="users" title={labels.users} desc={labels.usersDesc} onClick={() => setView("users")} />
             <MenuLink icon="display" title={labels.display} desc={labels.displayDesc} href="/preview/pos/customer-display" />
           </div>
@@ -2775,6 +2968,19 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
             labels={labels}
             taxSettings={taxSettings}
             setTaxSettings={setTaxSettings}
+            branches={branches}
+            activeBranchId={initialData.metadata.branch_id}
+            onBack={() => setView("menu")}
+            canManage={canManage}
+            reportStatus={reportStatus}
+          />
+        ) : null}
+        {view === "notifications" ? (
+          <NotificationPanel
+            labels={labels}
+            lang={lang}
+            settings={notificationSettings}
+            setSettings={setNotificationSettings}
             branches={branches}
             activeBranchId={initialData.metadata.branch_id}
             onBack={() => setView("menu")}

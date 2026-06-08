@@ -53,6 +53,12 @@ export type TaxSettings = {
   lines: TaxLineSettings[];
 };
 
+export type PosNotificationSettings = {
+  table_qr_popup_enabled: boolean;
+  table_qr_sound_enabled: boolean;
+  table_qr_sound_volume: number;
+};
+
 export type PosDeviceSettings = {
   id: string;
   branch_id: string;
@@ -71,6 +77,7 @@ export type PosSettingsSnapshot = {
   branches: BranchSettings[];
   payment_accounts: PaymentAccountSettings[];
   tax_settings: TaxSettings;
+  notification_settings: PosNotificationSettings;
   metadata: {
     tenant_id: string | null;
     branch_id: string | null;
@@ -136,6 +143,12 @@ type TaxSettingsRow = {
   settings: Record<string, unknown> | null;
 };
 
+type PosNotificationSettingsRow = {
+  table_qr_popup_enabled: boolean | null;
+  table_qr_sound_enabled: boolean | null;
+  table_qr_sound_volume: number | null;
+};
+
 export type StoreSettingsInput = {
   display_name?: string;
   logo_url?: string;
@@ -168,6 +181,10 @@ export type TaxSettingsInput = Partial<TaxSettings> & {
   branch_id?: string;
 };
 
+export type PosNotificationSettingsInput = Partial<PosNotificationSettings> & {
+  branch_id?: string;
+};
+
 export const DEFAULT_TAX_SETTINGS: TaxSettings = {
   is_enabled: false,
   calculation_base: "net_after_discount",
@@ -175,6 +192,12 @@ export const DEFAULT_TAX_SETTINGS: TaxSettings = {
     { id: "vat-7", label: "VAT 7%", rate_pct: 7, mode: "add_to_bill", is_active: true },
     { id: "withholding-3", label: "หัก ณ ที่จ่าย 3%", rate_pct: 3, mode: "deduct_from_bill", is_active: false }
   ]
+};
+
+export const DEFAULT_POS_NOTIFICATION_SETTINGS: PosNotificationSettings = {
+  table_qr_popup_enabled: true,
+  table_qr_sound_enabled: true,
+  table_qr_sound_volume: 0.8
 };
 
 export type PosDeviceInput = {
@@ -398,6 +421,21 @@ function normalizeTaxSettings(input: unknown): TaxSettings {
   };
 }
 
+function normalizeNotificationVolume(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return DEFAULT_POS_NOTIFICATION_SETTINGS.table_qr_sound_volume;
+  return Number(Math.max(0, Math.min(1, numeric)).toFixed(2));
+}
+
+function normalizePosNotificationSettings(input: unknown): PosNotificationSettings {
+  const source = input && typeof input === "object" ? (input as Partial<PosNotificationSettings>) : {};
+  return {
+    table_qr_popup_enabled: source.table_qr_popup_enabled !== false,
+    table_qr_sound_enabled: source.table_qr_sound_enabled !== false,
+    table_qr_sound_volume: normalizeNotificationVolume(source.table_qr_sound_volume)
+  };
+}
+
 export function calculateTaxBreakdown(baseAmount: number, settings: TaxSettings) {
   const safeBase = Number(Math.max(0, Number(baseAmount) || 0).toFixed(2));
   if (!settings.is_enabled) {
@@ -443,6 +481,40 @@ function mapTaxSettings(row: TaxSettingsRow | null | undefined): TaxSettings {
   });
 }
 
+function mapPosNotificationSettings(row: PosNotificationSettingsRow | null | undefined): PosNotificationSettings {
+  if (!row) return DEFAULT_POS_NOTIFICATION_SETTINGS;
+  return normalizePosNotificationSettings({
+    table_qr_popup_enabled: row.table_qr_popup_enabled,
+    table_qr_sound_enabled: row.table_qr_sound_enabled,
+    table_qr_sound_volume: row.table_qr_sound_volume
+  });
+}
+
+export async function loadPosNotificationSettings(
+  auth: AuthContext,
+  requestedBranchId?: string | null
+): Promise<PosNotificationSettings> {
+  if (!auth.tenantId) return DEFAULT_POS_NOTIFICATION_SETTINGS;
+  const supabase = getSupabaseServiceClient();
+  const branchId = trimText(requestedBranchId) || auth.branchId || null;
+  if (!branchId) return DEFAULT_POS_NOTIFICATION_SETTINGS;
+  if (branchId !== auth.branchId) {
+    assertCanManageSettings(auth);
+    await assertBranchInTenant(auth.tenantId, branchId);
+  }
+  const { data, error } = await supabase
+    .from("tenant_pos_notification_settings")
+    .select("table_qr_popup_enabled,table_qr_sound_enabled,table_qr_sound_volume")
+    .eq("tenant_id", auth.tenantId)
+    .eq("branch_id", branchId)
+    .maybeSingle<PosNotificationSettingsRow>();
+  if (error) {
+    if (isMissingRelationSchemaError(error, "tenant_pos_notification_settings")) return DEFAULT_POS_NOTIFICATION_SETTINGS;
+    throw new Error(error.message);
+  }
+  return mapPosNotificationSettings(data);
+}
+
 async function loadStoreSettings(tenantId: string) {
   const supabase = getSupabaseServiceClient();
   const fullResult = await supabase
@@ -467,12 +539,13 @@ export async function loadPosSettingsSnapshot(auth: AuthContext): Promise<PosSet
       branches: [],
       payment_accounts: [],
       tax_settings: DEFAULT_TAX_SETTINGS,
+      notification_settings: DEFAULT_POS_NOTIFICATION_SETTINGS,
       metadata: { tenant_id: null, branch_id: auth.branchId, can_manage: false, payment_accounts_ready: false }
     };
   }
 
   const supabase = getSupabaseServiceClient();
-  const [store, branchesResult, paymentResult, taxSettings] = await Promise.all([
+  const [store, branchesResult, paymentResult, taxSettings, notificationSettings] = await Promise.all([
     loadStoreSettings(auth.tenantId),
     supabase.from("branches").select("id,code,name,address,is_active").eq("tenant_id", auth.tenantId).order("name", { ascending: true }),
     (async () => {
@@ -498,7 +571,8 @@ export async function loadPosSettingsSnapshot(auth: AuthContext): Promise<PosSet
 
       return fullResult;
     })(),
-    loadTaxSettings(auth)
+    loadTaxSettings(auth),
+    loadPosNotificationSettings(auth)
   ]);
 
   if (branchesResult.error) throw new Error(branchesResult.error.message);
@@ -513,6 +587,7 @@ export async function loadPosSettingsSnapshot(auth: AuthContext): Promise<PosSet
     branches: ((branchesResult.data ?? []) as BranchRow[]).map(mapBranch),
     payment_accounts: paymentResult.error ? [] : ((paymentResult.data ?? []) as PaymentAccountRow[]).map(mapPaymentAccount),
     tax_settings: taxSettings,
+    notification_settings: notificationSettings,
     metadata: {
       tenant_id: auth.tenantId,
       branch_id: auth.branchId,
@@ -855,6 +930,46 @@ export async function saveTaxSettings(auth: AuthContext, input: TaxSettingsInput
   );
 
   return mapTaxSettings(data);
+}
+
+export async function savePosNotificationSettings(auth: AuthContext, input: PosNotificationSettingsInput) {
+  assertCanManageSettings(auth);
+  if (!auth.tenantId) throw new Error("Missing tenant scope.");
+  const tenantId = auth.tenantId;
+  const branchId = trimText(input.branch_id) || trimText(auth.branchId);
+  if (!branchId) throw new Error("Branch is required for notification settings.");
+  await assertBranchInTenant(tenantId, branchId);
+  const settings = normalizePosNotificationSettings(input);
+  const supabase = getSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("tenant_pos_notification_settings")
+    .upsert(
+      {
+        tenant_id: tenantId,
+        branch_id: branchId,
+        table_qr_popup_enabled: settings.table_qr_popup_enabled,
+        table_qr_sound_enabled: settings.table_qr_sound_enabled,
+        table_qr_sound_volume: settings.table_qr_sound_volume
+      },
+      { onConflict: "tenant_id,branch_id" }
+    )
+    .select("table_qr_popup_enabled,table_qr_sound_enabled,table_qr_sound_volume")
+    .maybeSingle<PosNotificationSettingsRow>();
+  if (error) throw new Error(error.message);
+
+  runDeviceSettingsBackgroundTask("append_pos_notification_settings_audit_log", () =>
+    appendAuditLog({
+      tenantId,
+      branchId,
+      actorUserId: auth.userId,
+      actorRole: auth.branchRole ?? "owner",
+      action: "pos_notification_settings_updated",
+      targetTable: "tenant_pos_notification_settings",
+      metadata: settings
+    })
+  );
+
+  return mapPosNotificationSettings(data);
 }
 
 async function assertBranchInTenant(tenantId: string, branchId: string) {

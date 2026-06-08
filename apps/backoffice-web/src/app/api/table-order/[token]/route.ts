@@ -1,7 +1,8 @@
 import { fail, ok } from "@/lib/http";
-import { loadTableQrMenu, resolveTableQrContext, submitTableQrOrder } from "@/lib/table-qr-ordering";
+import { loadTableQrMenu, resolveTableQrContext, submitTableQrOrder, submitTableQrServiceRequest } from "@/lib/table-qr-ordering";
 
 type SubmitPayload = {
+  action?: "order" | "call_staff" | "request_checkout";
   request_id?: string;
   note?: string | null;
   items?: Array<{ product_id?: string; quantity?: number; note?: string | null }>;
@@ -66,13 +67,32 @@ export async function POST(request: Request, context: { params: Promise<{ token:
     const { token } = await context.params;
     if (!rateLimit(request, token)) return fail("rate_limited", "กรุณารอสักครู่แล้วลองใหม่", 429);
     const body = (await request.json()) as SubmitPayload;
+    const action = body.action ?? "order";
     const requestId = String(body.request_id ?? "").trim();
+    if (!requestId || requestId.length > 120) return fail("invalid_request_id", "Invalid request id.", 422);
+
+    if (action === "call_staff" || action === "request_checkout") {
+      const qrContext = await resolveTableQrContext(token);
+      const result = await submitTableQrServiceRequest({
+        context: qrContext,
+        requestId,
+        requestType: action,
+        note: typeof body.note === "string" ? body.note.trim().slice(0, 500) : null
+      });
+      return ok({
+        submission_id: result.submission_id,
+        table_code: qrContext.table_code,
+        action,
+        duplicate_request: result.duplicate_request
+      }, result.duplicate_request ? 200 : 201);
+    }
+
+    if (action !== "order") return fail("invalid_action", "Invalid action.", 422);
     const items = (body.items ?? []).map((item) => ({
       product_id: String(item.product_id ?? "").trim(),
       quantity: Number(item.quantity),
       note: typeof item.note === "string" ? item.note.trim().slice(0, 240) : null
     }));
-    if (!requestId || requestId.length > 120) return fail("invalid_request_id", "Invalid request id.", 422);
     if (items.length < 1 || items.length > 50) return fail("invalid_items", "กรุณาเลือกเมนู 1-50 รายการ", 422);
     if (items.some((item) => !item.product_id || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 99)) {
       return fail("invalid_items", "จำนวนอาหารไม่ถูกต้อง", 422);

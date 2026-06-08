@@ -26,12 +26,15 @@ type MenuResponse = {
 type SubmitResponse = {
   data?: {
     submission_id: string;
-    order_no: string;
+    order_no?: string;
     table_code: string;
-    grand_total: number;
+    grand_total?: number;
+    action?: "call_staff" | "request_checkout";
   };
   error?: { message?: string };
 };
+
+type ServiceRequestAction = "call_staff" | "request_checkout";
 
 function money(value: number) {
   return new Intl.NumberFormat("th-TH", { style: "currency", currency: "THB" }).format(value);
@@ -50,7 +53,9 @@ export function TableOrderMobile({ token }: { token: string }) {
   const [cart, setCart] = useState<Record<string, number>>({});
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [serviceSubmitting, setServiceSubmitting] = useState<ServiceRequestAction | null>(null);
   const [successOrderNo, setSuccessOrderNo] = useState<string | null>(null);
+  const [serviceMessage, setServiceMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -90,7 +95,7 @@ export function TableOrderMobile({ token }: { token: string }) {
   const cartTotal = cartItems.reduce((sum, item) => sum + item.quantity * item.price, 0);
 
   function changeQuantity(productId: string, delta: number) {
-    if (submitting) return;
+    if (submitting || serviceSubmitting) return;
     setCart((current) => {
       const nextQuantity = Math.max(0, Math.min(99, (current[productId] ?? 0) + delta));
       const next = { ...current };
@@ -101,15 +106,17 @@ export function TableOrderMobile({ token }: { token: string }) {
   }
 
   async function submitOrder() {
-    if (!menu || cartItems.length === 0 || submitting) return;
+    if (!menu || cartItems.length === 0 || submitting || serviceSubmitting) return;
     setSubmitting(true);
     setError(null);
+    setServiceMessage(null);
     const requestId = crypto.randomUUID();
     try {
       const response = await fetch(`/api/table-order/${encodeURIComponent(token)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-idempotency-key": requestId },
         body: JSON.stringify({
+          action: "order",
           request_id: requestId,
           note: note.trim() || null,
           items: cartItems.map((item) => ({ product_id: item.id, quantity: item.quantity }))
@@ -117,13 +124,39 @@ export function TableOrderMobile({ token }: { token: string }) {
       });
       const body = (await response.json()) as SubmitResponse;
       if (!response.ok || !body.data) throw new Error(body.error?.message || "ส่งรายการไม่สำเร็จ");
-      setSuccessOrderNo(body.data.order_no);
+      setSuccessOrderNo(body.data.order_no ?? "-");
       setCart({});
       setNote("");
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "ส่งรายการไม่สำเร็จ");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function submitServiceRequest(action: ServiceRequestAction) {
+    if (!menu || submitting || serviceSubmitting) return;
+    setServiceSubmitting(action);
+    setError(null);
+    setServiceMessage(null);
+    const requestId = crypto.randomUUID();
+    try {
+      const response = await fetch(`/api/table-order/${encodeURIComponent(token)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-idempotency-key": requestId },
+        body: JSON.stringify({
+          action,
+          request_id: requestId,
+          note: note.trim() || null
+        })
+      });
+      const body = (await response.json()) as SubmitResponse;
+      if (!response.ok || !body.data) throw new Error(body.error?.message || "ส่งคำขอไม่สำเร็จ");
+      setServiceMessage(action === "call_staff" ? "เรียกพนักงานแล้ว กรุณารอสักครู่" : "แจ้งต้องการชำระบิลแล้ว");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "ส่งคำขอไม่สำเร็จ");
+    } finally {
+      setServiceSubmitting(null);
     }
   }
 
@@ -186,23 +219,39 @@ export function TableOrderMobile({ token }: { token: string }) {
           <button type="button" onClick={() => setSuccessOrderNo(null)}>สั่งเพิ่ม</button>
         </div>
       ) : null}
+      {serviceMessage ? (
+        <div className={styles.success}>
+          <strong>{serviceMessage}</strong>
+          <span>โต๊ะ {menu.table_code}</span>
+        </div>
+      ) : null}
 
       <section className={styles.menuGrid} aria-label="รายการอาหาร">
         {filteredProducts.map((product, index) => {
           const quantity = cart[product.id] ?? 0;
           return (
             <article className={styles.productCard} key={product.id}>
-              <div className={`${styles.productVisual} ${styles[`tone${index % 5}`]}`}>
-                <span>{productMark(product.name)}</span>
-              </div>
-              <div className={styles.productBody}>
-                <p className={styles.productCategory}>{product.category}</p>
-                <h2>{product.name}</h2>
-                <strong>{money(product.price)}</strong>
+              <button
+                type="button"
+                className={styles.productPickButton}
+                onClick={() => changeQuantity(product.id, 1)}
+                disabled={submitting || Boolean(serviceSubmitting)}
+                aria-label={`เพิ่ม ${product.name} ลงตะกร้า`}
+              >
+                <div className={`${styles.productVisual} ${styles[`tone${index % 5}`]}`}>
+                  <span>{productMark(product.name)}</span>
+                </div>
+                <div className={styles.productBody}>
+                  <p className={styles.productCategory}>{product.category}</p>
+                  <h2>{product.name}</h2>
+                  <strong>{money(product.price)}</strong>
+                </div>
+              </button>
+              <div className={styles.productActions}>
                 <div className={styles.stepper}>
                   <button type="button" aria-label={`ลดจำนวน ${product.name}`} onClick={() => changeQuantity(product.id, -1)} disabled={quantity === 0}>−</button>
                   <span>{quantity}</span>
-                  <button type="button" aria-label={`เพิ่มจำนวน ${product.name}`} onClick={() => changeQuantity(product.id, 1)}>+</button>
+                  <button type="button" aria-label={`เพิ่มจำนวน ${product.name}`} onClick={() => changeQuantity(product.id, 1)} disabled={submitting || Boolean(serviceSubmitting)}>+</button>
                 </div>
               </div>
             </article>
@@ -212,10 +261,18 @@ export function TableOrderMobile({ token }: { token: string }) {
 
       {filteredProducts.length === 0 ? <p className={styles.empty}>ไม่พบเมนูที่ค้นหา</p> : null}
 
-      <section className={`${styles.cartSheet} ${cartCount > 0 ? styles.cartSheetVisible : ""}`} aria-label="ตะกร้าสั่งอาหาร">
+      <section className={styles.cartSheet} aria-label="ตะกร้าสั่งอาหาร">
         <div className={styles.cartSummary}>
-          <span>{cartCount} รายการ</span>
-          <strong>{money(cartTotal)}</strong>
+          <span>{cartCount} รายการในตะกร้า</span>
+          <strong>ยอดชำระ {money(cartTotal)}</strong>
+        </div>
+        <div className={styles.serviceActions}>
+          <button type="button" onClick={() => submitServiceRequest("call_staff")} disabled={submitting || Boolean(serviceSubmitting)}>
+            {serviceSubmitting === "call_staff" ? "กำลังเรียก..." : "เรียกพนักงาน"}
+          </button>
+          <button type="button" onClick={() => submitServiceRequest("request_checkout")} disabled={submitting || Boolean(serviceSubmitting)}>
+            {serviceSubmitting === "request_checkout" ? "กำลังแจ้ง..." : "ต้องการชำระบิล"}
+          </button>
         </div>
         <textarea
           value={note}
@@ -235,6 +292,15 @@ export function TableOrderMobile({ token }: { token: string }) {
             <span className={styles.spinner} />
             <strong>กำลังส่งรายการเข้าระบบ POS</strong>
             <p>กรุณาอย่าปิดหน้านี้</p>
+          </div>
+        </div>
+      ) : null}
+      {serviceSubmitting ? (
+        <div className={styles.processing} role="status" aria-live="polite">
+          <div>
+            <span className={styles.spinner} />
+            <strong>{serviceSubmitting === "call_staff" ? "กำลังเรียกพนักงาน" : "กำลังแจ้งต้องการชำระบิล"}</strong>
+            <p>กรุณารอสักครู่</p>
           </div>
         </div>
       ) : null}
