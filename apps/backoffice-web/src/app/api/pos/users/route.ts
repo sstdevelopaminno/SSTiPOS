@@ -479,8 +479,13 @@ export async function PATCH(request: Request) {
         }
       }
 
-      const pinApproval = employeeCodeChanged ? await requireApprovalPin({ pin: payload.approval_pin, tenantId: auth.tenantId!, branchId }) : { approved: true };
-      if (employeeCodeChanged && !pinApproval.approved) {
+      const ownerActorEditingOwner = auth.branchRole === "owner" && targetRole === "owner";
+      const pinApproval =
+        employeeCodeChanged && !ownerActorEditingOwner
+          ? await requireApprovalPin({ pin: payload.approval_pin, tenantId: auth.tenantId!, branchId })
+          : { approved: true };
+
+      if (employeeCodeChanged && !ownerActorEditingOwner && !pinApproval.approved) {
         return fail("approval_pin_required", "PIN approval is required to update employee code.", 403);
       }
 
@@ -543,7 +548,11 @@ export async function PATCH(request: Request) {
           403
         );
       }
-      const approval = await requireApprovalPin({ pin: payload.approval_pin, tenantId: auth.tenantId!, branchId });
+      const ownerActorSettingOwnerPin = auth.branchRole === "owner" && targetRole === "owner";
+      const approval = ownerActorSettingOwnerPin
+        ? { approved: true }
+        : await requireApprovalPin({ pin: payload.approval_pin, tenantId: auth.tenantId!, branchId });
+
       if (!approval.approved) return fail("approval_pin_required", "PIN approval is required to update user PIN.", 403);
       const pinHash = await bcrypt.hash(pin, 10);
       const { data: updatedProfile, error } = await supabase
@@ -701,13 +710,16 @@ export async function POST(request: Request) {
       return fail("owner_approval_required", "Only the owner can grant staff cancel-bill PIN authority.", 403);
     }
 
+    const ownerActorCreatingOwner = auth.branchRole === "owner" && role === "owner";
     const needsOwnerApproval = canApproveCancelBill;
-    const needsApproval = Boolean(employeeCodeInput || pin);
-    const approval = needsOwnerApproval
-      ? await requireOwnerApprovalPin({ pin: body.approval_pin, tenantId: auth.tenantId!, branchId })
-      : needsApproval
-        ? await requireApprovalPin({ pin: body.approval_pin, tenantId: auth.tenantId!, branchId })
-        : { approved: true };
+    const needsApproval = Boolean(employeeCodeInput || pin) && !ownerActorCreatingOwner;
+    const approval = ownerActorCreatingOwner
+      ? { approved: true }
+      : needsOwnerApproval
+        ? await requireOwnerApprovalPin({ pin: body.approval_pin, tenantId: auth.tenantId!, branchId })
+        : needsApproval
+          ? await requireApprovalPin({ pin: body.approval_pin, tenantId: auth.tenantId!, branchId })
+          : { approved: true };
 
     if ((needsApproval || needsOwnerApproval) && !approval.approved) {
       return fail(
@@ -775,6 +787,30 @@ export async function POST(request: Request) {
       if (insertProfileError) {
         await supabase.auth.admin.deleteUser(userId).catch(() => undefined);
         return fail("user_create_failed", insertProfileError.message, 500);
+      }
+    } else {
+      const profileUpdate: {
+        full_name: string;
+        email: string;
+        is_active: boolean;
+        pin_hash?: string | null;
+      } = {
+        full_name: fullName,
+        email,
+        is_active: body.is_active ?? true
+      };
+
+      if (role !== "staff" && pin) {
+        profileUpdate.pin_hash = await bcrypt.hash(pin, 10);
+      }
+
+      const { error: updateProfileError } = await supabase
+        .from("users_profiles")
+        .update(profileUpdate)
+        .eq("id", userId);
+
+      if (updateProfileError) {
+        return fail("user_profile_update_failed", updateProfileError.message, 500);
       }
     }
 
