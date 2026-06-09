@@ -741,3 +741,91 @@ Use this section as the current source of truth before changing the Payment Sett
 - `supabase/migrations/202606070002_table_qr_ordering.sql`
 - `supabase/migrations/202606080003_table_qr_order_public_rpc_wrapper.sql`
 - `apps/backoffice-web/tests/integration/table-qr-ordering.integration.test.ts`
+
+## POS Users Auth/Profile Creation Fix Handoff (2026-06-10)
+
+### What changed
+
+* Fixed POS Users creation so new POS users no longer insert a random `crypto.randomUUID()` directly into `users_profiles.id`.
+* `users_profiles.id` is foreign-keyed to Supabase Auth `auth.users.id`, so the API must create or reuse a real Auth user first.
+* New POS user creation now creates a Supabase Auth user through the server-side service-role admin client when no existing profile is found, then uses the returned `auth.users.id` as `users_profiles.id`.
+* This resolves the save failure:
+
+  * `insert or update on table "users_profiles" violates foreign key constraint "users_profiles_id_fkey"`
+* Employee code remains stored in `pos_user_profiles.employee_code`.
+* Employee code must never be used as `users_profiles.id`.
+* Existing tenant, branch, role, POS-session, approval PIN, staff cancel-bill PIN authority, and device-scope rules remain unchanged.
+* POS Users UI now trims form values before submit:
+
+  * `full_name`
+  * `email`
+  * `employee_code`
+  * `position_title`
+  * `permission_role`
+  * `pin`
+  * `approval_pin`
+* POS Users UI now lowercases email and uppercases employee code before sending to the API.
+* Thai save button text now shows `กำลังบันทึก...` while saving instead of always showing `Saving...`.
+
+### Files changed
+
+* `apps/backoffice-web/src/app/api/pos/users/route.ts`
+* `apps/backoffice-web/src/components/pos/pos-users-module.tsx`
+
+### Important implementation notes
+
+* Do not remove or weaken the `users_profiles_id_fkey` foreign key.
+* Do not insert generated IDs directly into `users_profiles.id`.
+* Do not use `employee_code` as any Auth/profile primary key.
+* If creating a new POS user profile, create or reuse a Supabase Auth user first.
+* Use the returned Auth user UUID as:
+
+  * `users_profiles.id`
+  * `user_branch_roles.user_id`
+  * `pos_user_profiles.user_id`
+  * `pos_user_device_scopes.user_id`
+  * `pos_user_approval_permissions.user_id` when staff cancel-bill authority is granted
+* Supabase service-role access must remain server-only.
+* Never expose service-role keys, generated temporary passwords, PIN hashes, or plaintext PINs to the client.
+* Audit logging should remain best-effort and must not block the cashier/admin-facing save flow.
+
+### Supabase migration status
+
+* No new Supabase migration was required for this fix.
+* The issue was caused by API write flow using an invalid `users_profiles.id`, not by a missing table or missing column.
+* If this error appears again, inspect the API path that writes to `users_profiles` before changing database constraints.
+
+### Verification completed locally
+
+The following checks were run locally before handoff:
+
+```bash
+cmd /c pnpm --filter backoffice-web exec tsc -p tsconfig.json --noEmit --pretty false
+cmd /c pnpm --filter backoffice-web exec eslint src/app/api/pos/users/route.ts src/components/pos/pos-users-module.tsx --no-cache
+pnpm build
+```
+
+### Manual QA required after deploy
+
+1. Open `/preview/pos/settings`.
+2. Go to POS Users.
+3. Add a new POS user:
+
+   * Branch: `BKK-01`
+   * Employee code: `NTI503202`
+   * Name: `cpu core`
+   * Email: `sstipos@gmail.com`
+   * Role: `staff` / `pos_user`
+   * Status: active
+4. Confirm save succeeds without `users_profiles_id_fkey`.
+5. Confirm the new row appears in the POS Users table.
+6. Try adding the same employee code again.
+7. Confirm the UI shows a duplicate employee-code error instead of a database foreign-key error.
+8. Test edit profile, active/inactive toggle, and device scope change.
+9. For staff cancel-bill PIN authority, confirm only owner can grant/revoke and owner approval PIN is still required.
+
+### Next AI/Codex instruction
+
+Before changing POS Users again, read this handoff first. Preserve the Auth/profile creation rule:
+`create/reuse auth user -> use auth.users.id -> write users_profiles/user_branch_roles/pos_user_profiles`.
+Do not bypass Supabase Auth and do not generate standalone UUIDs for `users_profiles.id`.
