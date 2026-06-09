@@ -687,6 +687,7 @@ export async function POST(request: Request) {
     const canApproveCancelBill = role === "staff" && Boolean(body.can_approve_cancel_bill);
 
     if (!fullName || !branchId) return fail("invalid_profile", "Full name and branch are required.", 422);
+    if (requestedEmail && !requestedEmail.includes("@")) return fail("invalid_email", "A valid email is required.", 422);
     if (pin && !/^\d{4,12}$/.test(pin)) return fail("invalid_pin", "PIN must be 4-12 digits.", 422);
     if (scopeMode === "single_device" && !deviceId) return fail("invalid_scope_device", "device_id is required for single_device mode.", 422);
 
@@ -707,6 +708,7 @@ export async function POST(request: Request) {
       : needsApproval
         ? await requireApprovalPin({ pin: body.approval_pin, tenantId: auth.tenantId!, branchId })
         : { approved: true };
+
     if ((needsApproval || needsOwnerApproval) && !approval.approved) {
       return fail(
         needsOwnerApproval ? "owner_pin_required" : "approval_pin_required",
@@ -717,6 +719,7 @@ export async function POST(request: Request) {
 
     const supabase = getSupabaseServiceClient();
     const email = requestedEmail || `${employeeCodeInput || crypto.randomUUID()}@pos.local`.toLowerCase();
+
     const { data: existingProfile, error: existingError } = await supabase
       .from("users_profiles")
       .select("id")
@@ -724,18 +727,41 @@ export async function POST(request: Request) {
       .maybeSingle<{ id: string }>();
     if (existingError) return fail("user_lookup_failed", existingError.message, 500);
 
-    const userId = existingProfile?.id ?? crypto.randomUUID();
-    const employeeCode = employeeCodeInput || deriveEmployeeCode(userId);
-    try {
-      const employeeCodeOwner = await findEmployeeCodeOwner({ tenantId: auth.tenantId!, employeeCode });
-      if (employeeCodeOwner && employeeCodeOwner !== userId) {
-        return fail("employee_code_duplicate", "This employee code is already assigned to another POS user.", 409);
+    if (employeeCodeInput) {
+      try {
+        const employeeCodeOwner = await findEmployeeCodeOwner({ tenantId: auth.tenantId!, employeeCode: employeeCodeInput });
+        if (employeeCodeOwner && employeeCodeOwner !== existingProfile?.id) {
+          return fail("employee_code_duplicate", "This employee code is already assigned to another POS user.", 409);
+        }
+      } catch (error) {
+        return fail("employee_code_check_failed", error instanceof Error ? error.message : "Unable to verify employee code.", 500);
       }
-    } catch (error) {
-      return fail("employee_code_check_failed", error instanceof Error ? error.message : "Unable to verify employee code.", 500);
     }
 
-    if (!existingProfile) {
+    let userId = existingProfile?.id ?? "";
+    let createdAuthUserId: string | null = null;
+
+    if (!userId) {
+      const tempPassword = crypto.randomBytes(24).toString("base64url");
+
+      const { data: authUserResult, error: authCreateError } = await supabase.auth.admin.createUser({
+        email,
+        password: tempPassword,
+        email_confirm: true,
+        user_metadata: {
+          full_name: fullName,
+          platform_role: "tenant_user",
+          source: "pos_users"
+        }
+      });
+
+      if (authCreateError || !authUserResult.user?.id) {
+        return fail("auth_user_create_failed", authCreateError?.message ?? "Unable to create Supabase Auth user.", 500);
+      }
+
+      userId = authUserResult.user.id;
+      createdAuthUserId = userId;
+
       const pinHash = role === "staff" ? null : pin ? await bcrypt.hash(pin, 10) : null;
       const { error: insertProfileError } = await supabase.from("users_profiles").insert({
         id: userId,
@@ -745,7 +771,24 @@ export async function POST(request: Request) {
         pin_hash: pinHash,
         is_active: body.is_active ?? true
       });
-      if (insertProfileError) return fail("user_create_failed", insertProfileError.message, 500);
+
+      if (insertProfileError) {
+        await supabase.auth.admin.deleteUser(userId).catch(() => undefined);
+        return fail("user_create_failed", insertProfileError.message, 500);
+      }
+    }
+
+    const employeeCode = employeeCodeInput || deriveEmployeeCode(userId);
+
+    try {
+      const employeeCodeOwner = await findEmployeeCodeOwner({ tenantId: auth.tenantId!, employeeCode });
+      if (employeeCodeOwner && employeeCodeOwner !== userId) {
+        if (createdAuthUserId) await supabase.auth.admin.deleteUser(createdAuthUserId).catch(() => undefined);
+        return fail("employee_code_duplicate", "This employee code is already assigned to another POS user.", 409);
+      }
+    } catch (error) {
+      if (createdAuthUserId) await supabase.auth.admin.deleteUser(createdAuthUserId).catch(() => undefined);
+      return fail("employee_code_check_failed", error instanceof Error ? error.message : "Unable to verify employee code.", 500);
     }
 
     const { error: roleError } = await supabase.from("user_branch_roles").upsert(
@@ -758,11 +801,15 @@ export async function POST(request: Request) {
       },
       { onConflict: "user_id,tenant_id,branch_id" }
     );
-    if (roleError) return fail("user_role_create_failed", roleError.message, 500);
+    if (roleError) {
+      if (createdAuthUserId) await supabase.auth.admin.deleteUser(createdAuthUserId).catch(() => undefined);
+      return fail("user_role_create_failed", roleError.message, 500);
+    }
 
     try {
       await upsertProfileSettings({ tenantId: auth.tenantId!, userId, employeeCode, positionTitle, permissionRole });
     } catch (error) {
+      if (createdAuthUserId) await supabase.auth.admin.deleteUser(createdAuthUserId).catch(() => undefined);
       return fail("pos_user_profile_create_failed", error instanceof Error ? error.message : "Unable to create POS user profile.", 500);
     }
 
@@ -777,6 +824,7 @@ export async function POST(request: Request) {
       { onConflict: "tenant_id,branch_id,user_id" }
     );
     if (scopeWrite.error && !isMissingRelationError(scopeWrite.error, "pos_user_device_scopes")) {
+      if (createdAuthUserId) await supabase.auth.admin.deleteUser(createdAuthUserId).catch(() => undefined);
       return fail("pos_user_scope_create_failed", scopeWrite.error.message, 500);
     }
 
@@ -791,6 +839,7 @@ export async function POST(request: Request) {
         p_granted_by: auth.userId
       });
       if (permissionError) {
+        if (createdAuthUserId) await supabase.auth.admin.deleteUser(createdAuthUserId).catch(() => undefined);
         if (isMissingRpcError(permissionError, "configure_staff_cancel_bill_approval")) {
           return fail("staff_approval_table_missing", "Staff approval permission table is missing. Please run Supabase migrations.", 500);
         }

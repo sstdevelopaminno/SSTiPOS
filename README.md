@@ -718,3 +718,26 @@ Use this section as the current source of truth before changing the Payment Sett
 ### Deployment housekeeping (2026-06-08)
 - Production remains aliased to `https://sstipos-ten.vercel.app`.
 - After the current release is deployed and verified, obsolete Vercel deployments may be removed while retaining the newest active production deployment.
+
+## Critical Handoff: Table QR Order Submit Still Failing (2026-06-08)
+
+### Current status
+- **Code fix added:** the public table QR flow now exposes `can_order` from server-resolved table/session/order state, blocks customer food submits when the bill is already in `pending_payment` or the attached order is not `queued`, and returns a clear `409 table_order_not_available` message instead of the generic submit failure.
+- The table 5 failure with six cart items and THB 225.00 matched a state-dependent failure path: the QR page could still look orderable while the underlying table bill/order was no longer appendable.
+- The API now logs sanitized server-side diagnostics for failed QR submits before converting the response to a public-safe error. Logs include tenant/branch/table/session/order status and item count, but not signed tokens or customer-sensitive payload details.
+- Runtime verification is still required with a newly generated QR for an open, orderable table bill to confirm HTTP `201` and matching `orders`, `order_items`, and `table_qr_orders` rows.
+- Do not start the kitchen order/status feature until customer QR submission succeeds reliably and the created order/items can be verified in the correct tenant, branch, table, and bill session.
+
+### Next debugging steps
+1. Reproduce with a newly generated QR for an open table bill and capture the POST response body/status from `/api/table-order/[token]`.
+2. Verify the happy path inserts `order_items`, updates the existing table order/session, writes `table_qr_orders`, and returns HTTP `201`.
+3. Verify the non-orderable path: move a table bill into `pending_payment`, reload the QR page, confirm food add/submit is blocked, and confirm the API returns `409 table_order_not_available` if POST is attempted directly.
+4. If another generic `table_order_failed` appears, inspect the new `[table-qr-order] submit failed` server log line and then inspect `app.submit_table_qr_order_tx` against active shift, product availability, tax settings, and tenant/branch scope.
+5. Add database-backed integration coverage for both an empty open table bill and an existing queued table order before starting the kitchen order/status feature.
+
+### Relevant files
+- `apps/backoffice-web/src/app/api/table-order/[token]/route.ts`
+- `apps/backoffice-web/src/lib/table-qr-ordering.ts`
+- `supabase/migrations/202606070002_table_qr_ordering.sql`
+- `supabase/migrations/202606080003_table_qr_order_public_rpc_wrapper.sql`
+- `apps/backoffice-web/tests/integration/table-qr-ordering.integration.test.ts`
