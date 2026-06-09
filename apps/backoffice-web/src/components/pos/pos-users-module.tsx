@@ -424,14 +424,14 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
           method: "POST",
           body: JSON.stringify({
             branch_id: form.branch_id,
-            full_name: form.full_name,
-            email: form.email,
-            employee_code: form.employee_code,
-            position_title: form.position_title,
-            permission_role: form.permission_role,
+            full_name: form.full_name.trim(),
+            email: form.email.trim().toLowerCase(),
+            employee_code: form.employee_code.trim().toUpperCase(),
+            position_title: form.position_title.trim(),
+            permission_role: form.permission_role.trim(),
             role: form.role,
-            pin: form.pin,
-            approval_pin: form.approval_pin,
+            pin: form.pin.trim(),
+            approval_pin: form.approval_pin.trim(),
             can_approve_cancel_bill: form.can_approve_cancel_bill,
             is_active: form.is_active,
             scope_mode: form.scope_mode,
@@ -445,13 +445,13 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
             action: "update_profile",
             user_id: form.user_id,
             branch_id: form.branch_id,
-            full_name: form.full_name,
-            email: form.email,
-            employee_code: form.employee_code,
-            position_title: form.position_title,
-            permission_role: form.permission_role,
+            full_name: form.full_name.trim(),
+            email: form.email.trim().toLowerCase(),
+            employee_code: form.employee_code.trim().toUpperCase(),
+            position_title: form.position_title.trim(),
+            permission_role: form.permission_role.trim(),
             role: form.role,
-            approval_pin: form.approval_pin,
+            approval_pin: form.approval_pin.trim(),
           }),
         });
         await requestJson("/api/pos/users", {
@@ -477,8 +477,8 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
               user_id: form.user_id,
               branch_id: form.branch_id,
               is_enabled: form.can_approve_cancel_bill,
-              pin: form.pin,
-              approval_pin: form.approval_pin,
+              pin: form.pin.trim(),
+              approval_pin: form.approval_pin.trim(),
             }),
           });
         } else if (form.role !== "staff" && form.pin.trim()) {
@@ -488,15 +488,14 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
               action: "set_pin",
               user_id: form.user_id,
               branch_id: form.branch_id,
-              pin: form.pin,
-              approval_pin: form.approval_pin,
+              pin: form.pin.trim(),
+              approval_pin: form.approval_pin.trim(),
             }),
           });
         }
       }
       setForm(null);
       await loadUsers();
-      setSaving(false);
       setAlertDialog({
         tone: "success",
         title: t.saveSuccessTitle,
@@ -505,7 +504,6 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
     } catch (nextError) {
       const message = nextError instanceof Error ? nextError.message : t.saveError;
       setError(message);
-      setSaving(false);
       setAlertDialog({
         tone: "error",
         title: t.saveErrorTitle,
@@ -886,7 +884,7 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
                 {t.cancel}
               </button>
               <button type="button" onClick={() => void saveForm()} disabled={saving} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
-                {saving ? "Saving..." : t.save}
+                {saving ? (lang === "en" ? "Saving..." : "กำลังบันทึก...") : t.save}
               </button>
             </div>
           </div>
