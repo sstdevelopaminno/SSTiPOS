@@ -323,3 +323,4 @@ All security invariants regarding tenant/branch/device/role scoping remain **str
 - Customer QR submit succeeded and returned a DIN-QR bill number.
 - Submitted QR customer items appeared back in the correct POS table cart/order.
 - pnpm build passed locally.
+

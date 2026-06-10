@@ -852,3 +852,63 @@ Do not bypass Supabase Auth and do not generate standalone UUIDs for `users_prof
 - Customer QR submit succeeded and returned a DIN-QR bill number.
 - Submitted QR customer items appeared back in the correct POS table cart/order.
 - pnpm build passed locally.
+
+## POS Seed / Employee Login / Feature Gate Fix (2026-06-10)
+
+### Summary
+Seeded initial production-ready test tenants, branches, employee access, login policies, devices, and POS sales feature gates for the SST iPOS system.
+
+### Tenants and branches
+- NDL-TH-001
+  - NDL-ONNUT-01: อ่อนนุช
+  - NDL-PHET-02: ถนนเพชรบุรี
+- BBQ-TH-002
+  - BBQ-BKK-01: หมูอ้วนเย็นตาโฟ
+
+### Employee access
+- NDL-TH-001 / อ่อนนุช
+  - employee_code: sst182536
+  - role: owner
+  - position: เจ้าของร้าน
+  - PIN: 182536
+- NDL-TH-001 / ถนนเพชรบุรี
+  - employee_code: NTI-225569
+  - role: manager
+  - position: ผู้จัดการร้าน
+  - PIN: 503202
+- BBQ-TH-002 / หมูอ้วนเย็นตาโฟ
+  - employee_code: Kk112233
+  - role: owner
+  - position: เจ้าของร้าน
+  - PIN: 123456
+
+### Login policies
+All target branches have:
+- allow_pin_login = true
+- allow_staff_card_login = true
+- require_registered_device = false
+
+### POS devices
+- BBQ-BKK-01: BBQ-BKK-POS-01
+- NDL-ONNUT-01: NDL-ONNUT-POS-01
+- NDL-PHET-02: NDL-PHET-POS-01
+
+### Feature gates enabled per branch
+Each target branch has 8 enabled feature overrides:
+- pos.sales.access
+- pos.shift.open
+- pos.device.override_in_use
+- pos.sales.refund
+- pos.sales.discount
+- pos.sales.void
+- pos.reports.view
+- staff_card_login
+
+### Code fix
+Updated employee-code verification so `/api/auth/employee/verify-code` checks branch login policy directly instead of being blocked by package feature gate during pre-entry employee verification.
+
+### Verification
+- Employee-code verification now passes.
+- Branch login policies are enabled.
+- POS sales feature overrides are enabled for all 3 branches.
+- Next test target: open POS cashier session from Vercel production.
