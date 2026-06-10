@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 
 type QrData = {
@@ -16,12 +16,82 @@ type QrData = {
 
 type ApiResponse = {
   data?: QrData;
-  error?: { message?: string };
+  error?: {
+    code?: string;
+    message?: string;
+  };
 };
 
+type BluetoothPrintResponse = {
+  data?: {
+    ok?: boolean;
+    data?: {
+      fallback_to_browser_print?: boolean;
+    };
+  };
+  error?: {
+    code?: string;
+    message?: string;
+  };
+};
+
+const QR_CREATE_TIMEOUT_MS = 15000;
+const QR_PRINT_TIMEOUT_MS = 15000;
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case "\"":
+        return "&quot;";
+      case "'":
+        return "&#039;";
+      default:
+        return char;
+    }
+  });
+}
+
+function getPublicErrorMessage(payload: ApiResponse | BluetoothPrintResponse | null, fallback: string) {
+  const message = payload?.error?.message;
+  return typeof message === "string" && message.trim() ? message.trim() : fallback;
+}
+
+async function readJson<T>(response: Response): Promise<T | null> {
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchJsonWithTimeout<T>(url: string, init: RequestInit, timeoutMs: number): Promise<{ response: Response; body: T | null }> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal
+    });
+    const body = await readJson<T>(response);
+    return { response, body };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 function buildPrintHtml(data: QrData) {
-  const safeTable = data.table_code.replace(/[<>&"']/g, "");
-  const safeUrl = data.order_url.replace(/[<>&"']/g, "");
+  const safeTable = escapeHtml(data.table_code);
+  const safeTableName = data.table_name ? escapeHtml(data.table_name) : "";
+  const safeUrl = escapeHtml(data.order_url);
+  const safeQrDataUrl = escapeHtml(data.qr_data_url);
+
   return `<!doctype html>
 <html lang="th">
 <head>
@@ -46,9 +116,9 @@ img{display:block;width:46mm;height:46mm;object-fit:contain;margin:2mm auto}
 <p>สแกน QR เพื่อสั่งอาหาร</p>
 <div class="line"></div>
 <p class="table">โต๊ะ ${safeTable}</p>
-${data.table_name ? `<p>${data.table_name.replace(/[<>&"']/g, "")}</p>` : ""}
+${safeTableName ? `<p>${safeTableName}</p>` : ""}
 <div class="line"></div>
-<img src="${data.qr_data_url}" alt="QR สั่งอาหารโต๊ะ ${safeTable}">
+<img src="${safeQrDataUrl}" alt="QR สั่งอาหารโต๊ะ ${safeTable}">
 <p>กรุณาสแกน QR เพื่อเลือกเมนูอาหาร</p>
 <p class="url">${safeUrl}</p>
 <div class="line"></div>
@@ -76,62 +146,138 @@ export function TableQrOrderModal({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const displayTableCode = useMemo(() => data?.table_code ?? tableCode ?? "-", [data?.table_code, tableCode]);
+
   useEffect(() => {
-    if (!open || !tableId) return;
+    if (!open) {
+      setData(null);
+      setError(null);
+      setCopied(false);
+      setLoading(false);
+      setPrinting(false);
+      onBusyChange?.(false);
+      return;
+    }
+
+    if (!tableId) {
+      setData(null);
+      setError("ไม่พบรหัสโต๊ะ กรุณาเลือกโต๊ะใหม่อีกครั้ง");
+      setLoading(false);
+      onBusyChange?.(false);
+      return;
+    }
+
     const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), QR_CREATE_TIMEOUT_MS);
+
     setLoading(true);
     setError(null);
+    setCopied(false);
     setData(null);
     onBusyChange?.(true);
-    void fetch(`/api/pos/tables/${tableId}/qr-order`, {
+
+    void fetch(`/api/pos/tables/${encodeURIComponent(tableId)}/qr-order`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
       signal: controller.signal
     })
       .then(async (response) => {
-        const body = (await response.json()) as ApiResponse;
-        if (!response.ok || !body.data) throw new Error(body.error?.message || "สร้าง QR ไม่สำเร็จ");
+        const body = (await readJson<ApiResponse>(response)) ?? {};
+
+        if (!response.ok || !body.data) {
+          console.error("[table-qr-modal] create QR failed", {
+            status: response.status,
+            code: body.error?.code,
+            message: body.error?.message,
+            tableId
+          });
+
+          throw new Error(getPublicErrorMessage(body, "สร้าง QR ไม่สำเร็จ"));
+        }
+
         setData(body.data);
       })
       .catch((loadError) => {
-        if ((loadError as { name?: string }).name !== "AbortError") {
-          setError(loadError instanceof Error ? loadError.message : "สร้าง QR ไม่สำเร็จ");
+        if ((loadError as { name?: string }).name === "AbortError") {
+          setError("สร้าง QR ไม่สำเร็จ เนื่องจากระบบใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้ง");
+          return;
         }
+
+        setError(loadError instanceof Error ? loadError.message : "สร้าง QR ไม่สำเร็จ");
       })
       .finally(() => {
+        window.clearTimeout(timeout);
         setLoading(false);
         onBusyChange?.(false);
       });
-    return () => controller.abort();
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+      onBusyChange?.(false);
+    };
   }, [onBusyChange, open, tableId]);
 
-  if (!open) return null;
+  const copyLink = useCallback(async () => {
+    if (!data) return;
 
-  async function printQr() {
+    setError(null);
+
+    try {
+      await navigator.clipboard.writeText(data.order_url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError("คัดลอกลิงก์ไม่สำเร็จ กรุณาคัดลอกลิงก์จากหน้าพิมพ์หรือเปิดลิงก์ใหม่อีกครั้ง");
+    }
+  }, [data]);
+
+  const printQr = useCallback(async () => {
     if (!data || printing) return;
+
     setPrinting(true);
     setError(null);
+
     const html = buildPrintHtml(data);
     const printWindow = window.open("", "_blank", "width=420,height=720");
+
     if (printWindow) {
-      printWindow.document.write("<p style=\"font-family:Arial;padding:24px\">กำลังเตรียมพิมพ์ QR...</p>");
+      printWindow.document.write('<p style="font-family:Arial;padding:24px">กำลังเตรียมพิมพ์ QR...</p>');
     }
+
     try {
-      const response = await fetch("/api/pos/receipts/bluetooth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order_no: `TABLE-${data.table_code}-QR`, receipt_html: html })
-      });
-      const body = (await response.json().catch(() => null)) as {
-        data?: { ok?: boolean; data?: { fallback_to_browser_print?: boolean } };
-      } | null;
+      const { response, body } = await fetchJsonWithTimeout<BluetoothPrintResponse>(
+        "/api/pos/receipts/bluetooth",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            order_no: `TABLE-${data.table_code}-QR`,
+            receipt_html: html
+          })
+        },
+        QR_PRINT_TIMEOUT_MS
+      );
+
       if (response.ok && body?.data?.ok === true && body.data.data?.fallback_to_browser_print !== true) {
         printWindow?.close();
         return;
       }
-    } catch {
-      // Browser print remains available when no Bluetooth bridge is configured.
+
+      if (!response.ok) {
+        console.error("[table-qr-modal] bluetooth print failed", {
+          status: response.status,
+          code: body?.error?.code,
+          message: body?.error?.message,
+          tableId: data.table_id,
+          qrSessionId: data.qr_session_id
+        });
+      }
+    } catch (printError) {
+      if ((printError as { name?: string }).name !== "AbortError") {
+        console.warn("[table-qr-modal] bluetooth print unavailable; using browser print fallback");
+      }
     } finally {
       setPrinting(false);
     }
@@ -140,6 +286,7 @@ export function TableQrOrderModal({
       setError("เบราว์เซอร์ปิดกั้นหน้าพิมพ์ กรุณาอนุญาต Pop-up");
       return;
     }
+
     printWindow.document.open();
     printWindow.document.write(html);
     printWindow.document.close();
@@ -147,14 +294,9 @@ export function TableQrOrderModal({
       printWindow.focus();
       printWindow.print();
     };
-  }
+  }, [data, printing]);
 
-  async function copyLink() {
-    if (!data) return;
-    await navigator.clipboard.writeText(data.order_url);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
-  }
+  if (!open) return null;
 
   return (
     <div className="posui-modal-backdrop" role="presentation">
@@ -162,7 +304,7 @@ export function TableQrOrderModal({
         <header className="posui-modal__header">
           <div>
             <h2 id="table-qr-title">QR สแกนสั่งอาหาร</h2>
-            <p>โต๊ะ {tableCode ?? "-"}</p>
+            <p>โต๊ะ {displayTableCode}</p>
           </div>
           <button type="button" className="posui-btn" onClick={onClose} disabled={loading || printing} aria-label="ปิดหน้าต่าง QR">
             ปิด
@@ -196,12 +338,12 @@ export function TableQrOrderModal({
                 />
                 <span>สแกนเพื่อเลือกเมนูอาหาร</span>
               </div>
-              <p className="posui-table-qr-modal__expiry">
-                ลิงก์จะหมดอายุเมื่อชำระเงินหรือปิดบิลโต๊ะ
-              </p>
+              <p className="posui-table-qr-modal__expiry">ลิงก์จะหมดอายุเมื่อชำระเงินหรือปิดบิลโต๊ะ</p>
               {error ? <p className="posui-table-qr-modal__error">{error}</p> : null}
               <div className="posui-table-qr-modal__actions">
-                <button type="button" className="posui-btn" onClick={copyLink}>{copied ? "คัดลอกแล้ว" : "คัดลอกลิงก์"}</button>
+                <button type="button" className="posui-btn" onClick={copyLink} disabled={printing}>
+                  {copied ? "คัดลอกแล้ว" : "คัดลอกลิงก์"}
+                </button>
                 <button type="button" className="posui-btn posui-btn--primary" onClick={printQr} disabled={printing}>
                   {printing ? "กำลังพิมพ์..." : "พิมพ์ QR 58mm"}
                 </button>

@@ -829,3 +829,26 @@ pnpm build
 Before changing POS Users again, read this handoff first. Preserve the Auth/profile creation rule:
 `create/reuse auth user -> use auth.users.id -> write users_profiles/user_branch_roles/pos_user_profiles`.
 Do not bypass Supabase Auth and do not generate standalone UUIDs for `users_profiles.id`.
+
+## Table QR Customer Order Submit Fix (2026-06-10)
+
+### What changed
+- Fixed customer QR table ordering submit failure.
+- Public customer QR submit now reaches the backend transaction and can insert customer items into the active dine-in table order.
+- Fixed Supabase RPC error: `column reference "table_id" is ambiguous`.
+- The RPC now qualifies `table_bill_sessions.table_id = v_qr.table_id`.
+- Customer submit payload was normalized to send only server-safe fields: `request_id`, `items.product_id`, and numeric `quantity`.
+- Client totals/prices remain display-only. Server/database totals remain authoritative.
+- The POS shift close reminder was restored to its original behavior: `ต่อกะ` closes the old shift and opens the next shift, and still shows the override error when the shift cannot be closed.
+
+### Files changed
+- apps/backoffice-web/src/app/api/table-order/[token]/route.ts
+- apps/backoffice-web/src/components/table-order/table-order-mobile.tsx
+- apps/backoffice-web/src/components/pos/table-qr-order-modal.tsx
+- apps/backoffice-web/src/components/pos/pos-shift-cycle-guard.tsx
+- supabase/migrations/202606100001_fix_table_qr_order_tx_table_id_ambiguity.sql
+
+### Verification
+- Customer QR submit succeeded and returned a DIN-QR bill number.
+- Submitted QR customer items appeared back in the correct POS table cart/order.
+- pnpm build passed locally.
