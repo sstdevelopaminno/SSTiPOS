@@ -33,6 +33,12 @@ type UserDeviceScopeRow = {
   device_id: string | null;
 };
 
+type BranchFeatureOverrideRow = {
+  enabled: boolean | null;
+};
+
+type SupabaseServiceClient = ReturnType<typeof getSupabaseServiceClient>;
+
 function isMissingRelationError(error: { code?: string | null; message?: string | null } | null | undefined, relationName: string) {
   if (!error) return false;
   const code = String(error.code ?? "");
@@ -73,7 +79,49 @@ function pickNewestActiveSession(rows: Array<ActiveSessionRow | null | undefined
 
 const POS_SALES_FEATURE_KEYS = ["pos.sales.access", "pos_sales", "core_pos_sales"] as const;
 
-async function hasAnyPosSalesFeature(tenantId: string, branchId: string) {
+function isMissingBranchFeatureOverrideError(error: { code?: string | null; message?: string | null } | null | undefined) {
+  if (!error) return false;
+  const code = String(error.code ?? "");
+  const message = String(error.message ?? "").toLowerCase();
+  return code === "42P01" || message.includes("branch_feature_overrides") || message.includes("does not exist");
+}
+
+async function readBranchFeatureOverride(
+  supabase: SupabaseServiceClient,
+  tenantId: string,
+  branchId: string,
+  featureKey: string
+): Promise<boolean | null> {
+  const { data, error } = await supabase
+    .from("branch_feature_overrides")
+    .select("enabled")
+    .eq("tenant_id", tenantId)
+    .eq("branch_id", branchId)
+    .eq("feature_key", featureKey)
+    .maybeSingle<BranchFeatureOverrideRow>();
+
+  if (error) {
+    if (isMissingBranchFeatureOverrideError(error)) return null;
+
+    console.error("[auth/devices/select] branch feature override lookup failed", {
+      tenantId,
+      branchId,
+      featureKey,
+      error: error.message
+    });
+    return null;
+  }
+
+  if (!data) return null;
+  return Boolean(data.enabled);
+}
+
+async function hasAnyPosSalesFeature(supabase: SupabaseServiceClient, tenantId: string, branchId: string) {
+  for (const featureKey of POS_SALES_FEATURE_KEYS) {
+    const directOverrideEnabled = await readBranchFeatureOverride(supabase, tenantId, branchId, featureKey);
+    if (directOverrideEnabled === true) return true;
+  }
+
   for (const featureKey of POS_SALES_FEATURE_KEYS) {
     try {
       const enabled = await hasBranchFeatureSafe(tenantId, branchId, featureKey);
@@ -123,7 +171,7 @@ export async function POST(request: Request) {
 
     const [posSalesEnabled, deviceQuery, employee] = await withAuthTimeout(
       Promise.all([
-        hasAnyPosSalesFeature(flow.tenantId, flow.branchId),
+        hasAnyPosSalesFeature(supabase, flow.tenantId, flow.branchId),
         supabase
           .from("branch_devices")
           .select("id,device_code,device_name,status")
