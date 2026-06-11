@@ -18,6 +18,7 @@ const nav = [
   { href: "/pos/payments", key: "pos_payments" },
   { href: "/pos/monitor", key: "pos_monitor" },
   { href: "/pos/customer-display", key: "pos_customer_display" },
+  { href: "/preview/pos/packages", key: "pos_menu_packages" },
   { href: "/settings/tables", key: "tables" },
   { href: "/backoffice/settings/printers", key: "printers_settings" },
   { href: "/settings/language", key: "common_settings" }

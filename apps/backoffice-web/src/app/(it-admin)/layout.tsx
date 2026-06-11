@@ -7,7 +7,7 @@ const nav = [
   { href: "/it-admin/tenants", key: "tenants" },
   { href: "/tenants", key: "tenants" },
   { href: "/audit-logs", key: "audit_report" },
-  { href: "/it-admin/packages", key: "packages" },
+  { href: "/it-admin/packages", key: "it_admin_packages" },
   { href: "/it-admin/customer-display", key: "customer_display_devices" },
   { href: "/it-admin/platform-users", key: "platform_users" },
   { href: "/it-admin/monitoring", key: "monitoring" },

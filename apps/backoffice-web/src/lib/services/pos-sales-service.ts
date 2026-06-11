@@ -139,11 +139,9 @@ function buildOrderNo(orderType: OrderType) {
 const POS_ALLOW_NEGATIVE_STOCK_FALLBACK =
   process.env.POS_ALLOW_NEGATIVE_STOCK === "1" || process.env.POS_ALLOW_NEGATIVE_STOCK?.toLowerCase() === "true";
 const POS_SOFT_BYPASS_INSUFFICIENT_STOCK =
-  process.env.POS_SOFT_BYPASS_INSUFFICIENT_STOCK === undefined ||
   process.env.POS_SOFT_BYPASS_INSUFFICIENT_STOCK === "1" ||
   process.env.POS_SOFT_BYPASS_INSUFFICIENT_STOCK?.toLowerCase() === "true";
 const POS_FORCE_DIRECT_CREATE_NON_DELIVERY =
-  process.env.POS_FORCE_DIRECT_CREATE_NON_DELIVERY === undefined ||
   process.env.POS_FORCE_DIRECT_CREATE_NON_DELIVERY === "1" ||
   process.env.POS_FORCE_DIRECT_CREATE_NON_DELIVERY?.toLowerCase() === "true";
 

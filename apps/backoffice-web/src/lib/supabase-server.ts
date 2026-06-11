@@ -1,11 +1,11 @@
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
-import { readRequiredEnv } from "@/lib/env";
+import { getPrimarySupabaseAnonKey, getPrimarySupabaseUrl } from "@/lib/server/db/primary";
 
 export async function getSupabaseServerClient() {
   const cookieStore = await cookies();
-  const url = readRequiredEnv("NEXT_PUBLIC_SUPABASE_URL", "Missing Supabase public environment variables.");
-  const anonKey = readRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "Missing Supabase public environment variables.");
+  const url = getPrimarySupabaseUrl();
+  const anonKey = getPrimarySupabaseAnonKey();
 
   return createServerClient(
     url,

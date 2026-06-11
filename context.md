@@ -158,6 +158,26 @@ Primary architectural goals:
 4. Consumed/expired context must be rejected (replay blocked).
 5. Service role keys are server-only; never expose to client bundles.
 6. Sensitive queries must stay tenant-scoped and branch-scoped.
+
+## 3.1) Supabase Primary/Archive Migration Prep (2026-06-12)
+
+- Current active primary DB: existing POS-Preview in `ap-south-1` / Mumbai.
+- Singapore primary DB: pending until Supabase plan/project creation is available.
+- Target future primary production DB: new Supabase project in `ap-southeast-1` / Singapore.
+- Future legacy DB after cutover: existing POS-Preview in `ap-south-1` / Mumbai, kept as archive/rollback source only.
+- New env structure:
+  - `SUPABASE_PRIMARY_URL`
+  - `SUPABASE_PRIMARY_ANON_KEY`
+  - `SUPABASE_PRIMARY_SERVICE_ROLE_KEY`
+  - `SUPABASE_ARCHIVE_URL`
+  - `SUPABASE_ARCHIVE_SERVICE_ROLE_KEY`
+  - `HOT_DATA_RETENTION_MONTHS=12`
+  - `ENABLE_ARCHIVE_READS=false`
+  - `ENABLE_DUAL_DB_MODE=false`
+- Existing `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` remain the active database config for now and are also temporary fallback names during transition.
+- `getSupabaseServiceClient()` now routes through the primary DB client layer.
+- All active writes must remain on the configured primary DB. Archive DB is read-only from application design and disabled by default.
+- Migration plan: `docs/supabase-singapore-primary-migration-plan.md`.
 7. Feature gates must be enforced server-side, not UI-only.
 8. Shift gate must block sales APIs without active shift.
 9. Audit logs must exist for sensitive auth/admin/sales/attendance actions.
@@ -452,3 +472,28 @@ ORDER BY p.name;
 * If orders and items exist but `recipe_lines = 0`, repair product recipe/stock bridge setup.
 * If `recipe_lines > 0` but no `stock_movements`, debug the stock deduction execution path in `pos-sales-service`.
 * If `stock_movements` exists but UI stock does not change, debug stock UI refresh/cache.
+
+## POS Order Stock Path Stability Fix (2026-06-11)
+
+### What changed
+- The default POS sales creation path now prefers the transactional RPC path instead of direct JavaScript fallback for non-delivery orders.
+- Insufficient-stock failures no longer soft-bypass by default.
+
+### Root cause
+- `POS_FORCE_DIRECT_CREATE_NON_DELIVERY` and `POS_SOFT_BYPASS_INSUFFICIENT_STOCK` treated unset env vars as enabled.
+- That could create orders through the fallback path and bypass stock deduction failures unless explicitly disabled.
+
+### Files changed
+- `apps/backoffice-web/src/lib/services/pos-sales-service.ts`
+- `docs/codex-token-saving-workflow.md`
+- `docs/current-stability-audit.md`
+- `context.md`
+
+### Verification
+- `npm run typecheck` was attempted but blocked because `npm` is unavailable in the current shell PATH.
+- `corepack pnpm --filter backoffice-web typecheck` was attempted but blocked because `corepack` is unavailable in the current shell PATH.
+- `npm run lint` was blocked by the same missing Node/npm/corepack environment.
+
+### Remaining risk
+- Re-run typecheck, lint, and focused POS manual QA after Node/npm/corepack are available in the shell.
+- Current status: Improved, but not yet 100% production complete.

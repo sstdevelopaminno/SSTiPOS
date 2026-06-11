@@ -4222,18 +4222,26 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   function sendPendingDeliveryBill(heldBill: HeldBill) { queueDeliveryPendingAction(heldBill, "send", async (entry) => { await sendPendingDeliveryBillNow(entry); }); }
 
   const addToCart = useCallback((product: ProductRow) => {
-    const unitPrice = getProductPriceForCurrentMode(product);
+    const productId = String(product.id ?? "").trim();
+    if (!productId) {
+      return;
+    }
+    const productName = String(product.name ?? productId).trim() || productId;
+    const unitPrice = Number(getProductPriceForCurrentMode(product));
+    if (process.env.NODE_ENV !== "production") {
+      console.info("[pos-sales] addToCart", { productId: product.id, name: product.name, orderType, quickMode, cartLength: cart.length });
+    }
     setCart((current) => {
-      const index = current.findIndex((row) => row.product_id === product.id);
+      const index = current.findIndex((row) => row.product_id === productId);
       if (index >= 0) {
         const next = [...current];
         const entry = next[index];
         next[index] = { ...entry, quantity: entry.quantity + 1, price: unitPrice };
         return next;
       }
-      return [...current, { product_id: product.id, name: product.name, quantity: 1, price: unitPrice }];
+      return [...current, { product_id: productId, name: productName, quantity: 1, price: unitPrice }];
     });
-  }, [getProductPriceForCurrentMode]);
+  }, [cart.length, getProductPriceForCurrentMode, orderType, quickMode]);
 
   function removeFromCart(productId: string) {
     setCart((current) => current.filter((row) => row.product_id !== productId));
