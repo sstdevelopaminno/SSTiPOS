@@ -71,6 +71,26 @@ function pickNewestActiveSession(rows: Array<ActiveSessionRow | null | undefined
     .sort((a, b) => new Date(b.issued_at).getTime() - new Date(a.issued_at).getTime())[0] ?? null;
 }
 
+const POS_SALES_FEATURE_KEYS = ["pos.sales.access", "pos_sales", "core_pos_sales"] as const;
+
+async function hasAnyPosSalesFeature(tenantId: string, branchId: string) {
+  for (const featureKey of POS_SALES_FEATURE_KEYS) {
+    try {
+      const enabled = await hasBranchFeatureSafe(tenantId, branchId, featureKey);
+      if (enabled) return true;
+    } catch (error) {
+      console.error("[auth/devices/select] POS sales feature lookup failed", {
+        tenantId,
+        branchId,
+        featureKey,
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  }
+
+  return false;
+}
+
 export async function POST(request: Request) {
   const startedAt = Date.now();
   const timedJsonError = (status: number, code: string, message: string) =>
@@ -101,9 +121,9 @@ export async function POST(request: Request) {
   try {
     const supabase = getSupabaseServiceClient();
 
-    const [coreSalesEnabled, deviceQuery, employee] = await withAuthTimeout(
+    const [posSalesEnabled, deviceQuery, employee] = await withAuthTimeout(
       Promise.all([
-        hasBranchFeatureSafe(flow.tenantId, flow.branchId, "core_pos_sales"),
+        hasAnyPosSalesFeature(flow.tenantId, flow.branchId),
         supabase
           .from("branch_devices")
           .select("id,device_code,device_name,status")
@@ -120,7 +140,7 @@ export async function POST(request: Request) {
       "device_select_core_lookup_timeout"
     );
 
-    if (!coreSalesEnabled) {
+    if (!posSalesEnabled) {
       return timedJsonError(403, "feature_not_enabled", "แพ็กเกจปัจจุบันยังไม่รองรับการเข้าใช้งานหน้าขาย");
     }
     if (!employee) {
