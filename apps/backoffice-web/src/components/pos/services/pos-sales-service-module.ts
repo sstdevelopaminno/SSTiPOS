@@ -261,7 +261,7 @@ export async function submitOrderWithEffects(args: {
       },
       body: JSON.stringify(sanitizedPayload)
     },
-    15000,
+    25000,
     0
   );
 

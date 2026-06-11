@@ -144,6 +144,9 @@ const POS_SOFT_BYPASS_INSUFFICIENT_STOCK =
 const POS_FORCE_DIRECT_CREATE_NON_DELIVERY =
   process.env.POS_FORCE_DIRECT_CREATE_NON_DELIVERY === "1" ||
   process.env.POS_FORCE_DIRECT_CREATE_NON_DELIVERY?.toLowerCase() === "true";
+const POS_PREFER_RPC_ORDER_CREATE =
+  process.env.POS_PREFER_RPC_ORDER_CREATE === "1" ||
+  process.env.POS_PREFER_RPC_ORDER_CREATE?.toLowerCase() === "true";
 
 function isMissingTableErrorMessage(message: string) {
   const normalized = message.toLowerCase();
@@ -159,7 +162,7 @@ function shouldSoftBypassInsufficientStock(orderType: OrderType) {
 }
 
 function shouldPreferDirectCreatePath(orderType: OrderType) {
-  return POS_FORCE_DIRECT_CREATE_NON_DELIVERY && orderType !== "delivery_manual";
+  return (POS_FORCE_DIRECT_CREATE_NON_DELIVERY || !POS_PREFER_RPC_ORDER_CREATE) && orderType !== "delivery_manual";
 }
 
 async function resolveAllowNegativeStock(auth: AuthContext) {

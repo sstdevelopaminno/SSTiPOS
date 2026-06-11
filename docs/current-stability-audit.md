@@ -106,3 +106,43 @@ No new blocking code-level regression was found in the focused POS sales static 
 ## Next Recommended Task
 
 Before GitHub/Vercel deploy, run one manual POS smoke test on `/preview/pos` using the current Supabase DB, then commit and deploy if the order/payment/receipt flow passes.
+
+---
+
+Date: 2026-06-12
+
+## Issue Fixed
+
+Production POS could stay on the `กำลังสร้างออเดอร์ POS` overlay after pressing `สร้างออเดอร์ POS`, so the takeaway bill did not open reliably. The same order creation path is shared by dine-in bill creation and delivery send.
+
+## Root Cause
+
+The latest stability patch made the RPC order transaction path the default for non-delivery sales. On the current POS-Preview/Mumbai database, the RPC path can be unavailable, slow, or incompatible, and the client order submit timeout was the same 15 second duration as the server transaction timeout. That combination could make the UI wait too long or abort before a clear response.
+
+## Files Changed
+
+- `apps/backoffice-web/src/lib/services/pos-sales-service.ts`
+- `apps/backoffice-web/src/components/pos/services/pos-sales-service-module.ts`
+- `apps/backoffice-web/.env.example`
+- `docs/current-stability-audit.md`
+
+## Fix Summary
+
+- Restored direct order creation as the default path for non-delivery POS sales.
+- Added `POS_PREFER_RPC_ORDER_CREATE=1` as the explicit opt-in for RPC-first order creation later.
+- Kept `POS_FORCE_DIRECT_CREATE_NON_DELIVERY` as an explicit direct-path override.
+- Increased client `/api/pos/sales` timeout to 25 seconds so the browser waits longer than the server transaction timeout.
+- Kept server-side tenant, branch, shift, product, table, and stock checks.
+
+## Verification
+
+- Targeted POS sales ESLint: pass
+- Typecheck: pass
+- Integration tests: pass, 22 files / 54 tests
+- Build: pass
+
+## Remaining Risks
+
+- Direct order creation is less atomic than the RPC transaction path, but it is compatible with the current production DB and prevents the create-order UI from hanging on unavailable/slow RPC.
+- Delivery send still uses the existing delivery flow and should be smoke-tested.
+- Manual smoke test is still required after deployment.
