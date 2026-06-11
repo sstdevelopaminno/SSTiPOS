@@ -42,12 +42,12 @@ type PendingSubmit = {
     external_order_code?: string;
     notes?: string;
     app_total_amount: number;
-  discount_amount?: number;
-  gp_amount?: number;
-  tax_total?: number;
-  grand_total?: number;
-  tax_lines?: Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>;
-  items: Array<{ product_id: string; quantity: number; unit_price?: number }>;
+    discount_amount?: number;
+    gp_amount?: number;
+    tax_total?: number;
+    grand_total?: number;
+    tax_lines?: Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>;
+    items: Array<{ product_id: string; quantity: number; unit_price?: number }>;
   };
 };
 
@@ -124,6 +124,100 @@ function toErrorMessage(error: unknown, fallback = "Unknown error"): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+function toSafeNumber(value: unknown, fallback = 0): number {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : fallback;
+}
+
+function isOrderType(value: string): value is OrderType {
+  return value === "dine_in" || value === "takeaway" || value === "delivery_manual";
+}
+
+function normalizeApiError(response: Response, body: ApiErrorBody, fallback = "Submit failed."): Error {
+  const code = String(body.error?.code ?? "").trim();
+  const message = String(body.error?.message ?? "").trim() || fallback;
+  const statusText = response.status ? `HTTP ${response.status}` : "";
+  const parts = [code, statusText, message].filter(Boolean);
+  return new Error(parts.join(": "));
+}
+
+function validatePendingSubmitPayload(payload: PendingSubmit): void {
+  const data = payload.payload;
+  const idempotencyKey = String(payload.idempotencyKey ?? "").trim();
+
+  if (!idempotencyKey) {
+    throw new Error("missing_idempotency_key: Cannot submit POS sale without an idempotency key.");
+  }
+  if (!String(data.shift_id ?? "").trim()) {
+    throw new Error("missing_shift_id: Open shift is required before creating POS sale.");
+  }
+  if (!isOrderType(data.order_type)) {
+    throw new Error("invalid_order_type: Unsupported POS order type.");
+  }
+  if (data.order_type === "dine_in" && !String(data.table_id ?? "").trim()) {
+    throw new Error("table_required: A dine-in bill requires an opened table bill session.");
+  }
+  if (!Array.isArray(data.items) || data.items.length === 0) {
+    throw new Error("invalid_items: Add at least one item before creating a POS bill.");
+  }
+
+  for (const item of data.items) {
+    if (!String(item.product_id ?? "").trim()) {
+      throw new Error("invalid_items: Every POS bill item must have product_id.");
+    }
+    const quantity = Number(item.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      throw new Error("invalid_quantity: Every POS bill item quantity must be greater than zero.");
+    }
+    if (item.unit_price !== undefined) {
+      const unitPrice = Number(item.unit_price);
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        throw new Error("invalid_unit_price: Every POS bill item unit_price must be zero or greater.");
+      }
+    }
+  }
+}
+
+function buildSanitizedOrderSubmitPayload(payload: PendingSubmit["payload"]): PendingSubmit["payload"] {
+  return {
+    ...payload,
+    shift_id: String(payload.shift_id ?? "").trim(),
+    order_type: payload.order_type,
+    channel: String(payload.channel ?? "").trim() || (payload.order_type === "takeaway" ? "walk_home" : "storefront"),
+    table_id: payload.order_type === "dine_in" ? String(payload.table_id ?? "").trim() : undefined,
+    customer_name: payload.customer_name?.trim() || undefined,
+    external_order_code: payload.external_order_code?.trim() || undefined,
+    notes: payload.notes?.trim() || undefined,
+    app_total_amount: toSafeNumber(payload.app_total_amount, 0),
+    discount_amount: toSafeNumber(payload.discount_amount, 0),
+    gp_amount: toSafeNumber(payload.gp_amount, 0),
+    tax_total: payload.tax_total === undefined ? undefined : toSafeNumber(payload.tax_total, 0),
+    grand_total: payload.grand_total === undefined ? undefined : toSafeNumber(payload.grand_total, 0),
+    tax_lines: Array.isArray(payload.tax_lines) ? payload.tax_lines : undefined,
+    items: payload.items.map((item) => ({
+      product_id: String(item.product_id ?? "").trim(),
+      quantity: Number(item.quantity),
+      unit_price: item.unit_price === undefined ? undefined : toSafeNumber(item.unit_price, 0)
+    }))
+  };
+}
+
+function emitOrderCreatedEvent(order: ActiveOrder): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("pos:sales:order-created", {
+      detail: {
+        order_id: order.id,
+        order_no: order.order_no,
+        status: order.status,
+        order_type: order.order_type ?? null,
+        table_id: order.table_id ?? null,
+        total_amount: order.total_amount ?? null
+      }
+    })
+  );
+}
+
 export async function submitOrderWithEffects(args: {
   payload: PendingSubmit;
   applyUiResult: boolean;
@@ -150,64 +244,72 @@ export async function submitOrderWithEffects(args: {
     refreshTables,
     pushSubmitMessage
   } = args;
+
+  validatePendingSubmitPayload(payload);
+  const sanitizedPayload = buildSanitizedOrderSubmitPayload(payload.payload);
+
   const { response, body } = await fetchJsonWithTimeout(
     "/api/pos/sales",
     {
       method: "POST",
+      credentials: "include",
+      cache: "no-store",
       headers: {
+        Accept: "application/json",
         "Content-Type": "application/json",
         "x-idempotency-key": payload.idempotencyKey
       },
-      body: JSON.stringify(payload.payload)
+      body: JSON.stringify(sanitizedPayload)
     },
-    12000,
+    15000,
     0
   );
+
   if (!response.ok || body.error) {
-    const code = String(body.error?.code ?? "").trim();
-    const message = String(body.error?.message ?? "").trim() || "Submit failed.";
-    throw new Error(code ? `${code}: ${message}` : message);
+    throw normalizeApiError(response, body, "Failed to create POS bill.");
   }
+
+  const nextOrder = (body.data ?? {}) as Partial<ActiveOrder>;
+  if (!nextOrder.id || !nextOrder.order_no || !nextOrder.status) {
+    throw new Error("order_create_response_invalid: POS bill was submitted but the API did not return order id, order number, and status.");
+  }
+
+  const createdOrder: ActiveOrder = {
+    id: String(nextOrder.id),
+    order_no: String(nextOrder.order_no),
+    status: String(nextOrder.status),
+    order_type: isOrderType(String(nextOrder.order_type ?? "")) ? (nextOrder.order_type as OrderType) : sanitizedPayload.order_type,
+    channel: typeof nextOrder.channel === "string" ? nextOrder.channel : sanitizedPayload.channel,
+    external_order_code:
+      typeof nextOrder.external_order_code === "string" ? nextOrder.external_order_code : sanitizedPayload.external_order_code ?? null,
+    total_amount: Number.isFinite(Number(nextOrder.total_amount)) ? Number(nextOrder.total_amount) : sanitizedPayload.grand_total ?? sanitizedPayload.app_total_amount,
+    tax_total: Number.isFinite(Number(nextOrder.tax_total)) ? Number(nextOrder.tax_total) : sanitizedPayload.tax_total ?? null,
+    tax_lines: Array.isArray(nextOrder.tax_lines)
+      ? nextOrder.tax_lines as Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>
+      : sanitizedPayload.tax_lines ?? [],
+    table_id: nextOrder.table_id ?? sanitizedPayload.table_id ?? null,
+    created_at: nextOrder.created_at,
+    updated_existing: Boolean(nextOrder.updated_existing)
+  };
 
   setIsOnline(true);
   dequeuePendingSubmit(payload.idempotencyKey);
-  const nextOrder = (body.data ?? {}) as Partial<ActiveOrder>;
-  let createdOrder: ActiveOrder | null = null;
-  if (nextOrder.id && nextOrder.order_no && nextOrder.status) {
-    createdOrder = {
-      id: nextOrder.id,
-      order_no: nextOrder.order_no,
-      status: nextOrder.status,
-      order_type: nextOrder.order_type as OrderType | undefined,
-      channel: typeof nextOrder.channel === "string" ? nextOrder.channel : null,
-      external_order_code: typeof nextOrder.external_order_code === "string" ? nextOrder.external_order_code : null,
-      total_amount: Number.isFinite(nextOrder.total_amount) ? Number(nextOrder.total_amount) : undefined,
-      tax_total: Number.isFinite(nextOrder.tax_total) ? Number(nextOrder.tax_total) : null,
-      tax_lines: Array.isArray(nextOrder.tax_lines)
-        ? nextOrder.tax_lines as Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>
-        : [],
-      table_id: nextOrder.table_id ?? null,
-      created_at: nextOrder.created_at,
-      updated_existing: Boolean(nextOrder.updated_existing)
-    };
-    if (applyUiResult) {
-      setActiveOrder(createdOrder);
-    }
-  }
 
   if (applyUiResult) {
-    pushSubmitMessage(`${nextOrder.updated_existing ? text.orderUpdated : text.orderCreated}: ${nextOrder.order_no ?? "-"}`);
-    if (payload.payload.order_type !== "takeaway") {
+    setActiveOrder(createdOrder);
+    pushSubmitMessage(`${createdOrder.updated_existing ? text.orderUpdated : text.orderCreated}: ${createdOrder.order_no}`);
+    if (sanitizedPayload.order_type !== "takeaway") {
       setCart([]);
     }
     setCartDrawerOpen(false);
-    if (payload.payload.order_type === "dine_in") {
+    if (sanitizedPayload.order_type === "dine_in") {
       refreshTables();
     }
   } else {
-    pushSubmitMessage(`${text.orderCreated}: ${nextOrder.order_no ?? "-"}`);
+    pushSubmitMessage(`${text.orderCreated}: ${createdOrder.order_no}`);
   }
 
+  emitOrderCreatedEvent(createdOrder);
   return createdOrder;
 }
 
@@ -305,7 +407,10 @@ export async function submitTransferPaymentWithEffects(args: {
     "/api/pos/payments",
     {
       method: "POST",
+      credentials: "include",
+      cache: "no-store",
       headers: {
+        Accept: "application/json",
         "Content-Type": "application/json",
         "x-idempotency-key": pendingPaymentEntry.idempotencyKey
       },
@@ -328,7 +433,7 @@ export async function submitTransferPaymentWithEffects(args: {
     20000
   );
   if (!response.ok || body.error) {
-    throw new Error(body.error?.message ?? "Failed to complete transfer payment.");
+    throw normalizeApiError(response, body, "Failed to complete transfer payment.");
   }
 
   setIsOnline(true);
