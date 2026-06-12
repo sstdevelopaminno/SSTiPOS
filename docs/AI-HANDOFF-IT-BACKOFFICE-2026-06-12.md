@@ -9,6 +9,8 @@ Latest implementation update: 2026-06-12 deployment surface isolation planning/c
 
 Latest access/login update: 2026-06-12 IT Backoffice login and support-role permission pass. No Vercel command was run. No deployment was made.
 
+Latest UI update: 2026-06-12 first `SSTiPOS Support` login UI pass for the separated IT Backoffice project/domain. No Vercel command was run. No deployment was made.
+
 ## Source Documents Read
 
 - `context.md`
@@ -106,8 +108,29 @@ Implementation notes:
 - After sign-in, resolves `users_profiles.platform_role` server-side using the service-role client.
 - Allows only active `it_admin` and `it_support` profiles.
 - Rejects and signs out `tenant_user`, inactive profiles, and missing profiles.
-- UI includes Thai/English loading, error, invalid-role, and session-expired states.
+- UI system name/title: `SSTiPOS Support`.
+- UI includes a white/blue split card, left branding panel, right email/password form, tablet/mobile responsive stacking, and PWA-ready safe viewport padding.
+- UI includes Thai/English loading, error, invalid-role, session-expired, signed-out, and success states.
+- Email/password tab is wired to the existing IT auth API; role is still resolved server-side after sign-in.
+- QR login tab is a placeholder only and shows: "QR login for mobile support devices is coming soon." No QR authentication runtime was implemented.
+- Forgot-password link is a placeholder message only; no reset workflow was implemented.
+- Preferred support logo path is `apps/backoffice-web/public/brand/sstipos-support-logo.png`. That asset is currently missing, so the UI falls back to `/brand/sst-ipos-logo.svg`; place the real support logo at the preferred path before brand QA.
 - IT staff must not use `/login/store`; POS store login remains for POS users only.
+
+Files changed in this UI pass:
+
+- `apps/backoffice-web/src/components/it-admin/it-admin-login-form.tsx`
+- `apps/backoffice-web/src/app/it-admin/login/page.tsx`
+- `apps/backoffice-web/src/app/globals.css`
+- `context.md`
+- `README.md`
+- `docs/AI-HANDOFF-IT-BACKOFFICE-2026-06-12.md`
+
+Verification for this UI pass:
+
+- `pnpm --filter backoffice-web typecheck` passed.
+- `pnpm --filter backoffice-web lint` passed.
+- `pnpm --filter backoffice-web test -- --cache false` passed: 22 files, 54 tests.
 
 ## Current IT Admin Surface Map
 
