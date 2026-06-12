@@ -1,10 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 
-type LoginState = "idle" | "loading" | "error" | "invalid_role" | "session_expired" | "success";
+type LoginState = "idle" | "loading" | "error" | "invalid_role" | "session_expired" | "signed_out" | "success";
+type LoginMode = "password" | "qr";
 
 type LoginResponse = {
   data?: {
@@ -16,10 +18,12 @@ type LoginResponse = {
   } | null;
 };
 
+const supportLogoSrc = "/brand/sst-ipos-logo.svg";
+
 const stateCopy: Record<LoginState, { title: string; detail: string }> = {
   idle: {
-    title: "เข้าสู่ระบบ IT Backoffice / IT Backoffice Login",
-    detail: "ใช้บัญชี platform identity สำหรับทีม IT เท่านั้น"
+    title: "เข้าสู่ระบบทีม IT / IT support login",
+    detail: "ใช้บัญชี Platform สำหรับทีม IT Admin และ IT Support เท่านั้น"
   },
   loading: {
     title: "กำลังเข้าสู่ระบบ... / Signing in...",
@@ -30,12 +34,16 @@ const stateCopy: Record<LoginState, { title: string; detail: string }> = {
     detail: "ตรวจสอบอีเมล รหัสผ่าน หรือสถานะบัญชี แล้วลองอีกครั้ง"
   },
   invalid_role: {
-    title: "ไม่มีสิทธิ์เข้า IT Backoffice / Invalid IT role",
+    title: "ไม่มีสิทธิ์เข้า SSTiPOS Support / Invalid IT role",
     detail: "บัญชี tenant_user ไม่สามารถเข้า IT Backoffice ได้"
   },
   session_expired: {
     title: "เซสชันหมดอายุ / Session expired",
-    detail: "กรุณาเข้าสู่ระบบ IT Backoffice ใหม่"
+    detail: "กรุณาเข้าสู่ระบบ SSTiPOS Support ใหม่อีกครั้ง"
+  },
+  signed_out: {
+    title: "ออกจากระบบแล้ว / Signed out",
+    detail: "คุณออกจากระบบเรียบร้อยแล้ว สามารถเข้าสู่ระบบใหม่ได้ทุกเมื่อ"
   },
   success: {
     title: "เข้าสู่ระบบสำเร็จ / Login successful",
@@ -45,17 +53,21 @@ const stateCopy: Record<LoginState, { title: string; detail: string }> = {
 
 export function ItAdminLoginForm({ initialState = "idle" }: { initialState?: LoginState }) {
   const router = useRouter();
+  const [mode, setMode] = useState<LoginMode>("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [state, setState] = useState<LoginState>(initialState);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(
+    initialState === "idle" ? null : stateCopy[initialState].detail
+  );
 
   const copy = useMemo(() => stateCopy[state], [state]);
+  const isBusy = state === "loading" || state === "success";
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setState("loading");
-    setMessage(null);
+    setMessage(stateCopy.loading.detail);
 
     try {
       const response = await fetch("/api/it-admin/auth/login", {
@@ -67,57 +79,136 @@ export function ItAdminLoginForm({ initialState = "idle" }: { initialState?: Log
 
       if (!response.ok || body.error) {
         const code = body.error?.code;
-        setState(code === "invalid_role" ? "invalid_role" : "error");
-        setMessage(body.error?.message ?? "Unable to sign in.");
+        const nextState = code === "invalid_role" ? "invalid_role" : "error";
+        setState(nextState);
+        setMessage(body.error?.message ?? stateCopy[nextState].detail);
         return;
       }
 
       setState("success");
+      setMessage(stateCopy.success.detail);
       router.replace(body.data?.redirect_to ?? "/it-admin");
       router.refresh();
     } catch (error) {
       setState("error");
-      setMessage(error instanceof Error ? error.message : "Unable to sign in.");
+      setMessage(error instanceof Error ? error.message : stateCopy.error.detail);
     }
   }
 
   return (
-    <form className="it-admin-login-card" onSubmit={onSubmit}>
-      <div className="it-admin-login-card__head">
-        <p className="it-admin-login-card__eyebrow">SST iPOS</p>
-        <h1>{copy.title}</h1>
-        <p>{copy.detail}</p>
+    <section className="it-support-login-shell" aria-label="SSTiPOS Support login">
+      <div className="it-support-login-card">
+        <aside className="it-support-login-brand" aria-label="SSTiPOS Support">
+          <div className="it-support-login-logo-row">
+            <span className="it-support-login-logo">
+              <Image src={supportLogoSrc} alt="" width={44} height={44} priority />
+            </span>
+            <span className="it-support-login-logo-text">SSTiPOS</span>
+          </div>
+
+          <div className="it-support-login-brand-copy">
+            <p className="it-support-login-kicker">Support Console</p>
+            <h1>SSTiPOS Support</h1>
+            <p>ศูนย์ช่วยเหลือและดูแลระบบสำหรับทีม IT Admin และ IT Support</p>
+            <p>Secure access for platform operations, tenant support, and readiness review.</p>
+          </div>
+
+          <div className="it-support-login-badges" aria-label="Deployment model">
+            <span>Separate admin domain</span>
+            <span>Server-side role check</span>
+            <span>POS URL isolated</span>
+          </div>
+        </aside>
+
+        <div className="it-support-login-panel">
+          <div className="it-support-login-panel__head">
+            <p className="it-support-login-kicker">SSTiPOS Support</p>
+            <h2>{copy.title}</h2>
+            <p>{copy.detail}</p>
+          </div>
+
+          <div className="it-support-login-tabs" role="tablist" aria-label="Login method">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "password"}
+              className={mode === "password" ? "is-active" : ""}
+              onClick={() => setMode("password")}
+            >
+              Email / Password
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "qr"}
+              className={mode === "qr" ? "is-active" : ""}
+              onClick={() => setMode("qr")}
+            >
+              QR Login
+            </button>
+          </div>
+
+          {message ? <div className={`it-support-login-alert it-support-login-alert--${state}`}>{message}</div> : null}
+
+          {mode === "password" ? (
+            <form className="it-support-login-form" onSubmit={onSubmit}>
+              <label className="it-support-login-field">
+                <span>Email</span>
+                <input
+                  type="email"
+                  autoComplete="email"
+                  inputMode="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  disabled={isBusy}
+                  placeholder="support@example.com"
+                  required
+                />
+              </label>
+
+              <label className="it-support-login-field">
+                <span>Password</span>
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  disabled={isBusy}
+                  placeholder="••••••••"
+                  required
+                />
+              </label>
+
+              <div className="it-support-login-actions">
+                <button
+                  type="button"
+                  className="it-support-login-link"
+                  onClick={() => {
+                    setState("idle");
+                    setMessage("Password reset for IT staff is not enabled yet. Please contact an IT admin.");
+                  }}
+                >
+                  Forgot password?
+                </button>
+              </div>
+
+              <button className="it-support-login-button" type="submit" disabled={isBusy}>
+                {state === "loading" ? "กำลังเข้าสู่ระบบ... / Signing in..." : "เข้าสู่ระบบ / Sign in"}
+              </button>
+            </form>
+          ) : (
+            <div className="it-support-qr-placeholder" role="tabpanel">
+              <div className="it-support-qr-box" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+              <h3>QR login for mobile support devices is coming soon.</h3>
+              <p>โหมดนี้เตรียมไว้สำหรับอุปกรณ์ Support ในอนาคต และยังไม่เปิดใช้งานระบบยืนยันตัวตนด้วย QR</p>
+            </div>
+          )}
+        </div>
       </div>
-
-      <label className="it-admin-login-field">
-        <span>Email</span>
-        <input
-          type="email"
-          autoComplete="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          disabled={state === "loading" || state === "success"}
-          required
-        />
-      </label>
-
-      <label className="it-admin-login-field">
-        <span>Password</span>
-        <input
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          disabled={state === "loading" || state === "success"}
-          required
-        />
-      </label>
-
-      {message ? <div className={`it-admin-login-alert it-admin-login-alert--${state}`}>{message}</div> : null}
-
-      <button className="it-admin-login-button" type="submit" disabled={state === "loading" || state === "success"}>
-        {state === "loading" ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ / Sign in"}
-      </button>
-    </form>
+    </section>
   );
 }

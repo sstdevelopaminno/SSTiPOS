@@ -36,6 +36,15 @@ IT staff must use `/it-admin/login` on the IT Backoffice project/domain, not the
 
 The `platform_role` database enum includes `it_support` via `supabase/migrations/20260612132854_add_it_support_platform_role.sql`. Server-side IT API guards enforce the role/menu matrix; hiding navigation is not treated as authorization.
 
+`/it-admin/login` now presents the first `SSTiPOS Support` UI pass for the separated IT Backoffice project/domain:
+- split white/blue login card for desktop and stacked responsive layout for mobile/tablet
+- email/password login tab backed by the existing server-side Supabase Auth + platform role check
+- QR login tab placeholder only; QR auth is not implemented yet
+- Thai/English loading, error, invalid-role, session-expired, signed-out, and success states
+- preferred logo path: `apps/backoffice-web/public/brand/sstipos-support-logo.png`; if missing, the current UI uses `/brand/sst-ipos-logo.svg` as a safe fallback
+
+No Vercel command or deployment was run for this UI pass.
+
 ## Repository structure
 
 ```text
