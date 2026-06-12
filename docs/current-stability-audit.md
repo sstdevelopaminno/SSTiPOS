@@ -217,3 +217,39 @@ The create-order path could still fail before returning an order when the produc
 ## Remaining Risks
 
 - Production smoke test is required because local shell cannot mutate production data for probe inserts without explicit approval.
+
+---
+
+Date: 2026-06-12
+
+## Issue Fixed
+
+POS create bill still behaved like a slow API timeout in production: the creating popup stayed longer, then disappeared without opening the payment/review bill popup.
+
+## Root Cause
+
+Production may still have the old `POS_PREFER_RPC_ORDER_CREATE=1` environment variable. That allowed the order creation flow to keep using the slow/incompatible RPC path despite the direct-create fallback patches.
+
+## Files Changed
+
+- `apps/backoffice-web/src/lib/services/pos-sales-service.ts`
+- `apps/backoffice-web/src/app/api/pos/sales/route.ts`
+- `apps/backoffice-web/.env.example`
+- `docs/current-stability-audit.md`
+
+## Fix Summary
+
+- Stopped reading `POS_PREFER_RPC_ORDER_CREATE`.
+- Direct POS order creation is now the default for all modes.
+- RPC order creation can only be re-enabled with the new explicit `POS_ENABLE_RPC_ORDER_CREATE=1`.
+- Added safe production warning logs for POS create failures with only stage, code, status, order type, item count, and elapsed time.
+
+## Verification
+
+- Targeted POS sales ESLint: pass
+- Typecheck: pass
+- Integration tests: pass, 22 files / 54 tests
+
+## Remaining Risks
+
+- Manual production smoke test is still required for Takeaway and Dine-in.

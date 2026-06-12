@@ -146,9 +146,9 @@ const POS_FORCE_DIRECT_CREATE =
   process.env.POS_FORCE_DIRECT_CREATE?.toLowerCase() === "true" ||
   process.env.POS_FORCE_DIRECT_CREATE_NON_DELIVERY === "1" ||
   process.env.POS_FORCE_DIRECT_CREATE_NON_DELIVERY?.toLowerCase() === "true";
-const POS_PREFER_RPC_ORDER_CREATE =
-  process.env.POS_PREFER_RPC_ORDER_CREATE === "1" ||
-  process.env.POS_PREFER_RPC_ORDER_CREATE?.toLowerCase() === "true";
+const POS_ENABLE_RPC_ORDER_CREATE =
+  process.env.POS_ENABLE_RPC_ORDER_CREATE === "1" ||
+  process.env.POS_ENABLE_RPC_ORDER_CREATE?.toLowerCase() === "true";
 const POS_DEDUCT_STOCK_ON_ORDER_CREATE =
   process.env.POS_DEDUCT_STOCK_ON_ORDER_CREATE === "1" ||
   process.env.POS_DEDUCT_STOCK_ON_ORDER_CREATE?.toLowerCase() === "true";
@@ -167,7 +167,7 @@ function shouldSoftBypassInsufficientStock(orderType: OrderType) {
 }
 
 function shouldPreferDirectCreatePath() {
-  return POS_FORCE_DIRECT_CREATE || !POS_PREFER_RPC_ORDER_CREATE;
+  return POS_FORCE_DIRECT_CREATE || !POS_ENABLE_RPC_ORDER_CREATE;
 }
 
 async function resolveAllowNegativeStock(auth: AuthContext) {
