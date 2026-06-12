@@ -183,3 +183,12 @@ The next development pass focuses on IT backoffice/admin work. Start from:
 - `apps/backoffice-web/src/app/api/it-admin/`
 
 No Vercel deploy should be run during the planning pass.
+
+## GitHub Documentation Sync Rule
+
+For every future code change, system fix, or development pass:
+
+- Update the relevant repo documentation in the same branch.
+- Include the current status, changed files, verification results, risks, and next recommended steps.
+- Push the documentation updates to GitHub so the planning chat can read the latest repo state before sending the next Codex command.
+- Do not deploy or run Vercel unless the user explicitly asks for deployment.
