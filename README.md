@@ -8,6 +8,22 @@ Production-oriented monorepo for a noodle shop and small restaurant POS platform
 - Database/Auth: Supabase (PostgreSQL + RLS)
 - Shared contracts: TypeScript packages for Android POS and web modules
 
+## Deployment surface model
+
+POS/Sales and IT Backoffice must run as separate Vercel Projects and separate domains. Do not expose IT Backoffice from the POS/Sales public URL.
+
+- POS/Sales: Vercel Project example `sstipos-pos`, domain example `pos.<domain>`, `APP_SURFACE=pos`.
+- IT Backoffice: Vercel Project example `sstipos-it-admin`, domain example `admin.<domain>` or `it.<domain>`, `APP_SURFACE=it_admin`.
+- Local development only: `APP_SURFACE=all`.
+
+Surface isolation is prepared in `apps/backoffice-web/src/proxy.ts` with optional host allowlists:
+- `POS_ALLOWED_HOSTS=pos.<domain>`
+- `IT_ADMIN_ALLOWED_HOSTS=admin.<domain>,it.<domain>`
+
+Security must still be enforced server-side. The IT admin layout and `/api/it-admin/*` guards resolve authenticated platform roles server-side and allow only `it_admin` or `it_support`; POS APIs continue to resolve tenant, branch, device, session, permission, contract, and feature state server-side.
+
+No Vercel deploy is performed by documentation or audit passes unless explicitly requested. Future production setup must configure separate environment variables and production aliases per Vercel Project.
+
 ## Repository structure
 
 ```text
@@ -37,6 +53,7 @@ pos-platform/
 - Back office and IT admin UI routes
 - Audit logging foundation
 - Store + POS secure login flow (store -> branch -> employee -> device) now runs in `backoffice-web`
+- IT Backoffice login is prepared separately at `/it-admin/login`; do not reuse POS store login for IT staff.
 
 ## Login / Pre-entry flow (updated)
 - Scope: only login and pre-sales entry flow was changed. Existing POS Sales screen/UI is unchanged.

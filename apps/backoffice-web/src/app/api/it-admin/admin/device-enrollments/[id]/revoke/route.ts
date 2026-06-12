@@ -2,6 +2,7 @@ import { appendAuditLog } from "@/lib/audit-log";
 import { assertActivationScope, guardActivationAdminError, requireActivationAdmin } from "@/lib/activation-admin-guard";
 import { requireTenantFeatureIfConfigured } from "@/lib/feature-gate";
 import { fail, ok } from "@/lib/http";
+import { isItAdminPlatformRole } from "@/lib/it-admin-guard";
 
 type RevokePayload = {
   reason?: string;
@@ -42,7 +43,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       auth,
       tenantId: current.tenant_id,
       branchId: current.branch_id,
-      allowTenantWide: auth.platformRole === "it_admin"
+      allowTenantWide: isItAdminPlatformRole(auth.platformRole)
     });
     await requireTenantFeatureIfConfigured(current.tenant_id, "mobile_device_enrollment", current.branch_id);
 

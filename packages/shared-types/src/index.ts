@@ -1,6 +1,6 @@
 export type UUID = string;
 
-export type PlatformRole = "it_admin" | "tenant_user";
+export type PlatformRole = "it_admin" | "it_support" | "tenant_user";
 export type BranchRole = "owner" | "manager" | "staff" | "accountant";
 
 export type PaymentMethod = "cash" | "bank_transfer";
