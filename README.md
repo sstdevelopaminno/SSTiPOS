@@ -1040,3 +1040,15 @@ ORDER BY p.name;
 * If orders and items exist but `recipe_lines = 0`, repair product recipe/stock bridge setup.
 * If `recipe_lines > 0` but no `stock_movements`, debug the stock deduction execution path in `pos-sales-service`.
 * If `stock_movements` exists but UI stock does not change, debug stock UI refresh/cache.
+
+## Next Development Focus: IT Backoffice
+
+The next development pass focuses on IT backoffice/admin work. Start from:
+
+- `context.md`
+- `docs/AI-HANDOFF-IT-BACKOFFICE-2026-06-12.md`
+- `apps/backoffice-web/src/app/(it-admin)/`
+- `apps/backoffice-web/src/components/it-admin/`
+- `apps/backoffice-web/src/app/api/it-admin/`
+
+No Vercel deploy should be run during the planning pass.
