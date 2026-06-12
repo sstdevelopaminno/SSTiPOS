@@ -28,7 +28,7 @@ The next development pass should start with IT backoffice work and keep POS sale
 POS/Sales and IT Backoffice must run as separate Vercel Projects and separate domains. Do not expose IT Backoffice from the POS/Sales public URL.
 
 - POS/Sales: Vercel Project example `sstipos-pos`, domain example `pos.<domain>`, `APP_SURFACE=pos`.
-- IT Backoffice: Vercel Project example `sstipos-it-admin`, domain example `admin.<domain>` or `it.<domain>`, `APP_SURFACE=it_admin`.
+- IT Backoffice: Vercel Project `sstipos-support`, display name `SSTiPOS Support`, domain example `admin.<domain>` or `it.<domain>`, `APP_SURFACE=it_admin`.
 - Local development only: `APP_SURFACE=all`.
 
 Surface isolation is prepared in `apps/backoffice-web/src/proxy.ts` with optional host allowlists:
@@ -56,7 +56,7 @@ The `platform_role` database enum includes `it_support` via `supabase/migrations
 - email/password login tab backed by the existing server-side Supabase Auth + platform role check
 - QR login tab placeholder only; QR auth is not implemented yet
 - Thai/English loading, error, invalid-role, session-expired, signed-out, and success states
-- preferred logo path: `apps/backoffice-web/public/brand/sstipos-support-logo.png`; if missing, the current UI uses `/brand/sst-ipos-logo.svg` as a safe fallback
+- preferred logo path: `apps/backoffice-web/public/brand/sstipos-support-logo.png`; a placeholder copied from the existing SST iPOS logo is committed for preview and should be replaced with the real `SSTiPOS Support` logo before brand QA/production promotion
 
 No Vercel command or deployment was run for this UI pass.
 

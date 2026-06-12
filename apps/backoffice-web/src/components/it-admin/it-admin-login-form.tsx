@@ -18,7 +18,7 @@ type LoginResponse = {
   } | null;
 };
 
-const supportLogoSrc = "/brand/sst-ipos-logo.svg";
+const supportLogoSrc = "/brand/sstipos-support-logo.png";
 
 const stateCopy: Record<LoginState, { title: string; detail: string }> = {
   idle: {

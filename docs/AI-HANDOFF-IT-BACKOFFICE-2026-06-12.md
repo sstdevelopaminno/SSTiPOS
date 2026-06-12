@@ -40,7 +40,7 @@ Missing documents: none found in current branch.
 POS/Sales and IT Backoffice must be separate Vercel Projects with separate public domains:
 
 - POS/Sales project: example `sstipos-pos`, domain example `pos.<domain>`, `APP_SURFACE=pos`.
-- IT Backoffice project: example `sstipos-it-admin`, domain example `admin.<domain>` or `it.<domain>`, `APP_SURFACE=it_admin`.
+- IT Backoffice project: `sstipos-support`, display name `SSTiPOS Support`, domain example `admin.<domain>` or `it.<domain>`, `APP_SURFACE=it_admin`.
 - Local development only: `APP_SURFACE=all`.
 
 They must not share one public URL. POS users must not be able to access `/it-admin/*`, `/api/it-admin/*`, `/audit-logs`, or tenant/admin aliases from the POS domain. IT staff must not use the POS sales URL to access IT Backoffice.
@@ -114,12 +114,13 @@ Implementation notes:
 - Email/password tab is wired to the existing IT auth API; role is still resolved server-side after sign-in.
 - QR login tab is a placeholder only and shows: "QR login for mobile support devices is coming soon." No QR authentication runtime was implemented.
 - Forgot-password link is a placeholder message only; no reset workflow was implemented.
-- Preferred support logo path is `apps/backoffice-web/public/brand/sstipos-support-logo.png`. That asset is currently missing, so the UI falls back to `/brand/sst-ipos-logo.svg`; place the real support logo at the preferred path before brand QA.
+- Preferred support logo path is `apps/backoffice-web/public/brand/sstipos-support-logo.png`. A placeholder copied from the existing SST iPOS logo is committed for preview; replace that file with the real `SSTiPOS Support` logo before brand QA/production promotion.
 - IT staff must not use `/login/store`; POS store login remains for POS users only.
 
 Files changed in this UI pass:
 
 - `apps/backoffice-web/src/components/it-admin/it-admin-login-form.tsx`
+- `apps/backoffice-web/public/brand/sstipos-support-logo.png`
 - `apps/backoffice-web/src/app/it-admin/login/page.tsx`
 - `apps/backoffice-web/src/app/globals.css`
 - `context.md`
