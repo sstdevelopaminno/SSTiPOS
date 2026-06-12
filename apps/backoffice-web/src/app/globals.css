@@ -5002,7 +5002,7 @@ a {
 }
 
 .posui-payment-modal--creating {
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .posui-payment-modal__creating-progress {

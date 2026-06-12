@@ -262,7 +262,7 @@ export function PosPaymentModals({
     <>
       {takeawayCreatingPreview ? (
         <div className="posui-payment-modal-backdrop" role="dialog" aria-modal="true" aria-label={text.creatingOrderTitle}>
-          <section className="posui-payment-modal posui-payment-modal--review posui-payment-modal--creating">
+          <section className="posui-payment-modal posui-payment-modal--review posui-payment-modal--creating" onClick={(event) => event.stopPropagation()}>
             <header className="posui-payment-modal__header">
               <h3>{text.creatingOrderTitle}</h3>
             </header>

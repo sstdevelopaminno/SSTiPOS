@@ -7216,8 +7216,12 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           onConfirmTransfer={confirmTransferPayment}
           onPrintReceipt={handleReceiptPrint}
           onCloseReceipt={closeReceiptPopup}
-          onRetryTakeawayCreate={handleCheckout}
+          onRetryTakeawayCreate={() => {
+            checkoutRequestLockRef.current = false;
+            void handleCheckout();
+          }}
           onCloseTakeawayCreateError={() => {
+            checkoutRequestLockRef.current = false;
             setTakeawayCreateError(null);
             setTakeawayCreatingPreview(null);
           }}
