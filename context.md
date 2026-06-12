@@ -460,3 +460,10 @@ ORDER BY p.name;
 - New handoff document: `docs/AI-HANDOFF-IT-BACKOFFICE-2026-06-12.md`.
 - This pass does not run Vercel and does not deploy production.
 - IT admin work must preserve tenant isolation, branch scoping, server-side feature gates, service-role server-only usage, and audit logging.
+
+## GitHub Documentation Sync Rule (2026-06-12)
+
+- After every code change, bug fix, or development pass, update the relevant docs before finishing.
+- Push documentation updates to GitHub so the planning chat can pull the latest repo context and produce the next Codex command from current evidence.
+- Each handoff should include current status, changed files, verification results, risks, and next recommended steps.
+- Do not run Vercel, deploy, or push to main unless the user explicitly asks for that action.

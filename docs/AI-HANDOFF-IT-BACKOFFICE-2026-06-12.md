@@ -8,6 +8,8 @@ Deployment status: No Vercel deploy. No production deploy.
 
 - `context.md`
 - `README.md`
+- `docs/AI-HANDOFF-IT-BACKOFFICE-2026-06-12.md`
+- `docs/system-stability-audit-2026-06-04.md`
 - `docs/PROJECT-AUDIT-HANDOFF-2026-06-02.md`
 - `docs/pos-multi-owner-branch-architecture.md`
 - `docs/production-readiness-checklist.md`
@@ -15,6 +17,16 @@ Deployment status: No Vercel deploy. No production deploy.
 - `docs/go-live-evidence-checklist.md`
 
 Missing documents: none found in current branch.
+
+## Current Project Status From Repo
+
+- Active runtime app: `apps/backoffice-web` with Next.js App Router, Supabase, TypeScript, pnpm workspaces, and shared packages.
+- Current active login/POS entry flow: `/login/store -> /login/branches|employee -> /login/devices -> /preview/pos`.
+- QR login docs are archived/historical and must not drive active runtime work.
+- Completed foundations from repo docs: secure login context, POS session creation, replay protection, shift gate, POS Sales MVP, attendance APIs, backoffice/IT admin route surfaces, package/subscription feature gates, quota enforcement, audit logging, CI/runbook docs, and production readiness docs.
+- Production readiness is not complete: secret rotation, shared production rate limiter verification, staged migration rehearsal, backup/restore drill, rollback drill, alert/on-call routing, and manual QA/go-live evidence remain open.
+- System stability docs flag admin monitoring and login/session performance as important operational risks, but this IT Backoffice pass should avoid POS sales changes except blocking bug fixes.
+- Latest IT focus from README/context: prepare the IT backoffice/admin development pass without running Vercel, deploying, or pushing to main.
 
 ## Current IT Admin Surface Map
 
@@ -88,6 +100,36 @@ Missing documents: none found in current branch.
   - Falls back to default catalog when schema is missing.
   - Builds subscription quotes from package, feature, contract type, billing interval, deployment mode, branch count, and terminal count.
 
+## Completed IT Admin Modules
+
+- Platform access guard: `requireItAdmin()` requires `platformRole === "it_admin"` and keeps the Supabase service-role client server-only.
+- Tenant listing: `/api/it-admin/admin/tenants` lists tenants with branch and active-session counts.
+- Tenant creation: `/api/it-admin/tenants` creates tenant records and writes audit logs.
+- Branch management: list/create/update is tenant-scoped, feature-gated by `branch_management`, quota-checked, and audited.
+- Device/register management: list/update actions are tenant-scoped, feature-gated by `device_management`, quota-checked for active provisioning actions, and audited.
+- User/role management: list/assign/update/deactivate flows are tenant-scoped, feature-gated by `user_management`, quota-aware, duplicate-aware, and audited.
+- Contract management: latest contract read/update/create flow exists with plan/status audit events and feature gate cache invalidation.
+- Feature management: catalog/effective state read flow exists for tenant and optional branch scope; tenant/branch override write flow exists and audits changes.
+- Login policy management: branch policy read/update flow exists and audits mutations.
+- Active POS session management: tenant/branch scoped list and revoke flow exists and audits revocation.
+- Shift management: tenant/branch scoped list and close/suspend flow exists and audits forced state changes.
+- Audit log console/API: IT admin can filter paginated audit logs by tenant, branch, actor, action, date, and search.
+- Package quote console/API: IT admin can read package catalog and calculate package quotes with quote audit logging.
+- Customer display admin: pairings and policies have IT admin read/update/revoke surfaces with audit logging.
+- Device enrollment admin: activation token, enrollment list, approve, and revoke flows exist with feature/quota checks and audit logging.
+
+## Missing Or Incomplete IT Admin Modules
+
+- Tenant/package readiness dashboard: tenant index does not show active package/contract state or effective `core_pos_sales`.
+- Branch-level readiness: branch views do not clearly show whether each branch is blocked by inactive contract, disabled tenant/branch, or feature override.
+- Safe tenant enable/disable action: tenant list shows status but does not expose a complete audited enable/disable workflow in the inspected admin tenant index surface.
+- Branch feature override hardening: `features` PATCH accepts `branch_id`; add explicit branch belongs-to-tenant validation before reading/writing overrides.
+- Contract setup UX: contract editing exists in feature pane, but no strong readiness banner for missing/inactive/expired contract.
+- User lookup UX: role assignment still requires raw `user_id`; add a server-resolved search/select path instead of manual IDs.
+- Bilingual IT admin states: loading/error/success states exist, but sensitive actions need clear Thai/English confirmation and empty/error/success copy.
+- Safe public errors: many guarded routes use `guardItAdminError`, but it can return raw `error.message` for unexpected errors; review before production hardening.
+- Tests: targeted tests for IT admin contract state, feature gates, branch override scope, tenant isolation, quota rejection, and non-IT permission rejection are still incomplete.
+
 ## Security Guardrails Confirmed
 
 - Never trust client-sent tenant_id, branch_id, store_code, device_code, owner_id, role, permission, or feature state.
@@ -97,6 +139,20 @@ Missing documents: none found in current branch.
 - Preserve audit logging for all sensitive IT admin mutations.
 - Preserve server-side feature gate and quota enforcement.
 - Do not follow archived QR-login docs as active runtime guidance.
+
+## Priority Gap Matrix
+
+| Priority | Gap | Why it matters | Next action |
+|---|---|---|---|
+| P0 | None identified in this planning pass. | No immediate data-loss or deploy-blocking IT admin defect was proven from repo-only inspection. | Keep implementation narrow and verify before release. |
+| P1 | Tenant index lacks package/contract/`core_pos_sales` readiness. | IT cannot quickly see whether a tenant can safely use POS sales. | Extend tenant index API/UI with latest contract and effective core feature state. |
+| P1 | Branch feature override write lacks explicit branch scope validation. | A client-sent `branch_id` must never be trusted without server-side ownership validation. | Validate branch belongs to tenant before override read/write and add rejection tests. |
+| P1 | Contract/package setup is not a complete readiness workflow. | Tenants without valid active/trial contracts must be visibly blocked and explainable. | Add readiness banner/state and targeted contract/feature-gate tests. |
+| P1 | Targeted IT admin tests are incomplete. | Guardrails depend on tenant isolation, branch scoping, permission rejection, quotas, and feature gates. | Add focused route/service tests for these paths. |
+| P2 | Sensitive action confirmations are thin. | Revoke/close/suspend/disable/toggle actions need safer operator UX. | Add Thai/English confirmation, success, empty, loading, and error states. |
+| P2 | User role assignment requires raw `user_id`. | Operators should not paste opaque IDs; server should resolve users. | Add user search/select API and UI flow. |
+| P2 | Audit log filters expose raw identifiers. | IT needs readable tenant/branch/user context and evidence export later. | Add selector metadata and plan export/evidence workflow. |
+| P2 | Monitoring/readiness is document-driven. | Production readiness evidence is not surfaced inside IT admin. | Add readiness dashboard after P1 guardrails. |
 
 ## IT Backoffice Gap List
 
@@ -247,3 +303,10 @@ Missing documents: none found in current branch.
 - Vercel was not run.
 - Production deploy was not run.
 - No deployment command was executed.
+
+## GitHub Documentation Sync Rule
+
+- Every future implementation or bug-fix pass must update the relevant documentation before finishing.
+- Documentation updates should be pushed to GitHub so the planning chat can pull current repo context before preparing the next Codex command.
+- Each handoff should report current status, changed files, verification results, risks, and next recommended steps.
+- Do not run Vercel, deploy, or push to main unless the user explicitly asks for deployment/main push.
