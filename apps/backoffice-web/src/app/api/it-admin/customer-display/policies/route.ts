@@ -2,7 +2,7 @@ import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { normalizeDisplayChannel } from "@/lib/customer-display-pairing";
 import { fail, ok } from "@/lib/http";
-import { isItAdminPlatformRole } from "@/lib/it-admin-guard";
+import { hasItAdminPermission, isItAdminPlatformRole } from "@/lib/it-admin-guard";
 import {
   getCustomerDisplayPolicy,
   invalidateCustomerDisplayPolicyCache
@@ -41,7 +41,7 @@ function clampInt(raw: unknown, min: number, max: number, fallback: number): num
 export async function GET(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: false });
-    if (!isItAdminPlatformRole(auth.platformRole)) {
+    if (!isItAdminPlatformRole(auth.platformRole) || !hasItAdminPermission(auth.platformRole, "customer_display_manage")) {
       return fail("forbidden", "Only IT admin or IT support can view customer display policies.", 403);
     }
 
@@ -92,7 +92,7 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: false });
-    if (!isItAdminPlatformRole(auth.platformRole)) {
+    if (!isItAdminPlatformRole(auth.platformRole) || !hasItAdminPermission(auth.platformRole, "customer_display_manage")) {
       return fail("forbidden", "Only IT admin or IT support can update customer display policies.", 403);
     }
 
@@ -136,7 +136,7 @@ export async function PUT(req: Request) {
 
     await appendAuditLog({
       actorUserId: auth.userId,
-      actorRole: "it_admin",
+      actorRole: auth.platformRole,
       action: "customer_display_policy_upserted",
       targetTable: "pos_customer_display_policies",
       tenantId,

@@ -18,5 +18,5 @@ export default async function TenantFeaturesPage({
     );
   }
 
-  return <TenantSectionConsole tenantId={tenantId} section="features" />;
+  return <TenantSectionConsole tenantId={tenantId} section="features" platformRole={auth.platformRole} />;
 }

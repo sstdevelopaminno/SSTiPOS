@@ -2,7 +2,6 @@ import { appendAuditLog } from "@/lib/audit-log";
 import { assertActivationScope, guardActivationAdminError, requireActivationAdmin } from "@/lib/activation-admin-guard";
 import { requireTenantFeatureIfConfigured } from "@/lib/feature-gate";
 import { fail, ok } from "@/lib/http";
-import { isItAdminPlatformRole } from "@/lib/it-admin-guard";
 
 type EnrollmentRow = {
   id: string;
@@ -36,7 +35,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
       auth,
       tenantId: current.tenant_id,
       branchId: current.branch_id,
-      allowTenantWide: isItAdminPlatformRole(auth.platformRole)
+      allowTenantWide: auth.platformRole === "it_admin"
     });
     await requireTenantFeatureIfConfigured(current.tenant_id, "mobile_device_enrollment", current.branch_id);
 

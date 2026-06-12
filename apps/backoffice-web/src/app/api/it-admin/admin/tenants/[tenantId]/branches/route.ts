@@ -13,7 +13,7 @@ type BranchPayload = {
 
 export async function GET(_req: Request, context: { params: Promise<{ tenantId: string }> }) {
   try {
-    const { supabase } = await requireItAdmin();
+    const { supabase } = await requireItAdmin({ permission: "branch_manage" });
     const { tenantId: tenantIdParam } = await context.params;
     const tenantId = parseTenantParam(tenantIdParam);
 
@@ -35,7 +35,7 @@ export async function GET(_req: Request, context: { params: Promise<{ tenantId: 
 
 export async function POST(req: Request, context: { params: Promise<{ tenantId: string }> }) {
   try {
-    const { auth, supabase, requestMeta } = await requireItAdmin();
+    const { auth, supabase, requestMeta } = await requireItAdmin({ permission: "branch_manage" });
     const { tenantId: tenantIdParam } = await context.params;
     const tenantId = parseTenantParam(tenantIdParam);
     const body = (await req.json()) as BranchPayload;
@@ -54,7 +54,7 @@ export async function POST(req: Request, context: { params: Promise<{ tenantId: 
         await appendAuditLog({
           tenantId,
           actorUserId: auth.userId,
-          actorRole: "it_admin",
+              actorRole: auth.platformRole,
           action: "quota_blocked",
           targetTable: "branches",
           metadata: {
@@ -91,7 +91,7 @@ export async function POST(req: Request, context: { params: Promise<{ tenantId: 
       tenantId,
       branchId: data.id,
       actorUserId: auth.userId,
-      actorRole: "it_admin",
+      actorRole: auth.platformRole,
       action: "admin_branch_created",
       targetTable: "branches",
       targetId: data.id,
@@ -108,7 +108,7 @@ export async function POST(req: Request, context: { params: Promise<{ tenantId: 
 
 export async function PATCH(req: Request, context: { params: Promise<{ tenantId: string }> }) {
   try {
-    const { auth, supabase, requestMeta } = await requireItAdmin();
+    const { auth, supabase, requestMeta } = await requireItAdmin({ permission: "branch_manage" });
     const { tenantId: tenantIdParam } = await context.params;
     const tenantId = parseTenantParam(tenantIdParam);
     const body = (await req.json()) as BranchPayload;
@@ -158,7 +158,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
       tenantId,
       branchId,
       actorUserId: auth.userId,
-      actorRole: "it_admin",
+      actorRole: auth.platformRole,
       action: "admin_branch_updated",
       targetTable: "branches",
       targetId: branchId,

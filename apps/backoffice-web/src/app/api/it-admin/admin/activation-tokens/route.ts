@@ -3,7 +3,6 @@ import { appendAuditLog } from "@/lib/audit-log";
 import { assertActivationScope, guardActivationAdminError, requireActivationAdmin } from "@/lib/activation-admin-guard";
 import { enforceQuota, requireTenantFeatureIfConfigured } from "@/lib/feature-gate";
 import { fail, ok } from "@/lib/http";
-import { isItAdminPlatformRole } from "@/lib/it-admin-guard";
 
 type ActivationTokenPayload = {
   tenant_id?: string;
@@ -55,7 +54,7 @@ export async function POST(request: Request) {
       return fail("invalid_payload", "tenant_id is required.", 422);
     }
 
-    const allowTenantWide = isItAdminPlatformRole(auth.platformRole);
+    const allowTenantWide = auth.platformRole === "it_admin";
     const { tenantId, branchId } = await assertActivationScope({
       auth,
       tenantId: requestedTenantId,
@@ -87,7 +86,7 @@ export async function POST(request: Request) {
       if (!branch || branch.is_active === false || branch.tenant_id !== tenantId) {
         return fail("inactive_branch", "Branch is not active or does not belong to tenant.", 403);
       }
-    } else if (tokenType !== "admin_enrollment" && !isItAdminPlatformRole(auth.platformRole)) {
+    } else if (tokenType !== "admin_enrollment" && auth.platformRole !== "it_admin") {
       return fail("branch_scope_required", "branch_id is required for this token type.", 422);
     }
 
