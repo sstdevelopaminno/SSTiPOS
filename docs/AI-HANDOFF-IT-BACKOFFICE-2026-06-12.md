@@ -7,6 +7,8 @@ Latest audit pass: 2026-06-12, GitHub-synced branch was fetched and confirmed up
 
 Latest implementation update: 2026-06-12 deployment surface isolation planning/code pass. No Vercel command was run. No deployment was made.
 
+Latest access/login update: 2026-06-12 IT Backoffice login and support-role permission pass. No Vercel command was run. No deployment was made.
+
 ## Source Documents Read
 
 - `context.md`
@@ -61,6 +63,51 @@ Implemented app surface preparation:
 - IT admin server/API guards now allow only `it_admin` or `it_support`; `tenant_user` is rejected.
 
 Security note: `proxy.ts` is only a routing/domain boundary. It is not the sole auth layer. IT layout and APIs still resolve auth/role server-side, and POS routes must continue resolving POS session, tenant, branch, device, permission, contract, and feature state server-side.
+
+## IT Backoffice Role/Menu Matrix
+
+| Surface / action | `it_admin` | `it_support` | `tenant_user` |
+|---|---:|---:|---:|
+| `/it-admin/login` Supabase Auth login | yes | yes | rejected |
+| IT dashboard | yes | yes | no |
+| Tenant management | yes | yes | no |
+| Branch management | yes | yes | no |
+| Package catalog and quote | yes | yes | no |
+| Package contract/subscription | yes | yes | no |
+| User/branch-role create/update | yes | yes | no |
+| User/branch-role delete/deactivate | yes | no | no |
+| Active POS sessions/revoke | yes | yes | no |
+| Shifts close/suspend | yes | yes | no |
+| Audit log review | yes | yes | no |
+| Monitoring/readiness view | yes | yes | no |
+| Feature flags and branch overrides | yes | no | no |
+| Device/register management | yes | no | no |
+| Activation tokens and device enrollments | yes | no | no |
+| Customer display device/policy control | yes | no | no |
+| Login policy management | yes | no | no |
+| Platform users | yes | no | no |
+| IT settings pages | yes | no | no |
+| Raw audit log edit/delete | no direct route | no direct route | no |
+
+Implementation notes:
+
+- `packages/shared-types/src/index.ts` includes `PlatformRole = "it_admin" | "it_support" | "tenant_user"`.
+- `auth-context.ts` accepts `it_support` and resolves platform role from Supabase Auth app metadata or `users_profiles`.
+- `it-admin-guard.ts` now exposes capability checks through `requireItAdmin({ permission })`, `hasItAdminPermission`, and `assertItAdminPermission`.
+- `it_support` permission is enforced in API guards and server pages. UI menu filtering is only a convenience layer.
+- `activation-admin-guard.ts` is intentionally full `it_admin` only because support must not manage device registration/control.
+- Migration `supabase/migrations/20260612132854_add_it_support_platform_role.sql` adds `it_support` to the Postgres enum.
+
+## IT Backoffice Login Behavior
+
+- Route: `/it-admin/login`.
+- API: `POST /api/it-admin/auth/login`.
+- Uses Supabase server client `signInWithPassword`.
+- After sign-in, resolves `users_profiles.platform_role` server-side using the service-role client.
+- Allows only active `it_admin` and `it_support` profiles.
+- Rejects and signs out `tenant_user`, inactive profiles, and missing profiles.
+- UI includes Thai/English loading, error, invalid-role, and session-expired states.
+- IT staff must not use `/login/store`; POS store login remains for POS users only.
 
 ## Current IT Admin Surface Map
 
@@ -221,6 +268,7 @@ Security note: `proxy.ts` is only a routing/domain boundary. It is not the sole 
 - P1 hardening needed: `it-admin-guard.ts` currently returns raw unexpected `error.message` for `it_admin_internal_error`; keep detailed errors server-side and return a safer public message.
 - Do not use archived QR login docs as active guidance; the current login flow remains store/branch/employee/device.
 - Deployment isolation guardrail: POS/Sales and IT Backoffice production surfaces must be deployed as separate Vercel Projects/domains with `APP_SURFACE` and allowed-host env vars configured per project.
+- IT support guardrail: `it_support` is a limited platform role and must never inherit full `it_admin` capabilities by default.
 
 ## Safe Implementation Task Pack
 
@@ -388,6 +436,15 @@ Security note: `proxy.ts` is only a routing/domain boundary. It is not the sole 
 
 - `cmd /c pnpm --filter backoffice-web typecheck` - pass.
 - `cmd /c pnpm --filter backoffice-web lint` - pass.
+- `git diff --check` - pass, with Windows line-ending warnings only.
+- No Vercel command was run.
+- No deployment was made.
+
+## Verification Update (2026-06-12 IT Login/Support Role Pass)
+
+- `cmd /c pnpm --filter backoffice-web typecheck` - pass.
+- `cmd /c pnpm --filter backoffice-web lint` - pass.
+- `cmd /c pnpm --filter backoffice-web test -- --cache false` - pass, 22 test files / 54 tests.
 - `git diff --check` - pass, with Windows line-ending warnings only.
 - No Vercel command was run.
 - No deployment was made.

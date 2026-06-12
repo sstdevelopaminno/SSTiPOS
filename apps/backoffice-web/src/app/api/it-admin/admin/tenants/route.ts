@@ -3,7 +3,7 @@ import { ok } from "@/lib/http";
 
 export async function GET() {
   try {
-    const { supabase } = await requireItAdmin();
+    const { supabase } = await requireItAdmin({ permission: "tenant_manage" });
 
     const { data: tenants, error } = await supabase
       .from("tenants")

@@ -2,7 +2,6 @@ import "server-only";
 
 import { headers } from "next/headers";
 import { getAuthContext, type AuthContext } from "@/lib/auth-context";
-import { isItAdminPlatformRole } from "@/lib/it-admin-guard";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 import { FeatureGateError } from "@/lib/feature-gate";
 import { fail } from "@/lib/http";
@@ -22,7 +21,7 @@ export class ActivationAdminGuardError extends Error {
 export type ActivationAdminContext = {
   auth: AuthContext;
   supabase: ReturnType<typeof getSupabaseServiceClient>;
-  actorRole: "it_admin" | "it_support";
+  actorRole: "it_admin";
   requestMeta: {
     ipAddress: string | null;
     userAgent: string | null;
@@ -37,16 +36,15 @@ function readIpAddress(headerStore: Headers) {
 
 export async function requireActivationAdmin(): Promise<ActivationAdminContext> {
   const auth = await getAuthContext({ requireBranchScope: false });
-  if (!isItAdminPlatformRole(auth.platformRole)) {
-    throw new ActivationAdminGuardError("forbidden", "Activation enrollment requires IT admin or IT support permission.", 403);
+  if (auth.platformRole !== "it_admin") {
+    throw new ActivationAdminGuardError("forbidden", "Activation enrollment requires IT admin permission.", 403);
   }
-  const actorRole = auth.platformRole;
 
   const headerStore = await headers();
   return {
     auth,
     supabase: getSupabaseServiceClient(),
-    actorRole,
+    actorRole: "it_admin",
     requestMeta: {
       ipAddress: readIpAddress(headerStore),
       userAgent: headerStore.get("user-agent")
@@ -66,7 +64,7 @@ export async function assertActivationScope(input: {
     throw new ActivationAdminGuardError("missing_tenant_id", "tenant_id is required.", 422);
   }
 
-  if (isItAdminPlatformRole(input.auth.platformRole)) {
+  if (input.auth.platformRole === "it_admin") {
     return { tenantId, branchId };
   }
 

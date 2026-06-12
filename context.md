@@ -42,6 +42,38 @@ This proxy is not the only security boundary. IT admin server layout and API gua
 
 No Vercel deploy was performed for this pass. Future deployment must configure separate environment variables and production aliases per Vercel Project.
 
+### IT Backoffice access roles (2026-06-12)
+
+- `it_admin`: full IT Backoffice access.
+- `it_support`: limited IT support access.
+- `tenant_user`: must not access IT Backoffice.
+
+`/it-admin/login` uses the Supabase Auth server session flow, then resolves `users_profiles.platform_role` server-side. Only active `it_admin` and `it_support` profiles are allowed through to `/it-admin`; `tenant_user` is rejected and signed out from the IT login attempt. Do not reuse `/login/store` for IT staff.
+
+`it_support` allowed surfaces:
+- tenant management
+- branch management
+- package contract/subscription
+- tenant user/branch-role control, except delete/deactivate
+- active sessions
+- shifts
+- audit log review
+- monitoring/readiness
+- package catalog/quote
+
+`it_support` denied surfaces/actions:
+- hard delete/delete/deactivate actions
+- feature flags and branch overrides
+- device registration/control
+- customer display device control
+- login policy management
+- platform users
+- platform/settings pages
+- IT admin role changes
+- raw audit log edit/delete
+
+The database enum `platform_role` is extended by migration `20260612132854_add_it_support_platform_role.sql`. Database helper `app.is_it_admin()` remains intentionally full-admin only; `it_support` is authorized through server-side API guards and does not get broad DB-level admin RLS powers.
+
 ## 2) Completed Delivery by Prompt (1 -> 8)
 
 ### Prompt 1: Real Authentication + POS Session
@@ -203,6 +235,7 @@ No Vercel deploy was performed for this pass. Future deployment must configure s
 10. Public/auth endpoints must be rate-limited.
 11. POS/Sales and IT Backoffice production deployments must use separate Vercel Projects and domains.
 12. Do not rely on navigation hiding for IT isolation; enforce route/domain isolation, server layout guard, API guards, and platform role checks.
+13. `it_support` must be enforced with server-side capability checks, not UI-only menu hiding.
 
 ## 4) Critical Error Codes to Preserve
 

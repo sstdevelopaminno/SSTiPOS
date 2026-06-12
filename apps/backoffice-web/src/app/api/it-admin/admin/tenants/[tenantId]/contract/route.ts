@@ -30,7 +30,7 @@ type ContractRow = {
 
 export async function GET(_req: Request, context: { params: Promise<{ tenantId: string }> }) {
   try {
-    const { supabase } = await requireItAdmin();
+    const { supabase } = await requireItAdmin({ permission: "contract_manage" });
     const { tenantId: tenantIdParam } = await context.params;
     const tenantId = parseTenantParam(tenantIdParam);
 
@@ -68,7 +68,7 @@ export async function GET(_req: Request, context: { params: Promise<{ tenantId: 
 
 export async function PATCH(req: Request, context: { params: Promise<{ tenantId: string }> }) {
   try {
-    const { auth, supabase, requestMeta } = await requireItAdmin();
+    const { auth, supabase, requestMeta } = await requireItAdmin({ permission: "contract_manage" });
     const { tenantId: tenantIdParam } = await context.params;
     const tenantId = parseTenantParam(tenantIdParam);
     const body = (await req.json().catch(() => ({}))) as ContractPayload;

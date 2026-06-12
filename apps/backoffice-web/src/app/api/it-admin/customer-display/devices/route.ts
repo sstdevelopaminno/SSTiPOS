@@ -2,7 +2,7 @@ import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
 import { normalizeDisplayChannel } from "@/lib/customer-display-pairing";
-import { isItAdminPlatformRole } from "@/lib/it-admin-guard";
+import { hasItAdminPermission, isItAdminPlatformRole } from "@/lib/it-admin-guard";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 type PairingDeviceRow = {
@@ -49,7 +49,7 @@ function boolParam(raw: string | null, fallback: boolean): boolean {
 export async function GET(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: false });
-    if (!isItAdminPlatformRole(auth.platformRole)) {
+    if (!isItAdminPlatformRole(auth.platformRole) || !hasItAdminPermission(auth.platformRole, "customer_display_manage")) {
       return fail("forbidden", "Only IT admin or IT support can view paired customer display devices.", 403);
     }
 
@@ -171,7 +171,7 @@ export async function GET(req: Request) {
 export async function PATCH(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: false });
-    if (!isItAdminPlatformRole(auth.platformRole)) {
+    if (!isItAdminPlatformRole(auth.platformRole) || !hasItAdminPermission(auth.platformRole, "customer_display_manage")) {
       return fail("forbidden", "Only IT admin or IT support can revoke paired customer display devices.", 403);
     }
 
@@ -217,7 +217,7 @@ export async function PATCH(req: Request) {
 
     await appendAuditLog({
       actorUserId: auth.userId,
-      actorRole: "it_admin",
+      actorRole: auth.platformRole,
       action: "customer_display_device_revoked",
       targetTable: "pos_customer_display_pairings",
       targetId: current.id,

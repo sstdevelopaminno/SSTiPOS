@@ -1,7 +1,7 @@
 import { appendAuditLog } from "@/lib/audit-log";
 import { enforceQuota, FeatureGateError, requireTenantFeature } from "@/lib/feature-gate";
 import { fail, ok } from "@/lib/http";
-import { guardItAdminError, parseTenantParam, requireItAdmin } from "@/lib/it-admin-guard";
+import { assertItAdminPermission, guardItAdminError, parseTenantParam, requireItAdmin } from "@/lib/it-admin-guard";
 
 type RolePayload = {
   user_id?: string;
@@ -13,7 +13,7 @@ type RolePayload = {
 
 export async function GET(req: Request, context: { params: Promise<{ tenantId: string }> }) {
   try {
-    const { supabase } = await requireItAdmin();
+    const { supabase } = await requireItAdmin({ permission: "user_role_manage" });
     const { tenantId: tenantIdParam } = await context.params;
     const tenantId = parseTenantParam(tenantIdParam);
     const { searchParams } = new URL(req.url);
@@ -42,7 +42,7 @@ export async function GET(req: Request, context: { params: Promise<{ tenantId: s
 
 export async function POST(req: Request, context: { params: Promise<{ tenantId: string }> }) {
   try {
-    const { auth, supabase, requestMeta } = await requireItAdmin();
+    const { auth, supabase, requestMeta } = await requireItAdmin({ permission: "user_role_manage" });
     const { tenantId: tenantIdParam } = await context.params;
     const tenantId = parseTenantParam(tenantIdParam);
     const body = (await req.json()) as RolePayload;
@@ -72,7 +72,7 @@ export async function POST(req: Request, context: { params: Promise<{ tenantId: 
             tenantId,
             branchId,
             actorUserId: auth.userId,
-            actorRole: "it_admin",
+              actorRole: auth.platformRole,
             action: "quota_blocked",
             targetTable: "user_branch_roles",
             metadata: {
@@ -126,7 +126,7 @@ export async function POST(req: Request, context: { params: Promise<{ tenantId: 
       tenantId,
       branchId,
       actorUserId: auth.userId,
-      actorRole: "it_admin",
+      actorRole: auth.platformRole,
       action: "admin_role_assigned",
       targetTable: "user_branch_roles",
       targetId: data.id,
@@ -144,7 +144,7 @@ export async function POST(req: Request, context: { params: Promise<{ tenantId: 
 
 export async function PATCH(req: Request, context: { params: Promise<{ tenantId: string }> }) {
   try {
-    const { auth, supabase, requestMeta } = await requireItAdmin();
+    const { auth, supabase, requestMeta } = await requireItAdmin({ permission: "user_role_manage" });
     const { tenantId: tenantIdParam } = await context.params;
     const tenantId = parseTenantParam(tenantIdParam);
     const body = (await req.json()) as RolePayload;
@@ -168,6 +168,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
     }
 
     if (body.deactivate) {
+      assertItAdminPermission(auth, "user_role_delete");
       const { error: removeError } = await supabase
         .from("user_branch_roles")
         .delete()
@@ -183,7 +184,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
         tenantId,
         branchId,
         actorUserId: auth.userId,
-        actorRole: "it_admin",
+        actorRole: auth.platformRole,
         action: "admin_role_deactivated",
         targetTable: "user_branch_roles",
         targetId: current.id,
@@ -225,7 +226,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
       tenantId,
       branchId,
       actorUserId: auth.userId,
-      actorRole: "it_admin",
+      actorRole: auth.platformRole,
       action: "admin_role_updated",
       targetTable: "user_branch_roles",
       targetId: current.id,
