@@ -146,3 +146,40 @@ The latest stability patch made the RPC order transaction path the default for n
 - Direct order creation is less atomic than the RPC transaction path, but it is compatible with the current production DB and prevents the create-order UI from hanging on unavailable/slow RPC.
 - Delivery send still uses the existing delivery flow and should be smoke-tested.
 - Manual smoke test is still required after deployment.
+
+---
+
+Date: 2026-06-12
+
+## Issue Fixed
+
+Production POS could return from the processing popup without opening a bill number after pressing `สร้างออเดอร์ POS`. The same risk affected dine-in queued bills and the delivery pending send action.
+
+## Root Cause
+
+The direct order fallback still attempted ingredient stock deduction immediately after inserting `orders` and `order_items`. If recipe stock, ingredient rows, or `stock_movements` failed, the fallback deleted the just-created order and returned an error. The UI then returned to the cart without a bill. Delivery send could also still use the RPC path because direct creation was only defaulted for non-delivery sales.
+
+## Files Changed
+
+- `apps/backoffice-web/src/lib/services/pos-sales-service.ts`
+- `apps/backoffice-web/.env.example`
+- `docs/current-stability-audit.md`
+
+## Fix Summary
+
+- Made direct order creation the default for all POS order types unless `POS_PREFER_RPC_ORDER_CREATE=1`.
+- Added `POS_FORCE_DIRECT_CREATE` while keeping `POS_FORCE_DIRECT_CREATE_NON_DELIVERY` as a backward-compatible alias.
+- Added `POS_DEDUCT_STOCK_ON_ORDER_CREATE`; stock deduction is now opt-in and no longer blocks bill creation by default.
+- Preserved server-side tenant, branch, shift, product, table, and auth checks.
+
+## Verification
+
+- Targeted POS sales service ESLint: pass
+- Typecheck: pass
+- Integration tests: pass, 22 files / 54 tests
+- Build: compiled, finished TypeScript, generated 141 static pages, then timed out during build trace collection in local shell.
+
+## Remaining Risks
+
+- Stock deduction is intentionally not performed during order creation unless explicitly enabled.
+- Manual smoke test is still required on production for Takeaway, Dine-in, Delivery send, payment, and receipt.

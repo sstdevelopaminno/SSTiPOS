@@ -141,12 +141,17 @@ const POS_ALLOW_NEGATIVE_STOCK_FALLBACK =
 const POS_SOFT_BYPASS_INSUFFICIENT_STOCK =
   process.env.POS_SOFT_BYPASS_INSUFFICIENT_STOCK === "1" ||
   process.env.POS_SOFT_BYPASS_INSUFFICIENT_STOCK?.toLowerCase() === "true";
-const POS_FORCE_DIRECT_CREATE_NON_DELIVERY =
+const POS_FORCE_DIRECT_CREATE =
+  process.env.POS_FORCE_DIRECT_CREATE === "1" ||
+  process.env.POS_FORCE_DIRECT_CREATE?.toLowerCase() === "true" ||
   process.env.POS_FORCE_DIRECT_CREATE_NON_DELIVERY === "1" ||
   process.env.POS_FORCE_DIRECT_CREATE_NON_DELIVERY?.toLowerCase() === "true";
 const POS_PREFER_RPC_ORDER_CREATE =
   process.env.POS_PREFER_RPC_ORDER_CREATE === "1" ||
   process.env.POS_PREFER_RPC_ORDER_CREATE?.toLowerCase() === "true";
+const POS_DEDUCT_STOCK_ON_ORDER_CREATE =
+  process.env.POS_DEDUCT_STOCK_ON_ORDER_CREATE === "1" ||
+  process.env.POS_DEDUCT_STOCK_ON_ORDER_CREATE?.toLowerCase() === "true";
 
 function isMissingTableErrorMessage(message: string) {
   const normalized = message.toLowerCase();
@@ -161,8 +166,8 @@ function shouldSoftBypassInsufficientStock(orderType: OrderType) {
   return POS_SOFT_BYPASS_INSUFFICIENT_STOCK && orderType !== "delivery_manual";
 }
 
-function shouldPreferDirectCreatePath(orderType: OrderType) {
-  return (POS_FORCE_DIRECT_CREATE_NON_DELIVERY || !POS_PREFER_RPC_ORDER_CREATE) && orderType !== "delivery_manual";
+function shouldPreferDirectCreatePath() {
+  return POS_FORCE_DIRECT_CREATE || !POS_PREFER_RPC_ORDER_CREATE;
 }
 
 async function resolveAllowNegativeStock(auth: AuthContext) {
@@ -647,51 +652,53 @@ async function executeCreatePosOrderDirectFallback(args: {
     return { ok: false as const, code: "order_items_insert_failed", status: 500, message: orderItemsInsertError.message };
   }
 
-  const stockDeductionResult = await deductIngredientStockForOrderFallback({
-    auth,
-    orderId,
-    orderType: input.order_type,
-    items: normalizedItemsWithPrice.map((item) => ({ product_id: item.product_id, quantity: item.quantity }))
-  });
   let stockBypassed = false;
-  if (!stockDeductionResult.ok) {
-    if (softBypassInsufficientStock && stockDeductionResult.code === "insufficient_stock") {
-      stockBypassed = true;
-      appendPosDeadLetter({
-        auth,
-        channel: "order",
-        targetTable: "orders",
-        targetId: orderId,
-        reason: "insufficient_stock_bypassed",
-        metadata: {
-          detail: stockDeductionResult.message,
-          order_type: input.order_type,
-          request_id: idempotencyKey ?? null
-        }
-      });
-      void appendAuditLog({
-        tenantId: auth.tenantId,
-        branchId: auth.branchId,
-        actorUserId: auth.userId,
-        actorRole: auth.branchRole ?? auth.platformRole,
-        action: "pos_order_stock_bypassed",
-        targetTable: "orders",
-        targetId: orderId,
-        metadata: {
-          reason: stockDeductionResult.message,
-          order_type: input.order_type,
-          channel: input.channel
-        }
-      });
-    } else {
-    await supabase.from("order_items").delete().eq("tenant_id", auth.tenantId).eq("branch_id", auth.branchId).eq("order_id", orderId);
-    await supabase.from("orders").delete().eq("tenant_id", auth.tenantId).eq("branch_id", auth.branchId).eq("id", orderId);
-    return {
-      ok: false as const,
-      code: stockDeductionResult.code,
-      status: stockDeductionResult.status,
-      message: stockDeductionResult.message
-    };
+  if (POS_DEDUCT_STOCK_ON_ORDER_CREATE) {
+    const stockDeductionResult = await deductIngredientStockForOrderFallback({
+      auth,
+      orderId,
+      orderType: input.order_type,
+      items: normalizedItemsWithPrice.map((item) => ({ product_id: item.product_id, quantity: item.quantity }))
+    });
+    if (!stockDeductionResult.ok) {
+      if (softBypassInsufficientStock && stockDeductionResult.code === "insufficient_stock") {
+        stockBypassed = true;
+        appendPosDeadLetter({
+          auth,
+          channel: "order",
+          targetTable: "orders",
+          targetId: orderId,
+          reason: "insufficient_stock_bypassed",
+          metadata: {
+            detail: stockDeductionResult.message,
+            order_type: input.order_type,
+            request_id: idempotencyKey ?? null
+          }
+        });
+        void appendAuditLog({
+          tenantId: auth.tenantId,
+          branchId: auth.branchId,
+          actorUserId: auth.userId,
+          actorRole: auth.branchRole ?? auth.platformRole,
+          action: "pos_order_stock_bypassed",
+          targetTable: "orders",
+          targetId: orderId,
+          metadata: {
+            reason: stockDeductionResult.message,
+            order_type: input.order_type,
+            channel: input.channel
+          }
+        });
+      } else {
+        await supabase.from("order_items").delete().eq("tenant_id", auth.tenantId).eq("branch_id", auth.branchId).eq("order_id", orderId);
+        await supabase.from("orders").delete().eq("tenant_id", auth.tenantId).eq("branch_id", auth.branchId).eq("id", orderId);
+        return {
+          ok: false as const,
+          code: stockDeductionResult.code,
+          status: stockDeductionResult.status,
+          message: stockDeductionResult.message
+        };
+      }
     }
   }
 
@@ -920,7 +927,7 @@ export async function executeCreatePosOrderTransaction(args: {
   invokeRpc?: RpcInvoker;
 }) {
   const { auth, input, idempotencyKey, invokeRpc = defaultRpcInvoker } = args;
-  if (shouldPreferDirectCreatePath(input.order_type)) {
+  if (shouldPreferDirectCreatePath()) {
     return executeCreatePosOrderDirectFallback({
       auth,
       input,
