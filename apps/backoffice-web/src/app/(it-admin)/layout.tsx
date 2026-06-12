@@ -1,6 +1,9 @@
 import { AppShell } from "@/components/layout/app-shell";
 import type { ReactNode } from "react";
 import { getCurrentLanguage, t } from "@/lib/i18n";
+import { getAuthContext } from "@/lib/auth-context";
+import { isItAdminPlatformRole } from "@/lib/it-admin-guard";
+import { redirect } from "next/navigation";
 
 const nav = [
   { href: "/it-admin", key: "dashboard" },
@@ -15,6 +18,11 @@ const nav = [
 ] as const;
 
 export default async function ItAdminLayout({ children }: { children: ReactNode }) {
+  const auth = await getAuthContext({ requireBranchScope: false }).catch(() => null);
+  if (!auth || !isItAdminPlatformRole(auth.platformRole)) {
+    redirect("/it-admin/login");
+  }
+
   const lang = await getCurrentLanguage();
 
   return (

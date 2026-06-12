@@ -2,6 +2,7 @@ import "server-only";
 
 import { headers } from "next/headers";
 import { getAuthContext, type AuthContext } from "@/lib/auth-context";
+import { isItAdminPlatformRole } from "@/lib/it-admin-guard";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 import { FeatureGateError } from "@/lib/feature-gate";
 import { fail } from "@/lib/http";
@@ -21,7 +22,7 @@ export class ActivationAdminGuardError extends Error {
 export type ActivationAdminContext = {
   auth: AuthContext;
   supabase: ReturnType<typeof getSupabaseServiceClient>;
-  actorRole: "it_admin" | "owner" | "manager";
+  actorRole: "it_admin" | "it_support";
   requestMeta: {
     ipAddress: string | null;
     userAgent: string | null;
@@ -36,17 +37,16 @@ function readIpAddress(headerStore: Headers) {
 
 export async function requireActivationAdmin(): Promise<ActivationAdminContext> {
   const auth = await getAuthContext({ requireBranchScope: false });
-  const isItAdmin = auth.platformRole === "it_admin";
-  const isBranchAdmin = auth.branchRole === "owner" || auth.branchRole === "manager";
-  if (!isItAdmin && !isBranchAdmin) {
-    throw new ActivationAdminGuardError("forbidden", "Activation enrollment requires it_admin or owner/manager permission.", 403);
+  if (!isItAdminPlatformRole(auth.platformRole)) {
+    throw new ActivationAdminGuardError("forbidden", "Activation enrollment requires IT admin or IT support permission.", 403);
   }
+  const actorRole = auth.platformRole;
 
   const headerStore = await headers();
   return {
     auth,
     supabase: getSupabaseServiceClient(),
-    actorRole: isItAdmin ? "it_admin" : (auth.branchRole as "owner" | "manager"),
+    actorRole,
     requestMeta: {
       ipAddress: readIpAddress(headerStore),
       userAgent: headerStore.get("user-agent")
@@ -66,7 +66,7 @@ export async function assertActivationScope(input: {
     throw new ActivationAdminGuardError("missing_tenant_id", "tenant_id is required.", 422);
   }
 
-  if (input.auth.platformRole === "it_admin") {
+  if (isItAdminPlatformRole(input.auth.platformRole)) {
     return { tenantId, branchId };
   }
 
@@ -75,7 +75,7 @@ export async function assertActivationScope(input: {
   }
 
   if (!input.allowTenantWide && !branchId) {
-    throw new ActivationAdminGuardError("branch_scope_required", "branch_id is required for owner/manager activation actions.", 422);
+    throw new ActivationAdminGuardError("branch_scope_required", "branch_id is required for scoped activation actions.", 422);
   }
 
   if (branchId && input.auth.branchId !== branchId) {
@@ -94,4 +94,3 @@ export function guardActivationAdminError(error: unknown): Response {
   }
   return fail("activation_admin_internal_error", error instanceof Error ? error.message : "Internal server error.", 500);
 }
-

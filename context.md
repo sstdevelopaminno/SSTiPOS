@@ -1,6 +1,6 @@
 # SST iPOS Project Context (Authoritative Handoff)
 
-Last updated: 2026-06-01
+Last updated: 2026-06-12
 Workspace: `e:\POS Preview`
 
 This file is the primary context handoff for future GPT/Codex runs.
@@ -22,6 +22,25 @@ Primary architectural goals:
 - feature gate + quota control for SaaS packaging
 
 **IMPORTANT:** QR Scan login flow has been **removed** as of 2026-05-29. The system now uses only the standard Store Login / Pre-entry flow.
+
+### Deployment surface separation (2026-06-12)
+
+POS/Sales and IT Backoffice must be deployed as separate Vercel Projects with separate public domains:
+- POS/Sales project: example `sstipos-pos`, domain `pos.<domain>`.
+- IT Backoffice project: example `sstipos-it-admin`, domain `admin.<domain>` or `it.<domain>`.
+
+The IT Backoffice must not share the same public URL as POS/Sales. POS users must not reach IT admin routes from the POS domain, and IT staff must not use the POS sales URL for IT Backoffice.
+
+`apps/backoffice-web/src/proxy.ts` now provides high-level app surface isolation:
+- `APP_SURFACE=pos` blocks/redirects `/it-admin/*`, `/api/it-admin/*`, `/audit-logs`, and `/tenants`.
+- `APP_SURFACE=it_admin` redirects `/` to `/it-admin`, blocks POS sales/login/API surfaces such as `/preview/pos/*`, `/api/pos/*`, `/login/*`, `/api/auth/*`, and `/api/store/*`, and leaves IT auth to server-side guards.
+- `APP_SURFACE=all` is for local development only.
+- `POS_ALLOWED_HOSTS` and `IT_ADMIN_ALLOWED_HOSTS` are comma-separated host allowlists for each Vercel Project.
+- Existing POS session-cookie protection for `/preview/pos/*` is preserved when `APP_SURFACE=pos` or `APP_SURFACE=all`.
+
+This proxy is not the only security boundary. IT admin server layout and API guards still resolve user/role server-side and only allow `it_admin` or `it_support`. POS APIs must continue to derive POS session, tenant, branch, device, role, permission, contract, and feature state server-side.
+
+No Vercel deploy was performed for this pass. Future deployment must configure separate environment variables and production aliases per Vercel Project.
 
 ## 2) Completed Delivery by Prompt (1 -> 8)
 
@@ -182,6 +201,8 @@ Primary architectural goals:
 8. Shift gate must block sales APIs without active shift.
 9. Audit logs must exist for sensitive auth/admin/sales/attendance actions.
 10. Public/auth endpoints must be rate-limited.
+11. POS/Sales and IT Backoffice production deployments must use separate Vercel Projects and domains.
+12. Do not rely on navigation hiding for IT isolation; enforce route/domain isolation, server layout guard, API guards, and platform role checks.
 
 ## 4) Critical Error Codes to Preserve
 
@@ -263,6 +284,10 @@ Important env vars include:
   - `RATE_LIMIT_REDIS_PREFIX`
   - `UPSTASH_REDIS_REST_URL`
   - `UPSTASH_REDIS_REST_TOKEN`
+- app surface isolation:
+  - `APP_SURFACE=pos|it_admin|all`
+  - `POS_ALLOWED_HOSTS`
+  - `IT_ADMIN_ALLOWED_HOSTS`
 
 ## 8) Known Gaps / Go-live Blockers
 

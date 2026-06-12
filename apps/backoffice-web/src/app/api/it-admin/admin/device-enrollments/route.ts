@@ -1,6 +1,7 @@
 import { assertActivationScope, guardActivationAdminError, requireActivationAdmin } from "@/lib/activation-admin-guard";
 import { requireTenantFeatureIfConfigured } from "@/lib/feature-gate";
 import { fail, ok } from "@/lib/http";
+import { isItAdminPlatformRole } from "@/lib/it-admin-guard";
 
 type EnrollmentQuery = {
   tenant_id?: string;
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
       auth,
       tenantId: tenantIdParam,
       branchId: branchIdParam,
-      allowTenantWide: auth.platformRole === "it_admin"
+      allowTenantWide: isItAdminPlatformRole(auth.platformRole)
     });
 
     await requireTenantFeatureIfConfigured(tenantId, "mobile_device_enrollment", branchId);
@@ -54,4 +55,3 @@ export async function GET(request: Request) {
     return guardActivationAdminError(error);
   }
 }
-

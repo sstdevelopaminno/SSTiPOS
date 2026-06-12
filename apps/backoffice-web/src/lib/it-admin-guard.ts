@@ -27,6 +27,10 @@ export class ItAdminGuardError extends Error {
   }
 }
 
+export function isItAdminPlatformRole(role: string | null | undefined): role is "it_admin" | "it_support" {
+  return role === "it_admin" || role === "it_support";
+}
+
 function readIpAddress(headerStore: Headers): string | null {
   const forwarded = headerStore.get("x-forwarded-for")?.split(",")[0]?.trim();
   const realIp = headerStore.get("x-real-ip")?.trim();
@@ -35,8 +39,8 @@ function readIpAddress(headerStore: Headers): string | null {
 
 export async function requireItAdmin(): Promise<ItAdminContext> {
   const auth = await getAuthContext({ requireBranchScope: false });
-  if (auth.platformRole !== "it_admin") {
-    throw new ItAdminGuardError("forbidden", "Only platform admin can access this endpoint.", 403);
+  if (!isItAdminPlatformRole(auth.platformRole)) {
+    throw new ItAdminGuardError("forbidden", "Only IT admin or IT support can access this endpoint.", 403);
   }
 
   const headerStore = await headers();

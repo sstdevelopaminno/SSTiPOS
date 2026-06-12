@@ -2,6 +2,7 @@ import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { normalizeDisplayChannel } from "@/lib/customer-display-pairing";
 import { fail, ok } from "@/lib/http";
+import { isItAdminPlatformRole } from "@/lib/it-admin-guard";
 import {
   getCustomerDisplayPolicy,
   invalidateCustomerDisplayPolicyCache
@@ -40,8 +41,8 @@ function clampInt(raw: unknown, min: number, max: number, fallback: number): num
 export async function GET(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: false });
-    if (auth.platformRole !== "it_admin") {
-      return fail("forbidden", "Only IT admin can view customer display policies.", 403);
+    if (!isItAdminPlatformRole(auth.platformRole)) {
+      return fail("forbidden", "Only IT admin or IT support can view customer display policies.", 403);
     }
 
     const supabase = getSupabaseServiceClient();
@@ -91,8 +92,8 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: false });
-    if (auth.platformRole !== "it_admin") {
-      return fail("forbidden", "Only IT admin can update customer display policies.", 403);
+    if (!isItAdminPlatformRole(auth.platformRole)) {
+      return fail("forbidden", "Only IT admin or IT support can update customer display policies.", 403);
     }
 
     const body = (await req.json().catch(() => ({}))) as UpsertPolicyBody;
