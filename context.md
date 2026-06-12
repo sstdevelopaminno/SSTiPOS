@@ -50,6 +50,16 @@ No Vercel deploy was performed for this pass. Future deployment must configure s
 
 `/it-admin/login` uses the Supabase Auth server session flow, then resolves `users_profiles.platform_role` server-side. Only active `it_admin` and `it_support` profiles are allowed through to `/it-admin`; `tenant_user` is rejected and signed out from the IT login attempt. Do not reuse `/login/store` for IT staff.
 
+First UI pass for the separated IT login is complete:
+- system name/title: `SSTiPOS Support`
+- route: `/it-admin/login`
+- desktop/tablet/mobile split login card with blue branding panel and white email/password form
+- Thai/English loading, error, invalid-role, session-expired, signed-out, and success states
+- QR login tab is UI placeholder only: "QR login for mobile support devices is coming soon."
+- no QR authentication runtime was implemented in this pass
+- preferred support logo path remains `apps/backoffice-web/public/brand/sstipos-support-logo.png`; this asset is not present yet, so the UI currently falls back to `/brand/sst-ipos-logo.svg`
+- no Vercel command was run and no deployment was made
+
 `it_support` allowed surfaces:
 - tenant management
 - branch management
