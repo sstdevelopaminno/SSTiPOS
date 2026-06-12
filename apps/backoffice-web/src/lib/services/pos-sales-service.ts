@@ -599,6 +599,25 @@ async function executeCreatePosOrderDirectFallback(args: {
     status: "queued",
     created_by: auth.userId
   };
+  const minimalOrderInsertPayload = {
+    id: orderId,
+    tenant_id: auth.tenantId,
+    branch_id: auth.branchId,
+    shift_id: input.shift_id,
+    order_no: orderNo,
+    order_type: input.order_type,
+    channel: input.channel,
+    table_id: input.table_id ?? null,
+    external_order_code: input.external_order_code ?? null,
+    customer_name: input.customer_name ?? null,
+    notes: input.notes ?? null,
+    subtotal: computedSubtotal,
+    discount_amount: discountAmount,
+    gp_amount: gpAmount,
+    total_amount: totalAmount,
+    status: "queued",
+    created_by: auth.userId
+  };
   const orderInsertPayload =
     supportsRequestId && idempotencyKey
       ? {
@@ -627,6 +646,9 @@ async function executeCreatePosOrderDirectFallback(args: {
       ({ error: orderInsertError } = await supabase.from("orders").insert(baseOrderInsertPayloadLegacy));
     }
   }
+  if (orderInsertError) {
+    ({ error: orderInsertError } = await supabase.from("orders").insert(minimalOrderInsertPayload));
+  }
 
   if (orderInsertError) {
     return { ok: false as const, code: "order_insert_failed", status: 500, message: orderInsertError.message };
@@ -646,7 +668,22 @@ async function executeCreatePosOrderDirectFallback(args: {
     };
   });
 
-  const { error: orderItemsInsertError } = await supabase.from("order_items").insert(orderItemsPayload);
+  let { error: orderItemsInsertError } = await supabase.from("order_items").insert(orderItemsPayload);
+  if (orderItemsInsertError) {
+    const minimalOrderItemsPayload = normalizedItemsWithPrice.map((item) => {
+      const unitPrice = item.unit_price;
+      return {
+        tenant_id: auth.tenantId,
+        branch_id: auth.branchId,
+        order_id: orderId,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        unit_price: unitPrice,
+        line_total: Number((unitPrice * item.quantity).toFixed(2))
+      };
+    });
+    ({ error: orderItemsInsertError } = await supabase.from("order_items").insert(minimalOrderItemsPayload));
+  }
   if (orderItemsInsertError) {
     await supabase.from("orders").delete().eq("tenant_id", auth.tenantId).eq("branch_id", auth.branchId).eq("id", orderId);
     return { ok: false as const, code: "order_items_insert_failed", status: 500, message: orderItemsInsertError.message };

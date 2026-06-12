@@ -183,3 +183,37 @@ The direct order fallback still attempted ingredient stock deduction immediately
 
 - Stock deduction is intentionally not performed during order creation unless explicitly enabled.
 - Manual smoke test is still required on production for Takeaway, Dine-in, Delivery send, payment, and receipt.
+
+---
+
+Date: 2026-06-12
+
+## Issue Fixed
+
+POS order creation still returned from the creating popup without opening the payment/review bill popup in production.
+
+## Root Cause
+
+The create-order path could still fail before returning an order when the production database accepted the core POS schema but rejected optional/newer order or order item columns. In that case the client cleared the creating preview and returned to the cart with no bill number.
+
+## Files Changed
+
+- `apps/backoffice-web/src/lib/services/pos-sales-service.ts`
+- `docs/current-stability-audit.md`
+
+## Fix Summary
+
+- Added a final minimal `orders` insert fallback with only core bill columns.
+- Added a final minimal `order_items` insert fallback without optional item notes.
+- Kept tenant, branch, shift, product, table, and auth scope checks server-side.
+- Kept stock deduction disabled by default during order creation.
+
+## Verification
+
+- Targeted POS sales service ESLint: pass
+- Typecheck: pass
+- Integration tests: pass, 22 files / 54 tests
+
+## Remaining Risks
+
+- Production smoke test is required because local shell cannot mutate production data for probe inserts without explicit approval.
