@@ -192,3 +192,17 @@ For every future code change, system fix, or development pass:
 - Include the current status, changed files, verification results, risks, and next recommended steps.
 - Push the documentation updates to GitHub so the planning chat can read the latest repo state before sending the next Codex command.
 - Do not deploy or run Vercel unless the user explicitly asks for deployment.
+
+## IT Backoffice Audit Update (2026-06-12)
+
+The latest IT Backoffice/Admin audit is documented in `docs/AI-HANDOFF-IT-BACKOFFICE-2026-06-12.md`.
+
+Next implementation should start with P1 guardrails:
+
+- tenant package/contract/`core_pos_sales` readiness
+- branch feature override scope validation
+- user role branch/user validation
+- contract plan validation
+- targeted IT admin permission, scope, feature gate, and quota tests
+
+No Vercel deploy should be run for this planning/audit pass.

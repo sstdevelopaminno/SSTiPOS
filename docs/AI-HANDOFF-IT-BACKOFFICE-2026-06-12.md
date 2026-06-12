@@ -3,6 +3,7 @@
 Date: 2026-06-12
 Branch: it-admin-planning-2026-06-12
 Deployment status: No Vercel deploy. No production deploy.
+Latest audit pass: 2026-06-12, GitHub-synced branch was fetched and confirmed up to date before inspection.
 
 ## Source Documents Read
 
@@ -153,6 +154,44 @@ Missing documents: none found in current branch.
 | P2 | User role assignment requires raw `user_id`. | Operators should not paste opaque IDs; server should resolve users. | Add user search/select API and UI flow. |
 | P2 | Audit log filters expose raw identifiers. | IT needs readable tenant/branch/user context and evidence export later. | Add selector metadata and plan export/evidence workflow. |
 | P2 | Monitoring/readiness is document-driven. | Production readiness evidence is not surfaced inside IT admin. | Add readiness dashboard after P1 guardrails. |
+
+## IT Admin Module Audit Matrix (2026-06-12)
+
+| Module | Existing route/page/API files | Current status | Missing behavior | Risk | API work | UI work | Migration | Tests |
+|---|---|---|---|---|---|---|---|---|
+| Tenant management | Pages: `tenants/page.tsx`, `it-admin/tenants/page.tsx`, `tenants/[tenantId]/page.tsx`; UI: `tenant-index-console.tsx`, `tenant-admin-nav.tsx`; APIs: `api/it-admin/admin/tenants/route.ts`, `api/it-admin/tenants/route.ts` | Tenant list and drill-down exist; tenant creation API currently returns a generated payload and audit event but does not visibly persist a tenant row in the inspected implementation. | Tenant index lacks active contract/package/core feature readiness; no complete audited enable/disable tenant action in inspected console; tenant create path needs persistence/status validation before being treated as production-ready. | P1 | Yes | Yes | Maybe, only if tenant lifecycle/status fields are missing | Yes |
+| Branch management | Page: `tenants/[tenantId]/branches/page.tsx`; UI: `tenant-section-console.tsx`; API: `admin/tenants/[tenantId]/branches/route.ts` | List/create/update are tenant-scoped; create enforces `branch_management`, quota, duplicate handling, and audit logging; update validates branch belongs to tenant before mutation. | UI lacks strong confirmation and bilingual success/error/empty states; readiness does not show contract/feature blockers per branch. | P2 | No for current hardening, yes for readiness data | Yes | No | Optional API/UI tests |
+| Device/register management | Page: `tenants/[tenantId]/devices/page.tsx`; UI: `tenant-section-console.tsx`; APIs: `admin/tenants/[tenantId]/devices/route.ts`, `admin/activation-tokens/route.ts`, `admin/device-enrollments/*` | Device list/update are tenant-scoped and feature-gated; approve/activate enforce quota and audit; activation token and enrollment approve/revoke validate activation scope and audit. | UI lacks confirmations for approve/activate/deactivate/block; quota/feature-blocked states need clearer Thai/English copy. | P2 | No for core flow, maybe for richer readiness | Yes | No | Yes for quota and permission rejection |
+| User and role management | Page: `tenants/[tenantId]/users/page.tsx`; UI: `tenant-section-console.tsx`; API: `admin/tenants/[tenantId]/users/route.ts` | Role list/assign/update/deactivate exist; tenant filters and audit logs exist; user quota runs for first role assignment. | UI requires raw `user_id`; POST/PATCH should explicitly validate branch belongs to tenant and user exists/is active before write, rather than relying on query/FK behavior; role options should remain server-authorized. | P1 | Yes | Yes | No | Yes |
+| Package and subscription contract management | Page: `it-admin/packages/page.tsx`, tenant features page; UI: `package-billing-console.tsx`, `tenant-section-console.tsx`; APIs: `packages/route.ts`, `packages/quote/route.ts`, `admin/tenants/[tenantId]/contract/route.ts`; service: `subscription-package-service.ts` | Package catalog/quote exist; tenant contract read/create/update exists; cache invalidation and plan/status audit events exist. | Tenant index does not show contract readiness; contract PATCH should validate submitted plan/package is active before write; UI needs no-contract/inactive/expired warnings and effective `core_pos_sales` state. | P1 | Yes | Yes | No | Yes |
+| Feature flags and branch overrides | Page: `tenants/[tenantId]/features/page.tsx`; UI: `tenant-section-console.tsx`; APIs: `admin/tenants/[tenantId]/features/route.ts`; service: `feature-gate.ts` | Effective feature read combines contract state, plan features, tenant override, and optional branch override; PATCH writes override, invalidates feature cache, and audits. | PATCH accepts client `branch_id` without explicit branch belongs-to-tenant validation; GET should also reject branch filters outside tenant for clearer operator feedback; no targeted branch-scope rejection test. | P1 | Yes | No | No | Yes |
+| Active POS sessions | Page: `tenants/[tenantId]/sessions/page.tsx`; UI: `tenant-section-console.tsx`; API: `admin/tenants/[tenantId]/sessions/route.ts` | Tenant/branch scoped list and revoke exist; revoke audits and only mutates session rows in the tenant. | UI revoke action lacks confirmation and explicit success/empty states; session list shows raw IDs only. | P2 | No | Yes | No | Optional |
+| Shifts | Page: `tenants/[tenantId]/shifts/page.tsx`; UI: `tenant-section-console.tsx`; API: `admin/tenants/[tenantId]/shifts/route.ts` | Tenant/branch scoped list and force close/suspend exist with audit logging. | Force close/suspend lacks confirmation, operational warning copy, and detailed outcome state; no special check for open settlement risks in inspected IT admin UI. | P2 | No for confirmation, maybe for richer risk metadata | Yes | No | Optional |
+| Audit logs | Page: `audit-logs/page.tsx`; UI: `platform-audit-logs-console.tsx`; API: `admin/audit-logs/route.ts` | Paginated audit query with tenant, branch, actor, action, date, and search filters exists. | UI filters are raw IDs; no tenant/branch selectors, export, or evidence workflow; read filter scope is platform-wide for IT admin and should remain explicit. | P2 | Maybe | Yes | No | Optional |
+| Monitoring/readiness visibility | Page: `it-admin/monitoring/page.tsx`; related docs: `production-readiness-checklist.md` | Monitoring page exists and polls POS health endpoint; production readiness checklist exists in docs. | IT readiness is not a contract/package/feature/audit dashboard; page uses `/api/admin/pos/monitor` outside the inspected API tree and docs already flag monitor performance risk; Thai copy appears mojibake in shell output and should be checked in IDE before UI edits. | P1 | Yes | Yes | Maybe if storing readiness evidence | Yes |
+| UX loading/error/empty states | UI: `tenant-index-console.tsx`, `tenant-section-console.tsx`, `package-billing-console.tsx`, `customer-display-admin-console.tsx`, `platform-audit-logs-console.tsx` | Basic loading and error states exist; some success state exists in tenant section console. | Sensitive actions mostly fire immediately without confirmation; bilingual Thai/English loading, empty, error, success, and confirmation states are inconsistent; several tables lack explicit empty rows. | P2 | No | Yes | No | Optional UI tests/manual QA |
+| Tests and QA evidence | Docs: this handoff plus readiness/manual QA docs; no IT admin test files were inspected because the requested scope was limited to IT admin runtime paths. | Prior docs say targeted IT admin tests are incomplete. | Need focused tests for contract inactive/no-contract behavior, `core_pos_sales` readiness, feature override branch scope rejection, user role branch scope rejection, tenant isolation, quota rejection, and non-IT permission rejection. | P1 | No, except where gaps are fixed | No | No | Yes |
+
+## Security Verification Notes (2026-06-12)
+
+- Server-only boundaries are mostly preserved in `it-admin-guard.ts`, `feature-gate.ts`, and `subscription-package-service.ts`.
+- `requireItAdmin()` resolves auth server-side and only exposes the service-role Supabase client from server-only code.
+- Tenant and branch mutations for branches/devices/sessions/shifts generally include `.eq("tenant_id", tenantId)` and audit logging.
+- P1 hardening needed: `admin/tenants/[tenantId]/features/route.ts` must validate any submitted `branch_id` belongs to the route tenant before read/write override operations.
+- P1 hardening needed: `admin/tenants/[tenantId]/users/route.ts` should validate the submitted branch and user server-side before assigning/updating roles.
+- P1 hardening needed: `customer-display/policies/route.ts` accepts `tenant_id` and `branch_id` directly from request query/body; validate branch ownership before policy read/upsert or route it through a tenant-scoped API.
+- P1 hardening needed: `it-admin-guard.ts` currently returns raw unexpected `error.message` for `it_admin_internal_error`; keep detailed errors server-side and return a safer public message.
+- Do not use archived QR login docs as active guidance; the current login flow remains store/branch/employee/device.
+
+## Safe Implementation Task Pack
+
+1. Add tenant readiness data to `/api/it-admin/admin/tenants`: latest contract status, package code/name, contract validity, and effective `core_pos_sales` from server-side feature resolution.
+2. Update `tenant-index-console.tsx` to show package/contract/core POS readiness with clear Thai/English loading, empty, error, and warning states.
+3. Harden `admin/tenants/[tenantId]/features/route.ts` with branch belongs-to-tenant validation before branch override GET/PATCH.
+4. Harden `admin/tenants/[tenantId]/users/route.ts` by resolving submitted branch and user server-side before role assignment/update/deactivation.
+5. Validate contract `plan_id` against active subscription packages before writing a tenant contract.
+6. Add focused tests for non-IT rejection, feature override branch-scope rejection, user role branch-scope rejection, inactive/no-contract `core_pos_sales`, and quota rejection.
+7. Only after P1 hardening, add P2 confirmations and bilingual UX states across branch/device/session/shift/feature actions.
 
 ## IT Backoffice Gap List
 
