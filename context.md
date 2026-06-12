@@ -473,27 +473,10 @@ ORDER BY p.name;
 * If `recipe_lines > 0` but no `stock_movements`, debug the stock deduction execution path in `pos-sales-service`.
 * If `stock_movements` exists but UI stock does not change, debug stock UI refresh/cache.
 
-## POS Order Stock Path Stability Fix (2026-06-11)
+## IT Backoffice Planning Sync (2026-06-12)
 
-### What changed
-- The default POS sales creation path now prefers the transactional RPC path instead of direct JavaScript fallback for non-delivery orders.
-- Insufficient-stock failures no longer soft-bypass by default.
-
-### Root cause
-- `POS_FORCE_DIRECT_CREATE_NON_DELIVERY` and `POS_SOFT_BYPASS_INSUFFICIENT_STOCK` treated unset env vars as enabled.
-- That could create orders through the fallback path and bypass stock deduction failures unless explicitly disabled.
-
-### Files changed
-- `apps/backoffice-web/src/lib/services/pos-sales-service.ts`
-- `docs/codex-token-saving-workflow.md`
-- `docs/current-stability-audit.md`
-- `context.md`
-
-### Verification
-- `npm run typecheck` was attempted but blocked because `npm` is unavailable in the current shell PATH.
-- `corepack pnpm --filter backoffice-web typecheck` was attempted but blocked because `corepack` is unavailable in the current shell PATH.
-- `npm run lint` was blocked by the same missing Node/npm/corepack environment.
-
-### Remaining risk
-- Re-run typecheck, lint, and focused POS manual QA after Node/npm/corepack are available in the shell.
-- Current status: Improved, but not yet 100% production complete.
+- Next development focus: IT backoffice/admin system.
+- Planning branch: `it-admin-planning-2026-06-12`.
+- New handoff document: `docs/AI-HANDOFF-IT-BACKOFFICE-2026-06-12.md`.
+- This pass does not run Vercel and does not deploy production.
+- IT admin work must preserve tenant isolation, branch scoping, server-side feature gates, service-role server-only usage, and audit logging.
