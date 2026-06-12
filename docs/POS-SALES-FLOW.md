@@ -1,4 +1,4 @@
-# POS Sales Flow v0.1.3 (Real Module)
+# POS Sales Flow v0.1.4 (Real Module)
 
 Date: 2026-06-12
 
@@ -73,6 +73,18 @@ This version replaces preview POS flow with real POS APIs and production-oriente
 - Takeaway checkout shows a creating-bill popup while `POST /api/pos/sales` is in progress.
 - If bill creation fails, the popup keeps the cart context, displays the localized error, and offers retry/close actions instead of disappearing silently.
 - Successful bill creation must return `id`, `order_no`, `status`, `total_amount`, `tax_total`, and `tax_lines` so the review/payment modal can continue immediately.
+- The creating/error popup must keep `pointer-events: auto`; otherwise close/retry buttons cannot be clicked.
+- Close/retry actions must clear the checkout request lock before closing or resubmitting, so a failed request cannot leave the cashier stuck in the modal.
+
+## Feature Gate Notes
+- POS sales APIs require the `core_pos_sales` feature for the current tenant/branch scope.
+- On 2026-06-12, production demo scope `NDL-TH-001 / NDL-ONNUT-01` returned `feature_not_enabled` because the tenant had no active contract. An active Starter contract was inserted and `app.tenant_has_feature(..., 'core_pos_sales')` verified `true`.
+- Future demo tenant creation must include an active contract or explicit feature entitlement before POS sales QA.
+
+## Bank Transfer Popup Fit
+- The bank-transfer modal is intentionally compact so the QR and confirm button fit in the viewport.
+- Current target sizing: QR image about 220px desktop and 206px mobile; payment total max about 42px desktop and 40px mobile; tax line is smaller than the main total.
+- Keep tax rows visually secondary to the payment amount. Avoid reusing hero-scale numeric styles for tax lines.
 
 ## Manager Override Modal Coverage
 - cancel bill (`cancel_bill`)

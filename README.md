@@ -13,6 +13,13 @@ Before go-live, the project still needs passing evidence for typecheck, lint, lo
 - Fixed the takeaway checkout popup so failed bill creation no longer disappears silently; the popup now keeps the cart context, shows the error, and allows retry.
 - Fixed the POS payment summary subtotal binding so checkout totals use the real cart subtotal instead of the discount amount.
 - Hardened POS order creation replay responses so the frontend receives usable bill totals, tax lines, and status for the next payment step.
+- Enabled the active production demo tenant scope for `core_pos_sales` by adding an active Starter contract after the POS API returned `feature_not_enabled`.
+- Fixed the checkout error modal actions by restoring pointer events and resetting the checkout request lock before close/retry.
+- Polished the bank-transfer payment popup sizing: smaller QR, smaller tax line, tighter spacing, and better fit in the modal viewport.
+
+### Next Handoff
+
+The next development pass should start with IT backoffice work and keep POS sales changes to bug fixes only unless explicitly requested. Use `docs/AI-HANDOFF-IT-BACKOFFICE-2026-06-12.md` as the bootstrap for the next chat.
 
 ## Stack
 
@@ -164,6 +171,7 @@ Manual POS QA should cover:
 - `docs/current-stability-audit.md` - latest stability audit
 - `docs/pos-multi-owner-branch-architecture.md` - architecture and safety model
 - `docs/pos-login-context-handoff.md` - login/session context details
+- `docs/AI-HANDOFF-IT-BACKOFFICE-2026-06-12.md` - next-chat handoff for IT backoffice development
 - `docs/manual-qa-checklist.md` - manual QA checklist
 - `docs/production-readiness-checklist.md` - go-live readiness
 - `docs/monitoring-alerting-runbook.md` - operations monitoring
