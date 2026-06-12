@@ -1,5 +1,6 @@
 import { TenantSectionConsole } from "@/components/it-admin/tenant-section-console";
 import { getAuthContext } from "@/lib/auth-context";
+import { isItAdminPlatformRole } from "@/lib/it-admin-guard";
 
 export default async function TenantPoliciesPage({
   params
@@ -8,7 +9,7 @@ export default async function TenantPoliciesPage({
 }) {
   const { tenantId } = await params;
   const auth = await getAuthContext({ requireBranchScope: false }).catch(() => null);
-  if (!auth || auth.platformRole !== "it_admin") {
+  if (!auth || !isItAdminPlatformRole(auth.platformRole)) {
     return (
       <section className="surface">
         <h2>Forbidden</h2>

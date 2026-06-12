@@ -23,14 +23,23 @@ The next development pass should start with IT backoffice work and keep POS sale
 
 ## Stack
 
-- Monorepo: pnpm workspaces + Turbo
-- Main app: Next.js App Router + TypeScript
-- Database/Auth: Supabase PostgreSQL + RLS
-- Shared contracts: `packages/shared-types`
-- Business rules: `packages/pos-domain`
-- UI primitives: `packages/ui`
+## Deployment surface model
 
-## Repository Map
+POS/Sales and IT Backoffice must run as separate Vercel Projects and separate domains. Do not expose IT Backoffice from the POS/Sales public URL.
+
+- POS/Sales: Vercel Project example `sstipos-pos`, domain example `pos.<domain>`, `APP_SURFACE=pos`.
+- IT Backoffice: Vercel Project example `sstipos-it-admin`, domain example `admin.<domain>` or `it.<domain>`, `APP_SURFACE=it_admin`.
+- Local development only: `APP_SURFACE=all`.
+
+Surface isolation is prepared in `apps/backoffice-web/src/proxy.ts` with optional host allowlists:
+- `POS_ALLOWED_HOSTS=pos.<domain>`
+- `IT_ADMIN_ALLOWED_HOSTS=admin.<domain>,it.<domain>`
+
+Security must still be enforced server-side. The IT admin layout and `/api/it-admin/*` guards resolve authenticated platform roles server-side and allow only `it_admin` or `it_support`; POS APIs continue to resolve tenant, branch, device, session, permission, contract, and feature state server-side.
+
+No Vercel deploy is performed by documentation or audit passes unless explicitly requested. Future production setup must configure separate environment variables and production aliases per Vercel Project.
+
+## Repository structure
 
 ```text
 apps/
@@ -47,7 +56,18 @@ docs/
 context.md          # Authoritative Codex/GPT handoff
 ```
 
-## Main Runtime Flow
+## Business coverage included
+- POS sales/orders/receipts
+- Dine-in table flows and takeaway
+- Manual delivery channels (Grab, LINE MAN, Shopee, Merchant App, Other)
+- Cash and bank transfer payment models
+- Product/ingredient/recipe/stock movement models
+- Shift open/close with mismatch and unpaid bill guardrails
+- Staff/manager/owner/it_admin role model
+- Back office and IT admin UI routes
+- Audit logging foundation
+- Store + POS secure login flow (store -> branch -> employee -> device) now runs in `backoffice-web`
+- IT Backoffice login is prepared separately at `/it-admin/login`; do not reuse POS store login for IT staff.
 
 Current login and POS entry flow:
 

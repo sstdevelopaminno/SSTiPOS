@@ -5,6 +5,8 @@ Branch: it-admin-planning-2026-06-12
 Deployment status: No Vercel deploy. No production deploy.
 Latest audit pass: 2026-06-12, GitHub-synced branch was fetched and confirmed up to date before inspection.
 
+Latest implementation update: 2026-06-12 deployment surface isolation planning/code pass. No Vercel command was run. No deployment was made.
+
 ## Source Documents Read
 
 - `context.md`
@@ -29,6 +31,37 @@ Missing documents: none found in current branch.
 - System stability docs flag admin monitoring and login/session performance as important operational risks, but this IT Backoffice pass should avoid POS sales changes except blocking bug fixes.
 - Latest IT focus from README/context: prepare the IT backoffice/admin development pass without running Vercel, deploying, or pushing to main.
 
+## Deployment Separation Model
+
+POS/Sales and IT Backoffice must be separate Vercel Projects with separate public domains:
+
+- POS/Sales project: example `sstipos-pos`, domain example `pos.<domain>`, `APP_SURFACE=pos`.
+- IT Backoffice project: example `sstipos-it-admin`, domain example `admin.<domain>` or `it.<domain>`, `APP_SURFACE=it_admin`.
+- Local development only: `APP_SURFACE=all`.
+
+They must not share one public URL. POS users must not be able to access `/it-admin/*`, `/api/it-admin/*`, `/audit-logs`, or tenant/admin aliases from the POS domain. IT staff must not use the POS sales URL to access IT Backoffice.
+
+Future Vercel setup must configure separate environment variables, allowed hosts, production aliases, and secrets per project. This pass intentionally did not run Vercel and did not create or modify Vercel projects.
+
+Proposed/project env variables:
+
+- `APP_SURFACE=pos|it_admin|all`
+- `POS_ALLOWED_HOSTS=pos.<domain>`
+- `IT_ADMIN_ALLOWED_HOSTS=admin.<domain>,it.<domain>`
+
+Implemented app surface preparation:
+
+- `apps/backoffice-web/src/proxy.ts` adds high-level surface routing:
+  - `APP_SURFACE=pos` redirects IT admin routes/APIs away from the POS surface.
+  - `APP_SURFACE=it_admin` redirects `/` to `/it-admin` and redirects POS sales/login/API routes away from the IT surface.
+  - `APP_SURFACE=all` leaves both surfaces available for local development.
+  - Existing `/preview/pos/*` POS session-cookie protection remains active for `APP_SURFACE=pos` and local `APP_SURFACE=all`.
+- `/it-admin/login` is prepared as a separate IT staff login route and is not the POS store login.
+- `(it-admin)/layout.tsx` now performs a server-side platform role check and redirects non-IT users to `/it-admin/login`.
+- IT admin server/API guards now allow only `it_admin` or `it_support`; `tenant_user` is rejected.
+
+Security note: `proxy.ts` is only a routing/domain boundary. It is not the sole auth layer. IT layout and APIs still resolve auth/role server-side, and POS routes must continue resolving POS session, tenant, branch, device, permission, contract, and feature state server-side.
+
 ## Current IT Admin Surface Map
 
 ### Routes found under `apps/backoffice-web/src/app/(it-admin)/`
@@ -51,6 +84,11 @@ Missing documents: none found in current branch.
 - `tenants/[tenantId]/sessions/page.tsx` - POS session admin.
 - `tenants/[tenantId]/shifts/page.tsx` - shift admin.
 - `tenants/[tenantId]/users/page.tsx` - user/role admin.
+
+### IT login and surface isolation files
+
+- `apps/backoffice-web/src/app/it-admin/login/page.tsx` - separate IT staff login route prepared for the IT Backoffice project/domain.
+- `apps/backoffice-web/src/proxy.ts` - high-level Vercel surface/domain isolation for `APP_SURFACE=pos|it_admin|all`.
 
 ### Components found under `apps/backoffice-web/src/components/it-admin/`
 
@@ -88,7 +126,7 @@ Missing documents: none found in current branch.
 - `apps/backoffice-web/src/lib/it-admin-guard.ts`
   - Server-only IT admin guard.
   - Uses `getAuthContext({ requireBranchScope: false })`.
-  - Requires `platformRole === "it_admin"`.
+  - Requires `platformRole === "it_admin"` or `platformRole === "it_support"`.
   - Provides service-role Supabase client and request metadata.
   - Converts guard/feature errors to safe API responses.
 - `apps/backoffice-web/src/lib/feature-gate.ts`
@@ -103,7 +141,7 @@ Missing documents: none found in current branch.
 
 ## Completed IT Admin Modules
 
-- Platform access guard: `requireItAdmin()` requires `platformRole === "it_admin"` and keeps the Supabase service-role client server-only.
+- Platform access guard: `requireItAdmin()` requires `platformRole === "it_admin"` or `platformRole === "it_support"` and keeps the Supabase service-role client server-only.
 - Tenant listing: `/api/it-admin/admin/tenants` lists tenants with branch and active-session counts.
 - Tenant creation: `/api/it-admin/tenants` creates tenant records and writes audit logs.
 - Branch management: list/create/update is tenant-scoped, feature-gated by `branch_management`, quota-checked, and audited.
@@ -182,6 +220,7 @@ Missing documents: none found in current branch.
 - P1 hardening needed: `customer-display/policies/route.ts` accepts `tenant_id` and `branch_id` directly from request query/body; validate branch ownership before policy read/upsert or route it through a tenant-scoped API.
 - P1 hardening needed: `it-admin-guard.ts` currently returns raw unexpected `error.message` for `it_admin_internal_error`; keep detailed errors server-side and return a safer public message.
 - Do not use archived QR login docs as active guidance; the current login flow remains store/branch/employee/device.
+- Deployment isolation guardrail: POS/Sales and IT Backoffice production surfaces must be deployed as separate Vercel Projects/domains with `APP_SURFACE` and allowed-host env vars configured per project.
 
 ## Safe Implementation Task Pack
 
@@ -342,6 +381,16 @@ Missing documents: none found in current branch.
 - Vercel was not run.
 - Production deploy was not run.
 - No deployment command was executed.
+- Vercel Projects were not created or modified.
+- The branch must be pushed to GitHub for documentation sync, but not to `main` unless explicitly requested.
+
+## Verification Update (2026-06-12 Deployment Surface Pass)
+
+- `cmd /c pnpm --filter backoffice-web typecheck` - pass.
+- `cmd /c pnpm --filter backoffice-web lint` - pass.
+- `git diff --check` - pass, with Windows line-ending warnings only.
+- No Vercel command was run.
+- No deployment was made.
 
 ## GitHub Documentation Sync Rule
 
