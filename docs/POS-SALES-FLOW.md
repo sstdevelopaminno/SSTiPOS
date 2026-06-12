@@ -1,6 +1,6 @@
-# POS Sales Flow v0.1.2 (Real Module)
+# POS Sales Flow v0.1.3 (Real Module)
 
-Date: 2026-05-18
+Date: 2026-06-12
 
 ## Scope
 This version replaces preview POS flow with real POS APIs and production-oriented flow:
@@ -68,6 +68,11 @@ This version replaces preview POS flow with real POS APIs and production-oriente
   - local cart persistence in `localStorage`
   - offline staged submit payload with retry action
   - idempotency key persisted for safe re-submit
+
+## Checkout Popup Recovery
+- Takeaway checkout shows a creating-bill popup while `POST /api/pos/sales` is in progress.
+- If bill creation fails, the popup keeps the cart context, displays the localized error, and offers retry/close actions instead of disappearing silently.
+- Successful bill creation must return `id`, `order_no`, `status`, `total_amount`, `tax_total`, and `tax_lines` so the review/payment modal can continue immediately.
 
 ## Manager Override Modal Coverage
 - cancel bill (`cancel_bill`)

@@ -8,6 +8,12 @@ Improved, but not yet 100% production complete.
 
 Before go-live, the project still needs passing evidence for typecheck, lint, login, branch selection, device selection, shift, order, payment, receipt, manual QA, deployment, and production environment checks.
 
+### 2026-06-12 POS Sales Checkout Fix
+
+- Fixed the takeaway checkout popup so failed bill creation no longer disappears silently; the popup now keeps the cart context, shows the error, and allows retry.
+- Fixed the POS payment summary subtotal binding so checkout totals use the real cart subtotal instead of the discount amount.
+- Hardened POS order creation replay responses so the frontend receives usable bill totals, tax lines, and status for the next payment step.
+
 ## Stack
 
 - Monorepo: pnpm workspaces + Turbo

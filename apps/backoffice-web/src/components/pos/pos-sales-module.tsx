@@ -1747,6 +1747,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [billPaymentMethod, setBillPaymentMethod] = useState<BillPaymentMethod>(null);
   const [reviewOrder, setReviewOrder] = useState<CheckoutReviewOrder | null>(null);
   const [takeawayCreatingPreview, setTakeawayCreatingPreview] = useState<TakeawayCreatingPreview | null>(null);
+  const [takeawayCreateError, setTakeawayCreateError] = useState<string | null>(null);
   const [cashReviewOrder, setCashReviewOrder] = useState<CheckoutReviewOrder | null>(null);
   const [transferReviewOrder, setTransferReviewOrder] = useState<CheckoutReviewOrder | null>(null);
   const [transferReference, setTransferReference] = useState("");
@@ -4811,6 +4812,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   async function handleCheckout() {
     if (isBusy || checkoutRequestLockRef.current) return;
     checkoutRequestLockRef.current = true;
+    setTakeawayCreateError(null);
     const blockingReason = getCheckoutBlockingReason({
       shiftId: shift?.id,
       cartSize: cart.length,
@@ -4940,6 +4942,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           rememberDineInDraft(selectedTable.id, cartSnapshot);
           setLastCommittedCartSignature(cartSnapshotSignature);
         }
+        setTakeawayCreateError(null);
         setTakeawayCreatingPreview(null);
         setReviewOrder(
           buildReviewOrder({
@@ -4963,13 +4966,19 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         setReceiptError(null);
       }
     } catch (submitError) {
-      setTakeawayCreatingPreview(null);
       const rawMessage = submitError instanceof Error ? submitError.message : "Unknown error";
       const message = localizeApiMessage(rawMessage);
       const errorCode = extractApiErrorCode(rawMessage);
+      if (orderType === "takeaway") {
+        setTakeawayCreateError(`${text.submitFailed}: ${message}`);
+      } else {
+        setTakeawayCreatingPreview(null);
+      }
 
       if (isConflictErrorCode(errorCode)) {
         if (errorCode === "table_not_available") {
+          setTakeawayCreateError(null);
+          setTakeawayCreatingPreview(null);
           setActiveOrder(null);
           setSelectedTable(null);
           setLastCommittedCartSignature(null);
@@ -4979,11 +4988,13 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           return;
         }
         if (errorCode === "shift_not_open") {
+          setTakeawayCreateError(`${text.submitFailed}: ${text.openShiftRequired}`);
           setReloadToken((current) => current + 1);
           pushSubmitMessage(text.openShiftRequired);
           return;
         }
         if (errorCode === "order_not_updatable" || errorCode === "order_not_found") {
+          setTakeawayCreateError(`${text.submitFailed}: ${message}`);
           setActiveOrder(null);
           setLastCommittedCartSignature(null);
           pushSubmitMessage(message);
@@ -4993,6 +5004,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
 
       markConnectivityFromError(submitError);
       if (isConnectivityIssueMessage(rawMessage)) {
+        setTakeawayCreateError(null);
+        setTakeawayCreatingPreview(null);
         enqueuePendingSubmit(payload, rawMessage);
         setCart([]);
         setCartDrawerOpen(false);
@@ -6511,7 +6524,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       <>
         {renderCartList()}
         <PosPaymentPanel
-          subtotal={summaryDiscount}
+          subtotal={subtotal}
           total={total}
           taxAmount={taxBreakdown.tax_total}
           taxLines={taxBreakdown.lines}
@@ -7131,6 +7144,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           receiptStorePhone={receiptStorePhone}
           receiptBranchLabel={receiptBranchLabel}
           takeawayCreatingPreview={takeawayCreatingPreview}
+          takeawayCreateError={takeawayCreateError}
           reviewOrder={reviewOrder}
           cashReviewOrder={cashReviewOrder}
           transferReviewOrder={transferReviewOrder}
@@ -7202,7 +7216,12 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           onConfirmTransfer={confirmTransferPayment}
           onPrintReceipt={handleReceiptPrint}
           onCloseReceipt={closeReceiptPopup}
-      />
+          onRetryTakeawayCreate={handleCheckout}
+          onCloseTakeawayCreateError={() => {
+            setTakeawayCreateError(null);
+            setTakeawayCreatingPreview(null);
+          }}
+        />
 
       {ingredientAdjustDialog ? (
         <div

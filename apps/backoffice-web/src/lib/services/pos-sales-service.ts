@@ -425,11 +425,20 @@ async function executeCreatePosOrderDirectFallback(args: {
   if (idempotencyKey) {
     const { data: existingOrder, error: existingOrderError } = await supabase
       .from("orders")
-      .select("id,order_no,status,created_at,table_id")
+      .select("id,order_no,status,created_at,table_id,total_amount,tax_total,metadata")
       .eq("tenant_id", auth.tenantId)
       .eq("branch_id", auth.branchId)
       .eq("request_id", idempotencyKey)
-      .maybeSingle<{ id: string; order_no: string; status: string; created_at: string; table_id: string | null }>();
+      .maybeSingle<{
+        id: string;
+        order_no: string;
+        status: string;
+        created_at: string;
+        table_id: string | null;
+        total_amount: number | null;
+        tax_total: number | null;
+        metadata: { tax_lines?: Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }> } | null;
+      }>();
 
     if (existingOrderError) {
       if (isMissingColumnError(existingOrderError.message, "orders", "request_id")) {
@@ -439,6 +448,11 @@ async function executeCreatePosOrderDirectFallback(args: {
       }
     }
     if (existingOrder) {
+      const taxTotal = Number.isFinite(Number(existingOrder.tax_total)) ? Number(existingOrder.tax_total) : Number((input.tax_total ?? 0).toFixed(2));
+      const fallbackTotal = Number(
+        (input.grand_total ?? (Number(input.app_total_amount ?? 0) - Number(input.discount_amount ?? 0) - Number(input.gp_amount ?? 0) + taxTotal)).toFixed(2)
+      );
+      const taxLines = Array.isArray(existingOrder.metadata?.tax_lines) ? existingOrder.metadata.tax_lines : input.tax_lines ?? [];
       return {
         ok: true as const,
         data: {
@@ -448,9 +462,9 @@ async function executeCreatePosOrderDirectFallback(args: {
           order_type: input.order_type,
           channel: input.channel,
           external_order_code: input.external_order_code ?? null,
-          total_amount: Number(
-            (input.grand_total ?? (Number(input.app_total_amount ?? 0) - Number(input.discount_amount ?? 0) - Number(input.gp_amount ?? 0))).toFixed(2)
-          ),
+          total_amount: Number.isFinite(Number(existingOrder.total_amount)) ? Number(existingOrder.total_amount) : fallbackTotal,
+          tax_total: taxTotal,
+          tax_lines: taxLines,
           table_id: existingOrder.table_id ?? input.table_id ?? null,
           created_at: existingOrder.created_at,
           duplicate_request: true
@@ -1121,7 +1135,7 @@ export async function executeCreatePosOrderTransaction(args: {
     data: {
       id: row.order_id,
       order_no: row.order_no,
-      status: row.order_status,
+      status: row.order_status || "queued",
       order_type: input.order_type,
       channel: input.channel,
       external_order_code: input.external_order_code ?? null,

@@ -84,6 +84,7 @@ type Props = {
   receiptStorePhone: string;
   receiptBranchLabel: string;
   takeawayCreatingPreview: TakeawayCreatingPreview | null;
+  takeawayCreateError: string | null;
   reviewOrder: CheckoutReviewOrder | null;
   cashReviewOrder: CheckoutReviewOrder | null;
   transferReviewOrder: CheckoutReviewOrder | null;
@@ -151,6 +152,8 @@ type Props = {
   onConfirmTransfer: () => Promise<void> | void;
   onPrintReceipt: () => void;
   onCloseReceipt: () => void;
+  onRetryTakeawayCreate: () => Promise<void> | void;
+  onCloseTakeawayCreateError: () => void;
 };
 
 export function PosPaymentModals({
@@ -164,6 +167,7 @@ export function PosPaymentModals({
   receiptStorePhone,
   receiptBranchLabel,
   takeawayCreatingPreview,
+  takeawayCreateError,
   reviewOrder,
   cashReviewOrder,
   transferReviewOrder,
@@ -204,7 +208,9 @@ export function PosPaymentModals({
   onCloseTransfer,
   onConfirmTransfer,
   onPrintReceipt,
-  onCloseReceipt
+  onCloseReceipt,
+  onRetryTakeawayCreate,
+  onCloseTakeawayCreateError
 }: Props) {
   function resolveReceiptDiscountAmount(session: ReceiptSession): number {
     const explicitDiscount = Number(session.discount_amount ?? 0);
@@ -280,7 +286,19 @@ export function PosPaymentModals({
                 <strong>{formatMoney(takeawayCreatingPreview.total_amount)}</strong>
               </div>
             </div>
-            <div className="posui-payment-modal__creating-progress" aria-hidden="true" />
+            {takeawayCreateError ? <p className="posui-payment-modal__error">{takeawayCreateError}</p> : null}
+            {takeawayCreateError ? (
+              <div className="posui-payment-modal__actions">
+                <button type="button" className="posui-btn" onClick={onCloseTakeawayCreateError}>
+                  {text.close}
+                </button>
+                <button type="button" className="posui-btn posui-btn--primary" onClick={() => void onRetryTakeawayCreate()}>
+                  {text.retry}
+                </button>
+              </div>
+            ) : (
+              <div className="posui-payment-modal__creating-progress" aria-hidden="true" />
+            )}
           </section>
         </div>
       ) : null}
