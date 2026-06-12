@@ -4,7 +4,7 @@ import { guardItAdminError, requireItAdmin } from "@/lib/it-admin-guard";
 
 export async function GET(req: Request) {
   try {
-    const { supabase } = await requireItAdmin();
+    const { supabase } = await requireItAdmin({ permission: "audit_read" });
     const { searchParams } = new URL(req.url);
     const tenantId = searchParams.get("tenant_id")?.trim();
     const branchId = searchParams.get("branch_id")?.trim();

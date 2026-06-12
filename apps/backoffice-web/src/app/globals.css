@@ -38,6 +38,92 @@ a {
   padding: 16px;
 }
 
+.it-admin-login-page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.it-admin-login-card {
+  width: min(460px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 16px 42px rgba(31, 31, 29, 0.08);
+}
+
+.it-admin-login-card__head {
+  display: grid;
+  gap: 4px;
+}
+
+.it-admin-login-card__head h1,
+.it-admin-login-card__head p {
+  margin: 0;
+}
+
+.it-admin-login-card__head p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.it-admin-login-card__eyebrow {
+  color: var(--accent) !important;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.it-admin-login-field {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.it-admin-login-field input {
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.it-admin-login-alert {
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.it-admin-login-alert--error,
+.it-admin-login-alert--invalid_role,
+.it-admin-login-alert--session_expired {
+  border: 1px solid #f3b4a7;
+  background: #fff1ed;
+  color: #842b18;
+}
+
+.it-admin-login-button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.it-admin-login-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 .grid {
   display: grid;
   gap: 12px;

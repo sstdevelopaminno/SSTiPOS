@@ -24,6 +24,18 @@ Security must still be enforced server-side. The IT admin layout and `/api/it-ad
 
 No Vercel deploy is performed by documentation or audit passes unless explicitly requested. Future production setup must configure separate environment variables and production aliases per Vercel Project.
 
+## IT Backoffice roles
+
+IT staff must use `/it-admin/login` on the IT Backoffice project/domain, not the POS store login.
+
+| Role | Access |
+|---|---|
+| `it_admin` | Full IT Backoffice access, including feature flags, branch overrides, devices, customer display devices, platform users, and settings. |
+| `it_support` | Limited support access: tenants, branches, package contract/subscription, user branch roles except delete/deactivate, active sessions, shifts, audit review, monitoring/readiness, and package quote/catalog. |
+| `tenant_user` | No IT Backoffice access. |
+
+The `platform_role` database enum includes `it_support` via `supabase/migrations/20260612132854_add_it_support_platform_role.sql`. Server-side IT API guards enforce the role/menu matrix; hiding navigation is not treated as authorization.
+
 ## Repository structure
 
 ```text
@@ -49,7 +61,7 @@ pos-platform/
 - Cash and bank transfer payment models
 - Product/ingredient/recipe/stock movement models
 - Shift open/close with mismatch and unpaid bill guardrails
-- Staff/manager/owner/it_admin role model
+- Staff/manager/owner/it_admin/it_support role model
 - Back office and IT admin UI routes
 - Audit logging foundation
 - Store + POS secure login flow (store -> branch -> employee -> device) now runs in `backoffice-web`
