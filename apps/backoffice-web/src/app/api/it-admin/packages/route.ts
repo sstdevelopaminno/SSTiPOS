@@ -1,12 +1,13 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { fail, ok } from "@/lib/http";
+import { hasItAdminPermission, isItAdminPlatformRole } from "@/lib/it-admin-guard";
 import { getPackageCatalogWithFeatures } from "@/lib/services/subscription-package-service";
 
 export async function GET() {
   try {
     const auth = await getAuthContext({ requireBranchScope: false });
-    if (auth.platformRole !== "it_admin") {
-      return fail("forbidden", "Only IT admin can view package catalog.", 403);
+    if (!isItAdminPlatformRole(auth.platformRole) || !hasItAdminPermission(auth.platformRole, "package_read")) {
+      return fail("forbidden", "Only IT admin or IT support can view package catalog.", 403);
     }
 
     const catalog = await getPackageCatalogWithFeatures();

@@ -8,6 +8,43 @@ Production-oriented monorepo for a noodle shop and small restaurant POS platform
 - Database/Auth: Supabase (PostgreSQL + RLS)
 - Shared contracts: TypeScript packages for Android POS and web modules
 
+## Deployment surface model
+
+POS/Sales and IT Backoffice must run as separate Vercel Projects and separate domains. Do not expose IT Backoffice from the POS/Sales public URL.
+
+- POS/Sales: Vercel Project example `sstipos-pos`, domain example `pos.<domain>`, `APP_SURFACE=pos`.
+- IT Backoffice: Vercel Project example `sstipos-it-admin`, domain example `admin.<domain>` or `it.<domain>`, `APP_SURFACE=it_admin`.
+- Local development only: `APP_SURFACE=all`.
+
+Surface isolation is prepared in `apps/backoffice-web/src/proxy.ts` with optional host allowlists:
+- `POS_ALLOWED_HOSTS=pos.<domain>`
+- `IT_ADMIN_ALLOWED_HOSTS=admin.<domain>,it.<domain>`
+
+Security must still be enforced server-side. The IT admin layout and `/api/it-admin/*` guards resolve authenticated platform roles server-side and allow only `it_admin` or `it_support`; POS APIs continue to resolve tenant, branch, device, session, permission, contract, and feature state server-side.
+
+No Vercel deploy is performed by documentation or audit passes unless explicitly requested. Future production setup must configure separate environment variables and production aliases per Vercel Project.
+
+## IT Backoffice roles
+
+IT staff must use `/it-admin/login` on the IT Backoffice project/domain, not the POS store login.
+
+| Role | Access |
+|---|---|
+| `it_admin` | Full IT Backoffice access, including feature flags, branch overrides, devices, customer display devices, platform users, and settings. |
+| `it_support` | Limited support access: tenants, branches, package contract/subscription, user branch roles except delete/deactivate, active sessions, shifts, audit review, monitoring/readiness, and package quote/catalog. |
+| `tenant_user` | No IT Backoffice access. |
+
+The `platform_role` database enum includes `it_support` via `supabase/migrations/20260612132854_add_it_support_platform_role.sql`. Server-side IT API guards enforce the role/menu matrix; hiding navigation is not treated as authorization.
+
+`/it-admin/login` now presents the first `SSTiPOS Support` UI pass for the separated IT Backoffice project/domain:
+- split white/blue login card for desktop and stacked responsive layout for mobile/tablet
+- email/password login tab backed by the existing server-side Supabase Auth + platform role check
+- QR login tab placeholder only; QR auth is not implemented yet
+- Thai/English loading, error, invalid-role, session-expired, signed-out, and success states
+- preferred logo path: `apps/backoffice-web/public/brand/sstipos-support-logo.png`; if missing, the current UI uses `/brand/sst-ipos-logo.svg` as a safe fallback
+
+No Vercel command or deployment was run for this UI pass.
+
 ## Repository structure
 
 ```text
@@ -33,10 +70,11 @@ pos-platform/
 - Cash and bank transfer payment models
 - Product/ingredient/recipe/stock movement models
 - Shift open/close with mismatch and unpaid bill guardrails
-- Staff/manager/owner/it_admin role model
+- Staff/manager/owner/it_admin/it_support role model
 - Back office and IT admin UI routes
 - Audit logging foundation
 - Store + POS secure login flow (store -> branch -> employee -> device) now runs in `backoffice-web`
+- IT Backoffice login is prepared separately at `/it-admin/login`; do not reuse POS store login for IT staff.
 
 ## Login / Pre-entry flow (updated)
 - Scope: only login and pre-sales entry flow was changed. Existing POS Sales screen/UI is unchanged.
@@ -912,3 +950,166 @@ Updated employee-code verification so `/api/auth/employee/verify-code` checks br
 - Branch login policies are enabled.
 - POS sales feature overrides are enabled for all 3 branches.
 - Next test target: open POS cashier session from Vercel production.
+
+## POS Stock Deduction Investigation Handoff (2026-06-11)
+
+### Current status
+
+POS pre-entry login and device selection now work in production for the seeded tenant/branch/device flow.
+
+Verified working login path:
+
+* Store/Tenant code: `NDL-TH-001`
+* Branch: `NDL-ONNUT-01` / `อ่อนนุช`
+* Employee code: `sst182536`
+* PIN: `182536`
+* Role: `owner`
+* POS device: `NDL-ONNUT-POS-01`
+* Production URL: `/preview/pos`
+
+### Current stock issue under investigation
+
+The next blocker is stock deduction after POS sales.
+
+Observed diagnostic result:
+
+* Latest order stock deduction diagnostic returned `Success. No rows returned`.
+* Latest order stock movement diagnostic returned `Success. No rows returned`.
+
+This means the diagnostic query did not find a latest order for the checked tenant/branch scope, so the stock deduction issue is not yet proven to be a deduction failure. First confirm whether POS order creation is actually writing rows into `orders` and `order_items`.
+
+### Important stock model
+
+The current system is designed around recipe/ingredient stock tracking:
+
+* `products` = sellable menu items.
+* `ingredients` = actual stock quantities.
+* `recipes` = mapping from product to ingredient usage per sold item.
+* `stock_movements` = audit/history of stock in/out.
+* Recipe-based deduction updates `ingredients.quantity_on_hand` and writes `stock_movements`.
+
+For product stock that should behave like simple unit stock, use the existing bridge model:
+
+* Create a fallback ingredient named like `STOCK:<sku>:<product_name>`.
+* Create a recipe line of `1` unit per product.
+* Set the product to recipe-based stock deduction mode when supported.
+
+Do not rely on client-side totals or client-submitted tenant/branch ids. Tenant, branch, user, role, device, POS session, shift, and feature gates must remain server-resolved.
+
+### Next verification queries
+
+1. Check whether any orders exist in production:
+
+```sql
+SELECT
+  t.code AS tenant_code,
+  b.code AS branch_code,
+  b.name AS branch_name,
+  o.id AS order_id,
+  o.order_no,
+  o.status,
+  o.order_type,
+  o.total_amount,
+  o.created_at,
+  COUNT(oi.id) AS item_count
+FROM public.orders o
+JOIN public.tenants t ON t.id = o.tenant_id
+JOIN public.branches b ON b.id = o.branch_id
+LEFT JOIN public.order_items oi ON oi.order_id = o.id
+GROUP BY
+  t.code,
+  b.code,
+  b.name,
+  o.id,
+  o.order_no,
+  o.status,
+  o.order_type,
+  o.total_amount,
+  o.created_at
+ORDER BY o.created_at DESC
+LIMIT 20;
+```
+
+2. If orders exist, inspect product recipe linkage for the latest order:
+
+```sql
+WITH latest_order AS (
+  SELECT o.*
+  FROM public.orders o
+  ORDER BY o.created_at DESC
+  LIMIT 1
+)
+SELECT
+  t.code AS tenant_code,
+  b.code AS branch_code,
+  o.order_no,
+  o.status,
+  p.name AS product_name,
+  p.stock_deduction_mode,
+  oi.quantity,
+  COUNT(r.ingredient_id) AS recipe_lines
+FROM latest_order o
+JOIN public.tenants t ON t.id = o.tenant_id
+JOIN public.branches b ON b.id = o.branch_id
+JOIN public.order_items oi ON oi.order_id = o.id
+JOIN public.products p
+  ON p.id = oi.product_id
+ AND p.tenant_id = o.tenant_id
+ AND p.branch_id = o.branch_id
+LEFT JOIN public.recipes r
+  ON r.product_id = p.id
+ AND r.tenant_id = p.tenant_id
+ AND r.branch_id = p.branch_id
+GROUP BY
+  t.code,
+  b.code,
+  o.order_no,
+  o.status,
+  p.name,
+  p.stock_deduction_mode,
+  oi.quantity
+ORDER BY p.name;
+```
+
+### Interpretation
+
+* If no orders exist, debug the POS checkout/order creation flow first.
+* If orders exist but no `order_items`, debug order item insert.
+* If orders and items exist but `recipe_lines = 0`, repair product recipe/stock bridge setup.
+* If `recipe_lines > 0` but no `stock_movements`, debug the stock deduction execution path in `pos-sales-service`.
+* If `stock_movements` exists but UI stock does not change, debug stock UI refresh/cache.
+
+## Next Development Focus: IT Backoffice
+
+The next development pass focuses on IT backoffice/admin work. Start from:
+
+- `context.md`
+- `docs/AI-HANDOFF-IT-BACKOFFICE-2026-06-12.md`
+- `apps/backoffice-web/src/app/(it-admin)/`
+- `apps/backoffice-web/src/components/it-admin/`
+- `apps/backoffice-web/src/app/api/it-admin/`
+
+No Vercel deploy should be run during the planning pass.
+
+## GitHub Documentation Sync Rule
+
+For every future code change, system fix, or development pass:
+
+- Update the relevant repo documentation in the same branch.
+- Include the current status, changed files, verification results, risks, and next recommended steps.
+- Push the documentation updates to GitHub so the planning chat can read the latest repo state before sending the next Codex command.
+- Do not deploy or run Vercel unless the user explicitly asks for deployment.
+
+## IT Backoffice Audit Update (2026-06-12)
+
+The latest IT Backoffice/Admin audit is documented in `docs/AI-HANDOFF-IT-BACKOFFICE-2026-06-12.md`.
+
+Next implementation should start with P1 guardrails:
+
+- tenant package/contract/`core_pos_sales` readiness
+- branch feature override scope validation
+- user role branch/user validation
+- contract plan validation
+- targeted IT admin permission, scope, feature gate, and quota tests
+
+No Vercel deploy should be run for this planning/audit pass.
