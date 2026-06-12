@@ -467,3 +467,10 @@ ORDER BY p.name;
 - Push documentation updates to GitHub so the planning chat can pull the latest repo context and produce the next Codex command from current evidence.
 - Each handoff should include current status, changed files, verification results, risks, and next recommended steps.
 - Do not run Vercel, deploy, or push to main unless the user explicitly asks for that action.
+
+## IT Backoffice Audit Update (2026-06-12)
+
+- Branch `it-admin-planning-2026-06-12` was fetched from GitHub and confirmed up to date before audit.
+- Latest IT audit details are in `docs/AI-HANDOFF-IT-BACKOFFICE-2026-06-12.md`.
+- P1 implementation candidates: tenant package/contract/`core_pos_sales` readiness, branch feature override scope validation, user role branch/user validation, contract plan validation, safer IT admin public errors, and targeted permission/scope/quota tests.
+- No Vercel deploy should be run for this audit/development planning pass.
