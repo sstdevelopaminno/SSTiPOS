@@ -166,32 +166,20 @@ Manual POS QA should cover:
 
 ## Key Documents
 
-- `context.md` - authoritative project handoff and recent status
-- `docs/codex-token-saving-workflow.md` - Codex workflow rules
-- `docs/current-stability-audit.md` - latest stability audit
-- `docs/pos-multi-owner-branch-architecture.md` - architecture and safety model
-- `docs/pos-login-context-handoff.md` - login/session context details
-- `docs/AI-HANDOFF-IT-BACKOFFICE-2026-06-12.md` - next-chat handoff for IT backoffice development
-- `docs/manual-qa-checklist.md` - manual QA checklist
-- `docs/production-readiness-checklist.md` - go-live readiness
-- `docs/monitoring-alerting-runbook.md` - operations monitoring
-- `docs/go-live-evidence-checklist.md` - evidence template
-- `docs/ARCHIVE-QR-DECOMMISSION-2026-05-31.md` - legacy QR archive
+* If no orders exist, debug the POS checkout/order creation flow first.
+* If orders exist but no `order_items`, debug order item insert.
+* If orders and items exist but `recipe_lines = 0`, repair product recipe/stock bridge setup.
+* If `recipe_lines > 0` but no `stock_movements`, debug the stock deduction execution path in `pos-sales-service`.
+* If `stock_movements` exists but UI stock does not change, debug stock UI refresh/cache.
 
-## Local Troubleshooting
+## Next Development Focus: IT Backoffice
 
-- If `/preview/pos` hangs, check `GET /api/pos/session/current` and `GET /api/pos/shifts/current`.
-- Restart `next dev` after migration changes.
-- First request in `next dev` may be slow while routes compile.
-- If a POS device is stuck `in_use`, use the logout/reset flow from the active session before testing another login.
-- `POST /api/pos/perf` should not block the POS UI when telemetry/audit writes fail.
+The next development pass focuses on IT backoffice/admin work. Start from:
 
-## Latest Important Handoff
+- `context.md`
+- `docs/AI-HANDOFF-IT-BACKOFFICE-2026-06-12.md`
+- `apps/backoffice-web/src/app/(it-admin)/`
+- `apps/backoffice-web/src/components/it-admin/`
+- `apps/backoffice-web/src/app/api/it-admin/`
 
-2026-06-11 POS stock/order path:
-
-- POS order creation now prefers the transactional RPC path by default.
-- Direct non-delivery fallback requires `POS_FORCE_DIRECT_CREATE_NON_DELIVERY=1`.
-- Insufficient stock no longer soft-bypasses by default.
-- Stock bypass requires `POS_SOFT_BYPASS_INSUFFICIENT_STOCK=1`.
-- Re-run typecheck, lint, and focused POS QA after Node/npm/corepack are available in the shell.
+No Vercel deploy should be run during the planning pass.
