@@ -27,7 +27,7 @@ Primary architectural goals:
 
 POS/Sales and IT Backoffice must be deployed as separate Vercel Projects with separate public domains:
 - POS/Sales project: example `sstipos-pos`, domain `pos.<domain>`.
-- IT Backoffice project: example `sstipos-it-admin`, domain `admin.<domain>` or `it.<domain>`.
+- IT Backoffice project: `sstipos-support`, display name `SSTiPOS Support`, domain `admin.<domain>` or `it.<domain>`.
 
 The IT Backoffice must not share the same public URL as POS/Sales. POS users must not reach IT admin routes from the POS domain, and IT staff must not use the POS sales URL for IT Backoffice.
 
@@ -57,7 +57,7 @@ First UI pass for the separated IT login is complete:
 - Thai/English loading, error, invalid-role, session-expired, signed-out, and success states
 - QR login tab is UI placeholder only: "QR login for mobile support devices is coming soon."
 - no QR authentication runtime was implemented in this pass
-- preferred support logo path remains `apps/backoffice-web/public/brand/sstipos-support-logo.png`; this asset is not present yet, so the UI currently falls back to `/brand/sst-ipos-logo.svg`
+- preferred support logo path remains `apps/backoffice-web/public/brand/sstipos-support-logo.png`; a placeholder copied from the existing SST iPOS logo is committed there for preview, and the real `SSTiPOS Support` logo should replace that file before brand QA/production promotion
 - no Vercel command was run and no deployment was made
 
 `it_support` allowed surfaces:
