@@ -2,6 +2,9 @@
 
 Date: 2026-06-12
 
+> [!WARNING]
+> SUPERSEDED (2026-06-13): Do not execute this plan. POS and IT Support must use the same existing Supabase database, and no new Supabase project should be created. This file remains only as historical planning context.
+
 ## Current Project Summary
 
 - Current Supabase project: POS-Preview

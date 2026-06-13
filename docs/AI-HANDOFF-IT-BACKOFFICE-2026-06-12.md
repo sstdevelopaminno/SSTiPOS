@@ -7,6 +7,19 @@ Latest audit pass: 2026-06-12, GitHub-synced branch was fetched and confirmed up
 
 Latest implementation update: 2026-06-12 deployment surface isolation planning/code pass. No Vercel command was run. No deployment was made.
 
+## Runtime Separation Decision (2026-06-13)
+
+- Keep the current GitHub repository and monorepo; do not split or move files yet.
+- POS remains the default local surface: `pnpm dev` on port `3000`.
+- SSTiPOS Support uses `pnpm dev:it-support` on port `30000`.
+- The IT Vercel project is `sstipos-support` and must set `APP_SURFACE=it_admin`.
+- POS and IT Support use the same existing Supabase database with env values configured separately per Vercel project.
+- Do not create a new Supabase project or database.
+- Treat `packages/shared-types`, `packages/pos-domain`, `packages/ui`, and `supabase/migrations` as shared canonical assets that must not diverge.
+- Future repository separation is planning-only; see `docs/future-repository-separation-plan.md`.
+
+## Current Repo State
+
 Latest access/login update: 2026-06-12 IT Backoffice login and support-role permission pass. No Vercel command was run. No deployment was made.
 
 Latest UI update: 2026-06-12 first `SSTiPOS Support` login UI pass for the separated IT Backoffice project/domain. No Vercel command was run. No deployment was made.

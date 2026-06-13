@@ -1,6 +1,6 @@
 # SST iPOS Project Context (Authoritative Handoff)
 
-Last updated: 2026-06-12
+Last updated: 2026-06-13
 Workspace: `e:\POS Preview`
 
 This file is the primary context handoff for future GPT/Codex runs.
@@ -20,6 +20,17 @@ Primary architectural goals:
 - secure login handoff
 - auditable operational actions
 - feature gate + quota control for SaaS packaging
+
+Current deployment topology:
+- POS local runtime: `http://localhost:3000`
+- IT Support local runtime: `http://localhost:30000`
+- POS Vercel target: existing project, currently named `sstipos`
+- IT Support Vercel target: `sstipos-support` with `APP_SURFACE=it_admin`
+- Both Vercel projects use the same existing Supabase database.
+- Vercel environment variables are configured separately per project.
+- Do not create a new Supabase project for IT Support.
+- Keep the current GitHub repository and monorepo intact for now.
+- Shared packages and Supabase migrations have one canonical history and must not diverge between surfaces.
 
 **IMPORTANT:** QR Scan login flow has been **removed** as of 2026-05-29. The system now uses only the standard Store Login / Pre-entry flow.
 
@@ -220,12 +231,12 @@ The database enum `platform_role` is extended by migration `20260612132854_add_i
 5. Service role keys are server-only; never expose to client bundles.
 6. Sensitive queries must stay tenant-scoped and branch-scoped.
 
-## 3.1) Supabase Primary/Archive Migration Prep (2026-06-12)
+## 3.1) Supabase Deployment Decision (2026-06-13)
 
-- Current active primary DB: existing POS-Preview in `ap-south-1` / Mumbai.
-- Singapore primary DB: pending until Supabase plan/project creation is available.
-- Target future primary production DB: new Supabase project in `ap-southeast-1` / Singapore.
-- Future legacy DB after cutover: existing POS-Preview in `ap-south-1` / Mumbai, kept as archive/rollback source only.
+- Current active primary DB: the existing POS Supabase database.
+- POS and IT Support use this same database.
+- Do not create a separate Supabase project for IT Support.
+- The previous Singapore/new-project migration proposal is superseded and must not be executed without a new explicit architecture decision.
 - New env structure:
   - `SUPABASE_PRIMARY_URL`
   - `SUPABASE_PRIMARY_ANON_KEY`
@@ -237,8 +248,9 @@ The database enum `platform_role` is extended by migration `20260612132854_add_i
   - `ENABLE_DUAL_DB_MODE=false`
 - Existing `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` remain the active database config for now and are also temporary fallback names during transition.
 - `getSupabaseServiceClient()` now routes through the primary DB client layer.
-- All active writes must remain on the configured primary DB. Archive DB is read-only from application design and disabled by default.
-- Migration plan: `docs/supabase-singapore-primary-migration-plan.md`.
+- All active writes from both Vercel projects must remain on the same configured primary DB.
+- Archive and dual-database modes remain disabled.
+- Historical superseded proposal: `docs/supabase-singapore-primary-migration-plan.md`.
 7. Feature gates must be enforced server-side, not UI-only.
 8. Shift gate must block sales APIs without active shift.
 9. Audit logs must exist for sensitive auth/admin/sales/attendance actions.

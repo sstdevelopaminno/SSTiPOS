@@ -100,7 +100,7 @@ No new blocking code-level regression was found in the focused POS sales static 
 
 - Manual browser QA was not completed in this run.
 - Must still verify on a real/dev session: login, branch selection, device selection, shift open, add product to cart, create order, payment, receipt preview, and sales history.
-- Supabase Singapore primary project is not created yet; current DB remains POS-Preview/Mumbai as configured primary.
+- Deployment decision updated on 2026-06-13: POS and IT Support use the same existing Supabase database; no new Supabase project is required.
 - Current status: Improved, but not yet 100% production complete.
 
 ## Next Recommended Task

@@ -60,7 +60,20 @@ The `platform_role` database enum includes `it_support` via `supabase/migrations
 
 No Vercel command or deployment was run for this UI pass.
 
-## Repository structure
+## Runtime And Deployment Topology
+
+- POS local runtime: `http://localhost:3000`
+- IT Support local runtime: `http://localhost:30000`
+- POS Vercel target: the existing POS project (currently linked locally as `sstipos`)
+- IT Support Vercel target: `sstipos-support` with `APP_SURFACE=it_admin`
+- Both Vercel projects use the same existing Supabase database.
+- Configure environment variables separately in each Vercel project, even when the Supabase values are identical.
+- Do not create a new Supabase project for the IT Support deployment.
+- A local `.vercel/project.json` can link to only one Vercel project at a time. Verify the project name before pulling env vars or deploying.
+- `APP_SURFACE` identifies the runtime/deployment profile; it is not an authorization boundary.
+- Keep this GitHub repository and monorepo structure unchanged until the future split plan is approved.
+
+## Repository Map
 
 ```text
 apps/
@@ -156,17 +169,32 @@ supabase db push
 psql "$SUPABASE_DB_URL" -f supabase/seed.sql
 ```
 
-5. Start local app:
+5. Start POS locally (normal/default):
 
 ```bash
 pnpm dev
 ```
 
-6. Open:
+The explicit equivalent is:
+
+```bash
+pnpm dev:pos
+```
+
+6. Start SSTiPOS Support locally:
+
+```bash
+pnpm dev:it-support
+```
+
+This command sets `APP_SURFACE=it_admin`, uses port `30000`, and keeps its Next.js development cache separate from POS.
+
+7. Open:
 
 ```text
 http://localhost:3000/login/store
 http://localhost:3000/preview/pos
+http://localhost:30000/it-admin
 ```
 
 ## Demo Login Pointers
@@ -212,6 +240,19 @@ Manual POS QA should cover:
 * If orders and items exist but `recipe_lines = 0`, repair product recipe/stock bridge setup.
 * If `recipe_lines > 0` but no `stock_movements`, debug the stock deduction execution path in `pos-sales-service`.
 * If `stock_movements` exists but UI stock does not change, debug stock UI refresh/cache.
+
+- `context.md` - authoritative project handoff and recent status
+- `docs/codex-token-saving-workflow.md` - Codex workflow rules
+- `docs/current-stability-audit.md` - latest stability audit
+- `docs/pos-multi-owner-branch-architecture.md` - architecture and safety model
+- `docs/pos-login-context-handoff.md` - login/session context details
+- `docs/AI-HANDOFF-IT-BACKOFFICE-2026-06-12.md` - next-chat handoff for IT backoffice development
+- `docs/future-repository-separation-plan.md` - staged GitHub split plan; planning only
+- `docs/manual-qa-checklist.md` - manual QA checklist
+- `docs/production-readiness-checklist.md` - go-live readiness
+- `docs/monitoring-alerting-runbook.md` - operations monitoring
+- `docs/go-live-evidence-checklist.md` - evidence template
+- `docs/ARCHIVE-QR-DECOMMISSION-2026-05-31.md` - legacy QR archive
 
 ## Next Development Focus: IT Backoffice
 
