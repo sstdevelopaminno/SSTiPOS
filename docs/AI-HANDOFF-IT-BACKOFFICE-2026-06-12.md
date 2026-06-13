@@ -41,11 +41,23 @@ POS/Sales and IT Backoffice must be separate Vercel Projects with separate publi
 
 - POS/Sales project: example `sstipos-pos`, domain example `pos.<domain>`, `APP_SURFACE=pos`.
 - IT Backoffice project: `sstipos-support`, display name `SSTiPOS Support`, domain example `admin.<domain>` or `it.<domain>`, `APP_SURFACE=it_admin`.
-- Local development only: `APP_SURFACE=all`.
+- Local full-surface development only: `APP_SURFACE=all`.
+- Local IT Backoffice preview: `APP_SURFACE=it_admin`, `PORT=30000`, URL `http://localhost:30000/it-admin/login`.
+- Local POS command: `pnpm dev` or `pnpm dev:pos`.
+- Local IT command: `pnpm dev:it-support`.
+
+Repository separation target as of 2026-06-14:
+- POS repo/folder: `sstdevelopaminno/POS-Preview`, `E:\POS Preview`.
+- IT repo/folder: `sstdevelopaminno/SSTiPOSSupport`, `E:\SSTiPOSSupport`.
+- Runbook: `docs/future-repository-separation-plan.md`.
+- Both repositories continue to use the same existing Supabase project/database.
+- `packages/*` and `supabase/migrations/*` are canonical shared assets and must not diverge.
 
 They must not share one public URL. POS users must not be able to access `/it-admin/*`, `/api/it-admin/*`, `/audit-logs`, or tenant/admin aliases from the POS domain. IT staff must not use the POS sales URL to access IT Backoffice.
 
-Future Vercel setup must configure separate environment variables, allowed hosts, production aliases, and secrets per project. This pass intentionally did not run Vercel and did not create or modify Vercel projects.
+Future Vercel setup must configure separate environment variables, allowed hosts, production aliases, and secrets per project. The IT Backoffice project must reuse the same Supabase project/database as POS: same Supabase URL, anon key, server-only service role key, and required auth/session secrets. Do not create a separate Supabase project for IT Backoffice.
+
+This pass intentionally did not run Vercel and did not create or modify Vercel projects. Do not run `vercel --prod` for IT preview verification.
 
 Proposed/project env variables:
 
@@ -116,6 +128,11 @@ Implementation notes:
 - Forgot-password link is a placeholder message only; no reset workflow was implemented.
 - Preferred support logo path is `apps/backoffice-web/public/brand/sstipos-support-logo.png`. A placeholder copied from the existing SST iPOS logo is committed for preview; replace that file with the real `SSTiPOS Support` logo before brand QA/production promotion.
 - IT staff must not use `/login/store`; POS store login remains for POS users only.
+- Development IT platform users can be created or refreshed with `apps/backoffice-web/scripts/create-it-platform-users.mjs`. It uses the same Supabase project/database env as POS and requires `SST_IT_ADMIN_EMAIL`, `SST_IT_ADMIN_PASSWORD`, `SST_IT_SUPPORT_EMAIL`, and `SST_IT_SUPPORT_PASSWORD`. Do not commit real credential values.
+- Login usability fix: `/it-admin/login` resets stale invalid-role/error state on input changes, times out stalled login requests, and `/api/it-admin/auth/login` signs out any old Supabase session before signing in the IT account.
+- IT menu fix: the IT shell shows `SSTiPOS Support`, displays `IT Admin` or `IT Support`, and removes the duplicate tenant/store nav item while preserving permission-filtered menus.
+- IT role menu update: `it_support` nav is limited to tenants, branches, package contracts, users/roles, active sessions, shifts, audit review, and monitoring/readiness. `it_admin` also gets feature flags/branch overrides, devices/registration, customer display devices, platform users, and settings.
+- IT office dashboard redesign: `(it-admin)/layout.tsx` now renders `ItSupportShell` with left sidebar navigation, mobile drawer, top bar role/account/language controls, SST Innovation logo, and light-blue/white office dashboard styling. Logo path: `apps/backoffice-web/public/brand/sst-innovation-logo.png`.
 
 Files changed in this UI pass:
 

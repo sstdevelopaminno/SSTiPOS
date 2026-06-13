@@ -27,6 +27,8 @@ export async function POST(req: Request) {
   }
 
   const supabase = await getSupabaseServerClient();
+  await supabase.auth.signOut().catch(() => undefined);
+
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error || !data.user) {
     return fail("invalid_credentials", "Invalid IT login credentials.", 401);

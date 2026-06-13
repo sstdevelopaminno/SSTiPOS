@@ -29,7 +29,19 @@ POS/Sales and IT Backoffice must run as separate Vercel Projects and separate do
 
 - POS/Sales: Vercel Project example `sstipos-pos`, domain example `pos.<domain>`, `APP_SURFACE=pos`.
 - IT Backoffice: Vercel Project `sstipos-support`, display name `SSTiPOS Support`, domain example `admin.<domain>` or `it.<domain>`, `APP_SURFACE=it_admin`.
-- Local development only: `APP_SURFACE=all`.
+- Local full-surface development only: `APP_SURFACE=all`.
+- Local IT Backoffice preview: run with `APP_SURFACE=it_admin` and `PORT=30000`, then open `http://localhost:30000/it-admin/login`.
+- POS local command: `pnpm dev` or `pnpm dev:pos`.
+- IT local command: `pnpm dev:it-support`.
+
+The IT Backoffice uses a separate Vercel Project/domain, but it must use the same Supabase project/database as POS. Do not create a separate Supabase project for IT Backoffice. Configure the IT Vercel project with the same Supabase URL, anon key, server-only service role key, and any required auth/session secrets used by the POS project.
+
+Repository split planning is tracked in `docs/future-repository-separation-plan.md`.
+
+- POS GitHub repository: `sstdevelopaminno/POS-Preview`
+- IT GitHub repository: `sstdevelopaminno/SSTiPOSSupport`
+- Until shared packages are published separately, keep `packages/*` and `supabase/migrations/*` synchronized in both repositories.
+- Treat Supabase migrations as one canonical history; do not add an IT-only database fork.
 
 Surface isolation is prepared in `apps/backoffice-web/src/proxy.ts` with optional host allowlists:
 - `POS_ALLOWED_HOSTS=pos.<domain>`
@@ -37,7 +49,7 @@ Surface isolation is prepared in `apps/backoffice-web/src/proxy.ts` with optiona
 
 Security must still be enforced server-side. The IT admin layout and `/api/it-admin/*` guards resolve authenticated platform roles server-side and allow only `it_admin` or `it_support`; POS APIs continue to resolve tenant, branch, device, session, permission, contract, and feature state server-side.
 
-No Vercel deploy is performed by documentation or audit passes unless explicitly requested. Future production setup must configure separate environment variables and production aliases per Vercel Project.
+No Vercel deploy is performed by documentation or audit passes unless explicitly requested. Future production setup must configure separate environment variables and production aliases per Vercel Project. Do not run `vercel --prod` for IT preview verification.
 
 ## IT Backoffice roles
 
@@ -59,6 +71,16 @@ The `platform_role` database enum includes `it_support` via `supabase/migrations
 - preferred logo path: `apps/backoffice-web/public/brand/sstipos-support-logo.png`; a placeholder copied from the existing SST iPOS logo is committed for preview and should be replaced with the real `SSTiPOS Support` logo before brand QA/production promotion
 
 No Vercel command or deployment was run for this UI pass.
+
+Development IT platform users can be created or refreshed with `apps/backoffice-web/scripts/create-it-platform-users.mjs`. It uses the same Supabase project/database env as POS and reads only these credential env var names: `SST_IT_ADMIN_EMAIL`, `SST_IT_ADMIN_PASSWORD`, `SST_IT_SUPPORT_EMAIL`, and `SST_IT_SUPPORT_PASSWORD`. Do not commit real credential values.
+
+Login usability note: `/it-admin/login` clears stale invalid-role/error state when the user edits the form, times out stalled login requests, and clears any existing Supabase session before signing in an IT staff account. This keeps old POS/tenant_user cookies from blocking IT Support login retries.
+
+IT menu note: the IT shell displays `SSTiPOS Support`, shows the current IT role, and avoids duplicate tenant/store menu entries. Menu visibility is still derived from server-resolved permissions.
+
+IT role menu note: `it_support` sees only support operations: tenants, branches, package contracts, users/roles, active sessions, shifts, audit review, and monitoring/readiness. `it_admin` also sees feature flags/branch overrides, devices/registration, customer display devices, platform users, and settings.
+
+IT UI note: the IT Backoffice now uses a modern office dashboard shell with left sidebar navigation, mobile drawer navigation, top bar account/language controls, role badge, and the SST Innovation logo at `apps/backoffice-web/public/brand/sst-innovation-logo.png`.
 
 ## Repository structure
 

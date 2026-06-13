@@ -34,13 +34,23 @@ The IT Backoffice must not share the same public URL as POS/Sales. POS users mus
 `apps/backoffice-web/src/proxy.ts` now provides high-level app surface isolation:
 - `APP_SURFACE=pos` blocks/redirects `/it-admin/*`, `/api/it-admin/*`, `/audit-logs`, and `/tenants`.
 - `APP_SURFACE=it_admin` redirects `/` to `/it-admin`, blocks POS sales/login/API surfaces such as `/preview/pos/*`, `/api/pos/*`, `/login/*`, `/api/auth/*`, and `/api/store/*`, and leaves IT auth to server-side guards.
-- `APP_SURFACE=all` is for local development only.
+- `APP_SURFACE=all` is for local full-surface development only.
+- Local IT Backoffice preview uses `APP_SURFACE=it_admin`, `PORT=30000`, and `http://localhost:30000/it-admin/login`.
 - `POS_ALLOWED_HOSTS` and `IT_ADMIN_ALLOWED_HOSTS` are comma-separated host allowlists for each Vercel Project.
 - Existing POS session-cookie protection for `/preview/pos/*` is preserved when `APP_SURFACE=pos` or `APP_SURFACE=all`.
 
+Repository separation target as of 2026-06-14:
+- POS source folder/repo: `E:\POS Preview`, `sstdevelopaminno/POS-Preview`.
+- IT Support source folder/repo: `E:\SSTiPOSSupport`, `sstdevelopaminno/SSTiPOSSupport`.
+- POS local command remains `pnpm dev` or `pnpm dev:pos` on port `3000`.
+- IT local command is `pnpm dev:it-support` on port `30000`.
+- Shared packages and `supabase/migrations/*` must be kept synchronized in both repositories until a package/migration release process replaces direct copying.
+
 This proxy is not the only security boundary. IT admin server layout and API guards still resolve user/role server-side and only allow `it_admin` or `it_support`. POS APIs must continue to derive POS session, tenant, branch, device, role, permission, contract, and feature state server-side.
 
-No Vercel deploy was performed for this pass. Future deployment must configure separate environment variables and production aliases per Vercel Project.
+The IT Backoffice uses a separate Vercel Project/domain, but it must use the same Supabase project/database as POS. Do not create a new Supabase project for IT. Copy/configure the same Supabase URL, anon key, server-only service role key, and required auth/session secrets from the POS project into the IT Vercel project.
+
+No Vercel deploy was performed for this pass. Future deployment must configure separate environment variables and production aliases per Vercel Project. Do not run `vercel --prod` for IT preview verification.
 
 ### IT Backoffice access roles (2026-06-12)
 
@@ -59,6 +69,16 @@ First UI pass for the separated IT login is complete:
 - no QR authentication runtime was implemented in this pass
 - preferred support logo path remains `apps/backoffice-web/public/brand/sstipos-support-logo.png`; a placeholder copied from the existing SST iPOS logo is committed there for preview, and the real `SSTiPOS Support` logo should replace that file before brand QA/production promotion
 - no Vercel command was run and no deployment was made
+
+Development IT platform users can be created or refreshed with `apps/backoffice-web/scripts/create-it-platform-users.mjs`. The script uses the same Supabase project/database env as POS, requires `SST_IT_ADMIN_EMAIL`, `SST_IT_ADMIN_PASSWORD`, `SST_IT_SUPPORT_EMAIL`, and `SST_IT_SUPPORT_PASSWORD`, and must never print or commit password values.
+
+2026-06-13 login usability fix: `/it-admin/login` now clears stale invalid-role/error state as soon as the user edits email/password, times out stalled login requests, and the IT login API signs out any existing Supabase session before signing in the IT staff account. This prevents old POS/tenant_user cookies from making the SSTiPOS Support login feel stuck.
+
+2026-06-13 IT menu fix: the IT shell now uses `SSTiPOS Support` as the visible product title, shows the active IT role (`IT Admin` or `IT Support`), and removes the duplicate tenant/store nav entry. `it_support` still receives only permission-filtered support menus; `it_admin` receives the full admin menu.
+
+2026-06-13 IT role menu update: the IT nav now maps directly to the approved access matrix. `it_support` sees tenant, branch, package contract, users/roles, active sessions, shifts, audit review, and monitoring/readiness menus only. `it_admin` additionally sees feature flags/branch overrides, devices/registration, customer display devices, platform users, and settings.
+
+2026-06-13 IT office dashboard redesign: the IT Backoffice shell now uses a modern light office/SaaS layout with a fixed left sidebar on desktop, mobile drawer navigation, top bar language/account controls, role badge, SST Innovation logo at `apps/backoffice-web/public/brand/sst-innovation-logo.png`, and a card-based `SSTiPOS Support Console` dashboard. Server-side role guards and permission filtering remain unchanged.
 
 `it_support` allowed surfaces:
 - tenant management

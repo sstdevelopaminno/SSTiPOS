@@ -19,35 +19,36 @@ type LoginResponse = {
 };
 
 const supportLogoSrc = "/brand/sstipos-support-logo.png";
+const loginTimeoutMs = 20000;
 
 const stateCopy: Record<LoginState, { title: string; detail: string }> = {
   idle: {
-    title: "เข้าสู่ระบบทีม IT / IT support login",
-    detail: "ใช้บัญชี Platform สำหรับทีม IT Admin และ IT Support เท่านั้น"
+    title: "Sign in",
+    detail: "Use your platform account to access SSTiPOS Support."
   },
   loading: {
-    title: "กำลังเข้าสู่ระบบ... / Signing in...",
-    detail: "กำลังตรวจสอบบัญชีและสิทธิ์จากเซิร์ฟเวอร์"
+    title: "Signing in",
+    detail: "Checking your account and support role."
   },
   error: {
-    title: "เข้าสู่ระบบไม่สำเร็จ / Login failed",
-    detail: "ตรวจสอบอีเมล รหัสผ่าน หรือสถานะบัญชี แล้วลองอีกครั้ง"
+    title: "Login failed",
+    detail: "Check your email, password, or account status."
   },
   invalid_role: {
-    title: "ไม่มีสิทธิ์เข้า SSTiPOS Support / Invalid IT role",
-    detail: "บัญชี tenant_user ไม่สามารถเข้า IT Backoffice ได้"
+    title: "Access restricted",
+    detail: "This account cannot access SSTiPOS Support."
   },
   session_expired: {
-    title: "เซสชันหมดอายุ / Session expired",
-    detail: "กรุณาเข้าสู่ระบบ SSTiPOS Support ใหม่อีกครั้ง"
+    title: "Session expired",
+    detail: "Sign in again to continue."
   },
   signed_out: {
-    title: "ออกจากระบบแล้ว / Signed out",
-    detail: "คุณออกจากระบบเรียบร้อยแล้ว สามารถเข้าสู่ระบบใหม่ได้ทุกเมื่อ"
+    title: "Signed out",
+    detail: "You can sign in again anytime."
   },
   success: {
-    title: "เข้าสู่ระบบสำเร็จ / Login successful",
-    detail: "กำลังพาไปหน้า IT Backoffice"
+    title: "Login successful",
+    detail: "Opening IT Backoffice."
   }
 };
 
@@ -64,16 +65,35 @@ export function ItAdminLoginForm({ initialState = "idle" }: { initialState?: Log
   const copy = useMemo(() => stateCopy[state], [state]);
   const isBusy = state === "loading" || state === "success";
 
+  function resetLoginState() {
+    if (state !== "idle") {
+      setState("idle");
+      setMessage(null);
+    }
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isBusy) return;
+
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !password) {
+      setState("error");
+      setMessage("Email and password are required.");
+      return;
+    }
+
     setState("loading");
     setMessage(stateCopy.loading.detail);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), loginTimeoutMs);
 
     try {
       const response = await fetch("/api/it-admin/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email: trimmedEmail, password }),
+        signal: controller.signal
       });
       const body = (await response.json().catch(() => ({}))) as LoginResponse;
 
@@ -91,7 +111,9 @@ export function ItAdminLoginForm({ initialState = "idle" }: { initialState?: Log
       router.refresh();
     } catch (error) {
       setState("error");
-      setMessage(error instanceof Error ? error.message : stateCopy.error.detail);
+      setMessage(error instanceof DOMException && error.name === "AbortError" ? "Login timed out. Please try again." : stateCopy.error.detail);
+    } finally {
+      window.clearTimeout(timeout);
     }
   }
 
@@ -101,22 +123,18 @@ export function ItAdminLoginForm({ initialState = "idle" }: { initialState?: Log
         <aside className="it-support-login-brand" aria-label="SSTiPOS Support">
           <div className="it-support-login-logo-row">
             <span className="it-support-login-logo">
-              <Image src={supportLogoSrc} alt="" width={44} height={44} priority />
+              <Image src={supportLogoSrc} alt="" width={56} height={56} priority />
             </span>
-            <span className="it-support-login-logo-text">SSTiPOS</span>
           </div>
 
           <div className="it-support-login-brand-copy">
-            <p className="it-support-login-kicker">Support Console</p>
             <h1>SSTiPOS Support</h1>
-            <p>ศูนย์ช่วยเหลือและดูแลระบบสำหรับทีม IT Admin และ IT Support</p>
-            <p>Secure access for platform operations, tenant support, and readiness review.</p>
+            <p>Secure IT operations console.</p>
           </div>
 
           <div className="it-support-login-badges" aria-label="Deployment model">
-            <span>Separate admin domain</span>
-            <span>Server-side role check</span>
-            <span>POS URL isolated</span>
+            <span>Admin domain</span>
+            <span>Role protected</span>
           </div>
         </aside>
 
@@ -124,7 +142,7 @@ export function ItAdminLoginForm({ initialState = "idle" }: { initialState?: Log
           <div className="it-support-login-panel__head">
             <p className="it-support-login-kicker">SSTiPOS Support</p>
             <h2>{copy.title}</h2>
-            <p>{copy.detail}</p>
+            {state === "idle" ? <p>{copy.detail}</p> : null}
           </div>
 
           <div className="it-support-login-tabs" role="tablist" aria-label="Login method">
@@ -159,7 +177,10 @@ export function ItAdminLoginForm({ initialState = "idle" }: { initialState?: Log
                   autoComplete="email"
                   inputMode="email"
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  onChange={(event) => {
+                    resetLoginState();
+                    setEmail(event.target.value);
+                  }}
                   disabled={isBusy}
                   placeholder="support@example.com"
                   required
@@ -172,9 +193,12 @@ export function ItAdminLoginForm({ initialState = "idle" }: { initialState?: Log
                   type="password"
                   autoComplete="current-password"
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(event) => {
+                    resetLoginState();
+                    setPassword(event.target.value);
+                  }}
                   disabled={isBusy}
-                  placeholder="••••••••"
+                  placeholder="********"
                   required
                 />
               </label>
@@ -185,7 +209,7 @@ export function ItAdminLoginForm({ initialState = "idle" }: { initialState?: Log
                   className="it-support-login-link"
                   onClick={() => {
                     setState("idle");
-                    setMessage("Password reset for IT staff is not enabled yet. Please contact an IT admin.");
+                    setMessage("Password reset is not enabled yet. Contact an IT admin.");
                   }}
                 >
                   Forgot password?
@@ -193,7 +217,7 @@ export function ItAdminLoginForm({ initialState = "idle" }: { initialState?: Log
               </div>
 
               <button className="it-support-login-button" type="submit" disabled={isBusy}>
-                {state === "loading" ? "กำลังเข้าสู่ระบบ... / Signing in..." : "เข้าสู่ระบบ / Sign in"}
+                {state === "loading" ? "Signing in..." : "Sign in"}
               </button>
             </form>
           ) : (
@@ -204,7 +228,7 @@ export function ItAdminLoginForm({ initialState = "idle" }: { initialState?: Log
                 <span />
               </div>
               <h3>QR login for mobile support devices is coming soon.</h3>
-              <p>โหมดนี้เตรียมไว้สำหรับอุปกรณ์ Support ในอนาคต และยังไม่เปิดใช้งานระบบยืนยันตัวตนด้วย QR</p>
+              <p>Use Email / Password for now.</p>
             </div>
           )}
         </div>

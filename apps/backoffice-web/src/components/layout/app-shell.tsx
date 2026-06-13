@@ -10,6 +10,7 @@ type NavItem = {
 
 export function AppShell({
   title,
+  description,
   nav,
   language,
   languageLabel,
@@ -18,6 +19,7 @@ export function AppShell({
   children
 }: {
   title: string;
+  description?: string;
   nav: NavItem[];
   language: Language;
   languageLabel: string;
@@ -29,7 +31,10 @@ export function AppShell({
     <main className="page">
       <header style={{ marginBottom: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-          <h1 style={{ marginBottom: 8 }}>{title}</h1>
+          <div>
+            <h1 style={{ marginBottom: 4 }}>{title}</h1>
+            {description ? <p style={{ margin: 0, color: "#64748b", fontWeight: 700 }}>{description}</p> : null}
+          </div>
           <LanguageSwitcher
             currentLanguage={language}
             label={languageLabel}
