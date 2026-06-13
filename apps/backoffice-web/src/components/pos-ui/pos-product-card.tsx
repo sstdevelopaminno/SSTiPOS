@@ -1,5 +1,7 @@
 ﻿"use client";
 
+import { useRef, type PointerEvent } from "react";
+
 type Props = {
   title: string;
   price: number;
@@ -16,8 +18,25 @@ function formatPrice(value: number): string {
 
 export function PosProductCard({ title, price, secondaryPrice, secondaryLabel, subtitle, imageUrl, onAdd }: Props) {
   const hasSecondaryPrice = Number.isFinite(secondaryPrice) && Number(secondaryPrice) >= 0;
+  const skipNextClickRef = useRef(false);
+
+  function handlePointerUp(event: PointerEvent<HTMLButtonElement>) {
+    if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+    event.preventDefault();
+    skipNextClickRef.current = true;
+    onAdd();
+  }
+
+  function handleClick() {
+    if (skipNextClickRef.current) {
+      skipNextClickRef.current = false;
+      return;
+    }
+    onAdd();
+  }
+
   return (
-    <button type="button" className="posui-product-card" onClick={onAdd}>
+    <button type="button" className="posui-product-card" onClick={handleClick} onPointerUp={handlePointerUp}>
       <div
         className="posui-product-card__image"
         style={imageUrl ? { backgroundImage: `url(${imageUrl})` } : undefined}

@@ -18,12 +18,18 @@ export function setupLocalNextCache() {
   if (process.platform !== "win32") return null;
 
   const projectDir = resolve(import.meta.dirname, "..");
-  const linkPath = join(projectDir, ".next-local");
+  const surface = String(process.env.APP_SURFACE ?? "pos")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-");
+  const cacheName = surface || "pos";
+  const linkPath = join(projectDir, `.next-local-${cacheName}`);
   const localBase = String(process.env.LOCALAPPDATA ?? process.env.TEMP ?? "").trim();
   if (!localBase) return null;
 
   const targetPath = resolve(
-    process.env.NEXT_LOCAL_CACHE_TARGET ?? join(localBase, "pos-platform-cache", "backoffice-web", ".next")
+    process.env.NEXT_LOCAL_CACHE_TARGET ??
+      join(localBase, "pos-platform-cache", `backoffice-web-${cacheName}`, ".next")
   );
   if (!canWriteToDirectory(targetPath)) return null;
 

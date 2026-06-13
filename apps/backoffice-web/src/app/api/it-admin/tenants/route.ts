@@ -1,13 +1,14 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { ok, fail } from "@/lib/http";
+import { hasItAdminPermission, isItAdminPlatformRole } from "@/lib/it-admin-guard";
 
 export async function POST(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: false });
 
-    if (auth.platformRole !== "it_admin") {
-      return fail("forbidden", "Only IT admin can create tenants.", 403);
+    if (!isItAdminPlatformRole(auth.platformRole) || !hasItAdminPermission(auth.platformRole, "tenant_manage")) {
+      return fail("forbidden", "Only IT admin or IT support can create tenants.", 403);
     }
 
     const body = (await req.json()) as {
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
 
     await appendAuditLog({
       actorUserId: auth.userId,
-      actorRole: "it_admin",
+      actorRole: auth.platformRole,
       action: "tenant_created",
       targetTable: "tenants",
       targetId: tenantId,

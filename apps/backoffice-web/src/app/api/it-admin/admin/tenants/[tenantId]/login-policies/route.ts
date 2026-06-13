@@ -13,7 +13,7 @@ type PolicyPayload = {
 
 export async function GET(req: Request, context: { params: Promise<{ tenantId: string }> }) {
   try {
-    const { supabase } = await requireItAdmin();
+    const { supabase } = await requireItAdmin({ permission: "login_policy_manage" });
     const { tenantId: tenantIdParam } = await context.params;
     const tenantId = parseTenantParam(tenantIdParam);
     const { searchParams } = new URL(req.url);
@@ -50,7 +50,7 @@ export async function GET(req: Request, context: { params: Promise<{ tenantId: s
 
 export async function PATCH(req: Request, context: { params: Promise<{ tenantId: string }> }) {
   try {
-    const { auth, supabase, requestMeta } = await requireItAdmin();
+    const { auth, supabase, requestMeta } = await requireItAdmin({ permission: "login_policy_manage" });
     const { tenantId: tenantIdParam } = await context.params;
     const tenantId = parseTenantParam(tenantIdParam);
     const body = (await req.json()) as PolicyPayload;
