@@ -1747,6 +1747,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [billPaymentMethod, setBillPaymentMethod] = useState<BillPaymentMethod>(null);
   const [reviewOrder, setReviewOrder] = useState<CheckoutReviewOrder | null>(null);
   const [takeawayCreatingPreview, setTakeawayCreatingPreview] = useState<TakeawayCreatingPreview | null>(null);
+  const [takeawayCreateError, setTakeawayCreateError] = useState<string | null>(null);
   const [cashReviewOrder, setCashReviewOrder] = useState<CheckoutReviewOrder | null>(null);
   const [transferReviewOrder, setTransferReviewOrder] = useState<CheckoutReviewOrder | null>(null);
   const [transferReference, setTransferReference] = useState("");
@@ -4222,18 +4223,26 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   function sendPendingDeliveryBill(heldBill: HeldBill) { queueDeliveryPendingAction(heldBill, "send", async (entry) => { await sendPendingDeliveryBillNow(entry); }); }
 
   const addToCart = useCallback((product: ProductRow) => {
-    const unitPrice = getProductPriceForCurrentMode(product);
+    const productId = String(product.id ?? "").trim();
+    if (!productId) {
+      return;
+    }
+    const productName = String(product.name ?? productId).trim() || productId;
+    const unitPrice = Number(getProductPriceForCurrentMode(product));
+    if (process.env.NODE_ENV !== "production") {
+      console.info("[pos-sales] addToCart", { productId: product.id, name: product.name, orderType, quickMode, cartLength: cart.length });
+    }
     setCart((current) => {
-      const index = current.findIndex((row) => row.product_id === product.id);
+      const index = current.findIndex((row) => row.product_id === productId);
       if (index >= 0) {
         const next = [...current];
         const entry = next[index];
         next[index] = { ...entry, quantity: entry.quantity + 1, price: unitPrice };
         return next;
       }
-      return [...current, { product_id: product.id, name: product.name, quantity: 1, price: unitPrice }];
+      return [...current, { product_id: productId, name: productName, quantity: 1, price: unitPrice }];
     });
-  }, [getProductPriceForCurrentMode]);
+  }, [cart.length, getProductPriceForCurrentMode, orderType, quickMode]);
 
   function removeFromCart(productId: string) {
     setCart((current) => current.filter((row) => row.product_id !== productId));
@@ -4803,6 +4812,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   async function handleCheckout() {
     if (isBusy || checkoutRequestLockRef.current) return;
     checkoutRequestLockRef.current = true;
+    setTakeawayCreateError(null);
     const blockingReason = getCheckoutBlockingReason({
       shiftId: shift?.id,
       cartSize: cart.length,
@@ -4932,6 +4942,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           rememberDineInDraft(selectedTable.id, cartSnapshot);
           setLastCommittedCartSignature(cartSnapshotSignature);
         }
+        setTakeawayCreateError(null);
         setTakeawayCreatingPreview(null);
         setReviewOrder(
           buildReviewOrder({
@@ -4955,13 +4966,19 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         setReceiptError(null);
       }
     } catch (submitError) {
-      setTakeawayCreatingPreview(null);
       const rawMessage = submitError instanceof Error ? submitError.message : "Unknown error";
       const message = localizeApiMessage(rawMessage);
       const errorCode = extractApiErrorCode(rawMessage);
+      if (orderType === "takeaway") {
+        setTakeawayCreateError(`${text.submitFailed}: ${message}`);
+      } else {
+        setTakeawayCreatingPreview(null);
+      }
 
       if (isConflictErrorCode(errorCode)) {
         if (errorCode === "table_not_available") {
+          setTakeawayCreateError(null);
+          setTakeawayCreatingPreview(null);
           setActiveOrder(null);
           setSelectedTable(null);
           setLastCommittedCartSignature(null);
@@ -4971,11 +4988,13 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           return;
         }
         if (errorCode === "shift_not_open") {
+          setTakeawayCreateError(`${text.submitFailed}: ${text.openShiftRequired}`);
           setReloadToken((current) => current + 1);
           pushSubmitMessage(text.openShiftRequired);
           return;
         }
         if (errorCode === "order_not_updatable" || errorCode === "order_not_found") {
+          setTakeawayCreateError(`${text.submitFailed}: ${message}`);
           setActiveOrder(null);
           setLastCommittedCartSignature(null);
           pushSubmitMessage(message);
@@ -4985,6 +5004,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
 
       markConnectivityFromError(submitError);
       if (isConnectivityIssueMessage(rawMessage)) {
+        setTakeawayCreateError(null);
+        setTakeawayCreatingPreview(null);
         enqueuePendingSubmit(payload, rawMessage);
         setCart([]);
         setCartDrawerOpen(false);
@@ -6503,7 +6524,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       <>
         {renderCartList()}
         <PosPaymentPanel
-          subtotal={summaryDiscount}
+          subtotal={subtotal}
           total={total}
           taxAmount={taxBreakdown.tax_total}
           taxLines={taxBreakdown.lines}
@@ -7123,6 +7144,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           receiptStorePhone={receiptStorePhone}
           receiptBranchLabel={receiptBranchLabel}
           takeawayCreatingPreview={takeawayCreatingPreview}
+          takeawayCreateError={takeawayCreateError}
           reviewOrder={reviewOrder}
           cashReviewOrder={cashReviewOrder}
           transferReviewOrder={transferReviewOrder}
@@ -7194,7 +7216,16 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           onConfirmTransfer={confirmTransferPayment}
           onPrintReceipt={handleReceiptPrint}
           onCloseReceipt={closeReceiptPopup}
-      />
+          onRetryTakeawayCreate={() => {
+            checkoutRequestLockRef.current = false;
+            void handleCheckout();
+          }}
+          onCloseTakeawayCreateError={() => {
+            checkoutRequestLockRef.current = false;
+            setTakeawayCreateError(null);
+            setTakeawayCreatingPreview(null);
+          }}
+        />
 
       {ingredientAdjustDialog ? (
         <div

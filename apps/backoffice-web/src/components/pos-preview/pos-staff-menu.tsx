@@ -5,7 +5,18 @@ import { usePathname, useRouter } from "next/navigation";
 import { MouseEvent, useEffect, useMemo, useState, useTransition } from "react";
 import { t, type Language } from "@/lib/i18n";
 
-type IconName = "sales" | "list" | "stock" | "summary" | "receipt" | "tables" | "users" | "display" | "shift" | "logout";
+type IconName =
+  | "sales"
+  | "list"
+  | "stock"
+  | "summary"
+  | "receipt"
+  | "tables"
+  | "packages"
+  | "users"
+  | "display"
+  | "shift"
+  | "logout";
 type PosRole = "owner" | "manager" | "staff" | "accountant";
 
 function MenuIcon({ name }: { name: IconName }) {
@@ -78,6 +89,16 @@ function MenuIcon({ name }: { name: IconName }) {
       </svg>
     );
   }
+  if (name === "packages") {
+    return (
+      <svg {...common}>
+        <rect x="4" y="5" width="16" height="14" rx="2" />
+        <path d="M8 9h8" />
+        <path d="M8 13h5" />
+        <path d="M15 17l4-4" />
+      </svg>
+    );
+  }
   if (name === "display") {
     return (
       <svg {...common}>
@@ -121,6 +142,7 @@ const MENU_DEFS: Array<{
     | "pos_menu_sales_summary"
     | "pos_menu_receipts"
     | "pos_menu_tables"
+    | "pos_menu_packages"
     | "pos_menu_shift";
   href: string;
   icon: IconName;
@@ -132,6 +154,7 @@ const MENU_DEFS: Array<{
   { key: "pos_menu_sales_summary", href: "/preview/pos/sales-summary", icon: "summary", roles: ["owner", "manager", "accountant"] },
   { key: "pos_menu_receipts", href: "/preview/pos/receipts", icon: "receipt", roles: ["owner", "manager", "accountant"] },
   { key: "pos_menu_tables", href: "/preview/pos/tables", icon: "tables", roles: ["owner", "manager"] },
+  { key: "pos_menu_packages", href: "/preview/pos/packages", icon: "packages", roles: ["owner", "manager", "staff", "accountant"] },
   { key: "pos_menu_shift", href: "/preview/pos/shift", icon: "shift", roles: ["owner", "manager", "staff"] }
 ];
 

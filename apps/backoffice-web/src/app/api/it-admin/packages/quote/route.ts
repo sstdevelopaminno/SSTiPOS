@@ -7,6 +7,7 @@ import type {
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
+import { hasItAdminPermission, isItAdminPlatformRole } from "@/lib/it-admin-guard";
 import { buildSubscriptionQuote } from "@/lib/services/subscription-package-service";
 
 type QuoteRequestBody = {
@@ -38,8 +39,8 @@ function normalizeDeploymentMode(raw: unknown): PackageDeploymentMode {
 export async function POST(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: false });
-    if (auth.platformRole !== "it_admin") {
-      return fail("forbidden", "Only IT admin can calculate package quote.", 403);
+    if (!isItAdminPlatformRole(auth.platformRole) || !hasItAdminPermission(auth.platformRole, "package_read")) {
+      return fail("forbidden", "Only IT admin or IT support can calculate package quote.", 403);
     }
 
     const body = (await req.json()) as QuoteRequestBody;
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
 
     await appendAuditLog({
       actorUserId: auth.userId,
-      actorRole: "it_admin",
+      actorRole: auth.platformRole,
       action: "package_quote_calculated",
       targetTable: "subscription_packages",
       targetId: result.packageDef.id,

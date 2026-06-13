@@ -123,6 +123,17 @@ function failFromSalesError(error: unknown, fallbackCode: string, fallbackStatus
   return fail(fallbackCode, error instanceof Error ? error.message : "Unknown error", fallbackStatus);
 }
 
+function logPosSalesCreateFailure(args: {
+  stage: string;
+  code: string;
+  status: number;
+  orderType?: string;
+  itemCount?: number;
+  elapsedMs: number;
+}) {
+  console.warn("[pos-sales] create_failed", args);
+}
+
 type PosProductQueryRow = {
   id: string;
   sku?: string | null;
@@ -982,6 +993,14 @@ export async function POST(req: Request) {
 
     const pricing = await resolveOrderPricing({ auth, body });
     if (!pricing.ok) {
+      logPosSalesCreateFailure({
+        stage: "pricing",
+        code: pricing.code,
+        status: pricing.status,
+        orderType: body.order_type,
+        itemCount: body.items.length,
+        elapsedMs: Date.now() - startedAt
+      });
       return fail(pricing.code, pricing.message, pricing.status);
     }
 
@@ -1056,6 +1075,14 @@ export async function POST(req: Request) {
     });
 
     if (!result.ok) {
+      logPosSalesCreateFailure({
+        stage: "create",
+        code: result.code,
+        status: result.status,
+        orderType: normalizedBody.order_type,
+        itemCount: normalizedBody.items.length,
+        elapsedMs: Date.now() - startedAt
+      });
       const response = fail(result.code, result.message, result.status);
       response.headers.set("x-pos-sales-post-ms", String(Date.now() - startedAt));
       return response;
@@ -1071,6 +1098,14 @@ export async function POST(req: Request) {
     response.headers.set("x-pos-sales-post-ms", String(Date.now() - startedAt));
     return response;
   } catch (error) {
+    logPosSalesCreateFailure({
+      stage: "unexpected",
+      code: "pos_sales_create_failed",
+      status: 400,
+      orderType: undefined,
+      itemCount: undefined,
+      elapsedMs: Date.now() - startedAt
+    });
     const response = failFromSalesError(error, "pos_sales_create_failed", 400);
     response.headers.set("x-pos-sales-post-ms", String(Date.now() - startedAt));
     return response;

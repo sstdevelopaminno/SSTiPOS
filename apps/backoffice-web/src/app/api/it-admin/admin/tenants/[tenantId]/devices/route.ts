@@ -27,7 +27,7 @@ type DeviceRow = {
 
 export async function GET(req: Request, context: { params: Promise<{ tenantId: string }> }) {
   try {
-    const { supabase } = await requireItAdmin();
+    const { supabase } = await requireItAdmin({ permission: "device_manage" });
     const { tenantId: tenantIdParam } = await context.params;
     const tenantId = parseTenantParam(tenantIdParam);
     await requireTenantFeature(tenantId, "device_management");
@@ -63,7 +63,7 @@ export async function GET(req: Request, context: { params: Promise<{ tenantId: s
 
 export async function PATCH(req: Request, context: { params: Promise<{ tenantId: string }> }) {
   try {
-    const { auth, supabase, requestMeta } = await requireItAdmin();
+    const { auth, supabase, requestMeta } = await requireItAdmin({ permission: "device_manage" });
     const { tenantId: tenantIdParam } = await context.params;
     const tenantId = parseTenantParam(tenantIdParam);
     const body = (await req.json()) as DevicePayload;

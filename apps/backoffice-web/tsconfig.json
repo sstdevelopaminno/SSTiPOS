@@ -11,7 +11,10 @@
     "incremental": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@pos/shared-types": ["../../packages/shared-types/src"],
+      "@pos/pos-domain": ["../../packages/pos-domain/src"],
+      "@pos/ui": ["../../packages/ui/src"]
     }
   },
   "include": [

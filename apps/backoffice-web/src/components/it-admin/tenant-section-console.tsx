@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
+import type { PlatformRole } from "@pos/shared-types";
 import { TenantAdminNav } from "@/components/it-admin/tenant-admin-nav";
 
 type SectionKey = "branches" | "users" | "devices" | "login-policies" | "sessions" | "shifts" | "features";
@@ -128,7 +129,15 @@ function formatDateTime(value: string | null): string {
   return new Intl.DateTimeFormat("th-TH", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
-export function TenantSectionConsole({ tenantId, section }: { tenantId: string; section: SectionKey }) {
+export function TenantSectionConsole({
+  tenantId,
+  section,
+  platformRole
+}: {
+  tenantId: string;
+  section: SectionKey;
+  platformRole: PlatformRole;
+}) {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -226,16 +235,18 @@ export function TenantSectionConsole({ tenantId, section }: { tenantId: string; 
         return;
       }
 
-      const [featuresResponse, contractResponse] = await Promise.all([
-        fetch(`/api/it-admin/admin/tenants/${tenantId}/features?${params.toString()}`, { cache: "no-store" }),
-        fetch(`/api/it-admin/admin/tenants/${tenantId}/contract`, { cache: "no-store" })
-      ]);
-      const featuresData = await parseResponse<{ features: FeatureRow[] }>(featuresResponse);
+      const contractResponse = await fetch(`/api/it-admin/admin/tenants/${tenantId}/contract`, { cache: "no-store" });
       const contractData = await parseResponse<{ plans: PlanRow[]; active_contract: ContractRow | null; limits: QuotaLimits }>(contractResponse);
-      setFeatures(featuresData.features ?? []);
       setPlans(contractData.plans ?? []);
       setActiveContract(contractData.active_contract ?? null);
       setQuotaLimits(contractData.limits ?? null);
+      if (platformRole === "it_admin") {
+        const featuresResponse = await fetch(`/api/it-admin/admin/tenants/${tenantId}/features?${params.toString()}`, { cache: "no-store" });
+        const featuresData = await parseResponse<{ features: FeatureRow[] }>(featuresResponse);
+        setFeatures(featuresData.features ?? []);
+      } else {
+        setFeatures([]);
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load data.");
     } finally {
@@ -263,11 +274,11 @@ export function TenantSectionConsole({ tenantId, section }: { tenantId: string; 
       case "shifts":
         return "Shifts";
       case "features":
-        return "Feature Subscriptions";
+        return platformRole === "it_admin" ? "Feature Subscriptions" : "Contract Subscription";
       default:
         return "Tenant Admin";
     }
-  }, [section]);
+  }, [platformRole, section]);
 
   async function updateRole(assignment: UserAssignment, role: UserAssignment["role"]) {
     await runAction(async () => {
@@ -283,7 +294,7 @@ export function TenantSectionConsole({ tenantId, section }: { tenantId: string; 
   return (
     <section className="surface" style={{ display: "grid", gap: 12 }}>
       <h2 style={{ margin: 0 }}>{sectionTitle}</h2>
-      <TenantAdminNav tenantId={tenantId} />
+      <TenantAdminNav tenantId={tenantId} platformRole={platformRole} />
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
         {canUseBranchFilter ? (
@@ -357,6 +368,7 @@ export function TenantSectionConsole({ tenantId, section }: { tenantId: string; 
           activeContract={activeContract}
           quotaLimits={quotaLimits}
           branchId={branchIdFilter || null}
+          canManageFeatures={platformRole === "it_admin"}
           busy={busy}
           onChanged={() => void loadSection()}
           setError={setError}
@@ -907,6 +919,7 @@ function FeaturesPane({
   activeContract,
   quotaLimits,
   branchId,
+  canManageFeatures,
   busy,
   onChanged,
   setError,
@@ -918,6 +931,7 @@ function FeaturesPane({
   activeContract: ContractRow | null;
   quotaLimits: QuotaLimits | null;
   branchId: string | null;
+  canManageFeatures: boolean;
   busy: boolean;
   onChanged: () => void;
   setError: (message: string | null) => void;
@@ -1020,30 +1034,36 @@ function FeaturesPane({
         </div>
       </div>
 
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <th style={thStyle}>Feature</th>
-            <th style={thStyle}>Description</th>
-            <th style={thStyle}>State</th>
-            <th style={thStyle}>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {features.map((feature) => (
-            <tr key={feature.code}>
-              <td style={tdStyle}>{feature.name} ({feature.code})</td>
-              <td style={tdStyle}>{feature.description}</td>
-              <td style={tdStyle}>{feature.is_enabled ? "enabled" : "disabled"} ({feature.source})</td>
-              <td style={tdStyle}>
-                <button type="button" className="pos-monitor-btn" disabled={busy} onClick={() => void toggleFeature(feature)}>
-                  {feature.is_enabled ? "Disable" : "Enable"}
-                </button>
-              </td>
+      {canManageFeatures ? (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Feature</th>
+              <th style={thStyle}>Description</th>
+              <th style={thStyle}>State</th>
+              <th style={thStyle}>Action</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {features.map((feature) => (
+              <tr key={feature.code}>
+                <td style={tdStyle}>{feature.name} ({feature.code})</td>
+                <td style={tdStyle}>{feature.description}</td>
+                <td style={tdStyle}>{feature.is_enabled ? "enabled" : "disabled"} ({feature.source})</td>
+                <td style={tdStyle}>
+                  <button type="button" className="pos-monitor-btn" disabled={busy} onClick={() => void toggleFeature(feature)}>
+                    {feature.is_enabled ? "Disable" : "Enable"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p style={{ margin: 0, color: "#64748b" }}>
+          Feature flags and branch overrides are restricted to it_admin. Support users can update package contract/subscription only.
+        </p>
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/dev-safe.mjs",
+    "dev:it-support": "node scripts/dev-it-support.mjs",
     "build": "node --max-old-space-size=4096 node_modules/next/dist/bin/next build --webpack",
     "start": "next start -p 3000",
     "cf:build": "opennextjs-cloudflare build",
