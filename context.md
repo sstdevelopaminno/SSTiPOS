@@ -45,6 +45,7 @@ Repository separation target as of 2026-06-14:
 - POS local command remains `pnpm dev` or `pnpm dev:pos` on port `3000`.
 - IT local command is `pnpm dev:it-support` on port `30000`.
 - Shared packages and `supabase/migrations/*` must be kept synchronized in both repositories until a package/migration release process replaces direct copying.
+- POS Vercel root deploy uses root `vercel.json` with output directory `apps/backoffice-web/.next`; IT projects with Root Directory `apps/backoffice-web` can continue using the app-level `apps/backoffice-web/vercel.json`.
 
 This proxy is not the only security boundary. IT admin server layout and API guards still resolve user/role server-side and only allow `it_admin` or `it_support`. POS APIs must continue to derive POS session, tenant, branch, device, role, permission, contract, and feature state server-side.
 

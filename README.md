@@ -47,6 +47,8 @@ Surface isolation is prepared in `apps/backoffice-web/src/proxy.ts` with optiona
 - `POS_ALLOWED_HOSTS=pos.<domain>`
 - `IT_ADMIN_ALLOWED_HOSTS=admin.<domain>,it.<domain>`
 
+Root `vercel.json` points Vercel builds to `apps/backoffice-web/.next` for the POS project. The app-level `apps/backoffice-web/vercel.json` remains available for projects whose Vercel Root Directory is already `apps/backoffice-web`.
+
 Security must still be enforced server-side. The IT admin layout and `/api/it-admin/*` guards resolve authenticated platform roles server-side and allow only `it_admin` or `it_support`; POS APIs continue to resolve tenant, branch, device, session, permission, contract, and feature state server-side.
 
 No Vercel deploy is performed by documentation or audit passes unless explicitly requested. Future production setup must configure separate environment variables and production aliases per Vercel Project. Do not run `vercel --prod` for IT preview verification.

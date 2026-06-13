@@ -22,6 +22,8 @@ POS/Sales and SSTiPOS Support should run as separate GitHub repositories and sep
 - POS Vercel env must use `APP_SURFACE=pos`.
 - IT Vercel env must use `APP_SURFACE=it_admin`.
 - Service role keys are server-side only and must never be exposed through `NEXT_PUBLIC_*`.
+- POS root-level Vercel deploys use `vercel.json` at repository root and output `apps/backoffice-web/.next`.
+- IT Vercel projects with Root Directory set to `apps/backoffice-web` use `apps/backoffice-web/vercel.json`.
 
 ## Initial Split Process
 
