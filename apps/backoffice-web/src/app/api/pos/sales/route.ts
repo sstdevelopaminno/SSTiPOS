@@ -1,6 +1,7 @@
 import type { OrderType } from "@pos/shared-types";
 import { FeatureGateError, requireTenantFeature } from "@/lib/feature-gate";
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
+import { hasBranchFeatureSafe } from "@/lib/server/feature-gate-safe";
 import { getDevicePolicyBlockMessage, loadPosRuntimeDevicePolicyForSession, type PosRuntimeDevicePolicy } from "@/lib/pos-device-status";
 import { PosGuardError, requirePermission, requirePosSession, type PosSessionScope } from "@/lib/pos-session-guard";
 import {
@@ -78,6 +79,13 @@ type PaymentAccountRow = {
   qr_image_url: string | null;
   qr_mode: string | null;
   applies_to_all_branches: boolean | null;
+  is_active: boolean | null;
+};
+
+type PaymentProviderSettingRow = {
+  provider: "promptpay_manual" | "inet_nops";
+  environment: "uat" | "production";
+  merchant_id: string | null;
   is_active: boolean | null;
 };
 
@@ -186,6 +194,14 @@ function isMissingPaymentAccountSchemaError(error: PostgrestLikeError | null | u
   const text = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`.toLowerCase();
   if (code === "42P01" || code === "42703" || code === "PGRST204" || code === "PGRST205") return true;
   return text.includes("tenant_payment_accounts") || text.includes("qr_mode") || text.includes("applies_to_all_branches");
+}
+
+function isMissingPaymentProviderSchemaError(error: PostgrestLikeError | null | undefined): boolean {
+  if (!error) return false;
+  const code = String(error.code ?? "");
+  const text = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`.toLowerCase();
+  if (code === "42P01" || code === "PGRST205") return true;
+  return text.includes("pos_payment_provider_settings");
 }
 
 function mapPaymentAccount(row: PaymentAccountRow | null | undefined) {
@@ -725,6 +741,7 @@ export async function GET(request: Request) {
       { data: deliveryPrices, error: deliveryPricesError },
       { data: recipeProductRows, error: recipeProductRowsError },
       { data: paymentAccounts, error: paymentAccountsError },
+      { data: paymentProviderSettings, error: paymentProviderSettingsError },
       taxSettings,
       notificationSettings
     ] = await Promise.all([
@@ -812,6 +829,12 @@ export async function GET(request: Request) {
         .or(`branch_id.eq.${auth.branchId!},applies_to_all_branches.eq.true`)
         .order("applies_to_all_branches", { ascending: true })
         .order("updated_at", { ascending: false }),
+      supabase
+        .from("pos_payment_provider_settings")
+        .select("provider,environment,merchant_id,is_active")
+        .eq("tenant_id", auth.tenantId!)
+        .eq("branch_id", auth.branchId!)
+        .eq("is_active", true),
       loadTaxSettings(auth),
       loadPosNotificationSettings(auth)
     ]);
@@ -864,6 +887,10 @@ export async function GET(request: Request) {
     const activePaymentAccount = isMissingPaymentAccountSchemaError(paymentAccountsError)
       ? null
       : mapPaymentAccount(branchPaymentAccount ?? tenantWidePaymentAccount);
+    const inetNopsFeatureEnabled = await hasBranchFeatureSafe(auth.tenantId!, auth.branchId!, "inet_nops_qr");
+    const inetNopsProvider = !inetNopsFeatureEnabled || isMissingPaymentProviderSchemaError(paymentProviderSettingsError)
+      ? null
+      : ((paymentProviderSettings ?? []) as PaymentProviderSettingRow[]).find((row) => row.provider === "inet_nops" && row.is_active !== false) ?? null;
     const deliveryPricesByProduct = (missingDeliverySchema ? [] : deliveryPrices ?? []).reduce<Record<string, Record<string, number>>>((acc, row) => {
       const productId = String(row.product_id);
       const channel = String(row.channel);
@@ -884,6 +911,14 @@ export async function GET(request: Request) {
       branch_name: scope.branch?.name ?? auth.branchId,
       store_profile: storeProfile,
       payment_account: activePaymentAccount,
+      payment_providers: {
+        inet_nops: inetNopsProvider
+          ? {
+              is_active: true,
+              environment: inetNopsProvider.environment === "production" ? "production" : "uat"
+            }
+          : null
+      },
       tax_settings: taxSettings,
       notification_settings: notificationSettings,
       device_policy: devicePolicy,

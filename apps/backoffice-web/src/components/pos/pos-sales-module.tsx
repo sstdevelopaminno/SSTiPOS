@@ -73,6 +73,13 @@ type PaymentAccountSnapshot = {
   is_active: boolean;
 };
 
+type PaymentProvidersSnapshot = {
+  inet_nops?: {
+    is_active: boolean;
+    environment: "uat" | "production";
+  } | null;
+};
+
 type TaxLineMode = "add_to_bill" | "deduct_from_bill";
 
 type TaxLineSettings = {
@@ -135,6 +142,7 @@ type PosSalesSnapshot = {
   branch_name?: string;
   store_profile?: StoreProfile | null;
   payment_account?: PaymentAccountSnapshot | null;
+  payment_providers?: PaymentProvidersSnapshot | null;
   tax_settings?: TaxSettings | null;
   notification_settings?: TableQrNotificationSettings | null;
   device_policy?: PosSalesDevicePolicy | null;
@@ -251,6 +259,16 @@ type ReceiptSession = CheckoutReviewOrder & {
   cash_received: number;
   change_amount: number;
   store_profile?: StoreProfile | null;
+};
+
+type TransferPaymentMode = "manual" | "inet_nops";
+
+type InetPaymentIntentState = {
+  payment_intent_id: string;
+  provider_order_id: string;
+  qr_code: string;
+  amount: number;
+  status: "pending" | "paid" | "failed" | "expired" | "cancelled";
 };
 
 type TakeawayCreatingPreview = {
@@ -840,6 +858,18 @@ const uiText = {
     transferReferenceLabel: "เลขอ้างอิง (ถ้ามี)",
     transferReferencePlaceholder: "เช่น TRX-123456",
     transferConfirm: "ยืนยันเงินโอน",
+    transferManualMode: "โอนแบบเดิม",
+    transferInetMode: "INET QR",
+    transferInetQrTitle: "INET NOPS QR",
+    transferInetCreateQr: "สร้าง INET QR",
+    transferInetRetryQr: "สร้าง QR ใหม่",
+    transferInetNotCreated: "กดสร้าง INET QR เพื่อรอชำระอัตโนมัติ",
+    transferInetHint: "ลูกค้าสแกน INET QR แล้วระบบจะรอ callback อัตโนมัติ",
+    transferInetWaiting: "กำลังรอผลชำระจาก INET...",
+    transferInetPaid: "รับชำระผ่าน INET สำเร็จ",
+    transferInetOrderRef: "เลขอ้างอิง INET",
+    transferInetDisabled: "ยังไม่ได้เปิดใช้ INET NOPS สำหรับสาขานี้",
+    transferInetFailed: "ชำระ INET ไม่สำเร็จ กรุณาลองใหม่หรือใช้โอนแบบเดิม",
     transferQueued: "บันทึกเงินโอนรอซิงก์แล้ว",
     paymentTotalDue: "ยอดที่ต้องชำระ",
     cashReceiveTitle: "รับชำระเงินสด",
@@ -1160,6 +1190,18 @@ const uiText = {
     transferReferenceLabel: "Reference (optional)",
     transferReferencePlaceholder: "e.g. TRX-123456",
     transferConfirm: "Confirm transfer",
+    transferManualMode: "Manual transfer",
+    transferInetMode: "INET QR",
+    transferInetQrTitle: "INET NOPS QR",
+    transferInetCreateQr: "Create INET QR",
+    transferInetRetryQr: "Create new QR",
+    transferInetNotCreated: "Create an INET QR to wait for automatic payment.",
+    transferInetHint: "Customer scans INET QR; POS waits for the provider callback.",
+    transferInetWaiting: "Waiting for INET payment...",
+    transferInetPaid: "INET payment received",
+    transferInetOrderRef: "INET reference",
+    transferInetDisabled: "INET NOPS is not enabled for this branch.",
+    transferInetFailed: "INET payment failed. Try again or use manual transfer.",
     transferQueued: "Transfer payment queued for sync",
     paymentTotalDue: "Total due",
     cashReceiveTitle: "Cash payment",
@@ -1354,6 +1396,13 @@ function buildPromptPayQrUrl(phone: string, amount: number): string | null {
   const amountValue = toPromptPayAmount(amount);
   const amountText = Number.isInteger(amountValue) ? String(amountValue) : amountValue.toFixed(2);
   return `https://promptpay.io/${normalizedPhone}/${amountText}`;
+}
+
+function normalizeQrImageSource(value: string | null | undefined): string | null {
+  const qr = String(value ?? "").trim();
+  if (!qr) return null;
+  if (qr.startsWith("http://") || qr.startsWith("https://") || qr.startsWith("data:image/")) return qr;
+  return `data:image/png;base64,${qr}`;
 }
 
 function readStoredJson<T>(key: string): T | null {
@@ -1752,6 +1801,10 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [transferReference, setTransferReference] = useState("");
   const [promptPayPhone, setPromptPayPhone] = useState(DEFAULT_PROMPTPAY_PHONE);
   const [paymentAccount, setPaymentAccount] = useState<PaymentAccountSnapshot | null>(null);
+  const [paymentProviders, setPaymentProviders] = useState<PaymentProvidersSnapshot>({});
+  const [transferPaymentMode, setTransferPaymentMode] = useState<TransferPaymentMode>("manual");
+  const [inetPaymentIntent, setInetPaymentIntent] = useState<InetPaymentIntentState | null>(null);
+  const [inetQrStatus, setInetQrStatus] = useState<"idle" | "creating" | "pending" | "paid" | "failed">("idle");
   const [taxSettings, setTaxSettings] = useState<TaxSettings>(DEFAULT_TAX_SETTINGS);
   const [tableQrNotificationSettings, setTableQrNotificationSettings] = useState<TableQrNotificationSettings>(DEFAULT_TABLE_QR_NOTIFICATION_SETTINGS);
   const [tableQrAlert, setTableQrAlert] = useState<{ id: string; type: "call_staff" | "request_checkout"; tableCode: string; note?: string | null } | null>(null);
@@ -1862,7 +1915,6 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const selectedTableRef = useRef<DiningTableItem | null>(null);
   const cartRef = useRef<CartItem[]>([]);
   const dineInDraftByTableIdRef = useRef<Record<string, CartItem[]>>({});
-  loadTableBillContextRef.current = loadTableBillContext;
 
   const refreshTaxSettings = useCallback(async (): Promise<TaxSettings | null> => {
     if (typeof window === "undefined" || !navigator.onLine) return null;
@@ -1913,6 +1965,37 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     }
     return nextMap;
   }, [deliveryPricesByProduct]);
+  function mapDeliveryChannel(appId: DeliveryApp["id"] | null): string {
+    if (appId === "lineman") return "line_man";
+    if (appId === "grabfood") return "grab";
+    if (appId === "shopeefood") return "shopee";
+    return "merchant_app";
+  }
+
+  function getDeliveryChannelCandidates(appId: DeliveryApp["id"] | null): string[] {
+    if (appId === "lineman") {
+      return ["line_man", "lineman", "line-man", "line man"];
+    }
+    if (appId === "grabfood") {
+      return ["grab", "grabfood", "grab_food"];
+    }
+    if (appId === "shopeefood") {
+      return ["shopee", "shopeefood", "shopee_food"];
+    }
+    return ["merchant_app", "merchantapp"];
+  }
+
+  const resolveDeliveryMappedPrice = useCallback((productId: string, appId: DeliveryApp["id"] | null): number | null => {
+    const channelPrices = normalizedDeliveryPricesByProduct.get(productId);
+    if (!channelPrices) return null;
+    for (const candidate of getDeliveryChannelCandidates(appId)) {
+      const candidatePrice = channelPrices.get(candidate.toLowerCase());
+      if (Number.isFinite(candidatePrice)) {
+        return Number(candidatePrice);
+      }
+    }
+    return null;
+  }, [normalizedDeliveryPricesByProduct]);
 
   function invalidateTableUiContext() {
     tableContextVersionRef.current += 1;
@@ -2036,6 +2119,44 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     },
     [playTableQrAlertSound, tableQrNotificationSettings.table_qr_popup_enabled]
   );
+
+  function rememberDineInDraft(tableId: string | null | undefined, items: CartItem[]) {
+    if (!tableId) return;
+    const normalizedItems = items.map((entry) => ({ ...entry }));
+    const nextDraftMap = { ...dineInDraftByTableIdRef.current };
+    if (normalizedItems.length === 0) {
+      delete nextDraftMap[tableId];
+    } else {
+      nextDraftMap[tableId] = normalizedItems;
+    }
+    dineInDraftByTableIdRef.current = nextDraftMap;
+    setDineInDraftByTableId((current) => {
+      const next = { ...current };
+      if (items.length === 0) {
+        delete next[tableId];
+      } else {
+        next[tableId] = normalizedItems;
+      }
+      return next;
+    });
+  }
+
+  function areCartItemsEqual(left: CartItem[], right: CartItem[]): boolean {
+    if (left === right) return true;
+    if (left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index += 1) {
+      const leftItem = left[index];
+      const rightItem = right[index];
+      if (
+        leftItem.product_id !== rightItem.product_id ||
+        leftItem.quantity !== rightItem.quantity ||
+        leftItem.price !== rightItem.price
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
 
   useEffect(() => {
     const table = selectedTable;
@@ -2262,44 +2383,6 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     }
   }
 
-  function rememberDineInDraft(tableId: string | null | undefined, items: CartItem[]) {
-    if (!tableId) return;
-    const normalizedItems = items.map((entry) => ({ ...entry }));
-    const nextDraftMap = { ...dineInDraftByTableIdRef.current };
-    if (normalizedItems.length === 0) {
-      delete nextDraftMap[tableId];
-    } else {
-      nextDraftMap[tableId] = normalizedItems;
-    }
-    dineInDraftByTableIdRef.current = nextDraftMap;
-    setDineInDraftByTableId((current) => {
-      const next = { ...current };
-      if (items.length === 0) {
-        delete next[tableId];
-      } else {
-        next[tableId] = normalizedItems;
-      }
-      return next;
-    });
-  }
-
-  function areCartItemsEqual(left: CartItem[], right: CartItem[]): boolean {
-    if (left === right) return true;
-    if (left.length !== right.length) return false;
-    for (let index = 0; index < left.length; index += 1) {
-      const leftItem = left[index];
-      const rightItem = right[index];
-      if (
-        leftItem.product_id !== rightItem.product_id ||
-        leftItem.quantity !== rightItem.quantity ||
-        leftItem.price !== rightItem.price
-      ) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   function buildCartSignature(items: CartItem[]): string {
     return items
       .map((item) => ({
@@ -2390,38 +2473,6 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     const suffix = getDeliveryOrderPrefix(appId);
     return `DEL-${suffix}-${digits}`;
   }
-
-  function mapDeliveryChannel(appId: DeliveryApp["id"] | null): string {
-    if (appId === "lineman") return "line_man";
-    if (appId === "grabfood") return "grab";
-    if (appId === "shopeefood") return "shopee";
-    return "merchant_app";
-  }
-
-  function getDeliveryChannelCandidates(appId: DeliveryApp["id"] | null): string[] {
-    if (appId === "lineman") {
-      return ["line_man", "lineman", "line-man", "line man"];
-    }
-    if (appId === "grabfood") {
-      return ["grab", "grabfood", "grab_food"];
-    }
-    if (appId === "shopeefood") {
-      return ["shopee", "shopeefood", "shopee_food"];
-    }
-    return ["merchant_app", "merchantapp"];
-  }
-
-  const resolveDeliveryMappedPrice = useCallback((productId: string, appId: DeliveryApp["id"] | null): number | null => {
-    const channelPrices = normalizedDeliveryPricesByProduct.get(productId);
-    if (!channelPrices) return null;
-    for (const candidate of getDeliveryChannelCandidates(appId)) {
-      const candidatePrice = channelPrices.get(candidate.toLowerCase());
-      if (Number.isFinite(candidatePrice)) {
-        return Number(candidatePrice);
-      }
-    }
-    return null;
-  }, [normalizedDeliveryPricesByProduct]);
 
   const getProductPriceForCurrentMode = useCallback((product: ProductRow): number => {
     if (orderType !== "delivery_manual") {
@@ -2662,6 +2713,10 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     }
   }
 
+  useEffect(() => {
+    loadTableBillContextRef.current = loadTableBillContext;
+  });
+
   async function fetchBranchMonitor(signal?: AbortSignal) {
     const { response, body } = await fetchJsonWithTimeout<{ data?: BranchMonitor } & ApiErrorBody>(
       "/api/pos/monitor",
@@ -2795,6 +2850,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       setBranchName(String(savedSales.branch_name ?? "Unknown Branch"));
       setStoreProfile(savedSales.store_profile ?? null);
       setPaymentAccount(savedSales.payment_account ?? null);
+      setPaymentProviders(savedSales.payment_providers ?? {});
       setTaxSettings(savedSales.tax_settings ?? DEFAULT_TAX_SETTINGS);
       setTableQrNotificationSettings(savedSales.notification_settings ?? DEFAULT_TABLE_QR_NOTIFICATION_SETTINGS);
       setDevicePolicy(savedSales.device_policy ?? null);
@@ -3109,18 +3165,110 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   }
 
   useEffect(() => {
+    if (
+      transferPaymentMode !== "inet_nops" ||
+      !transferReviewOrder ||
+      !inetPaymentIntent?.payment_intent_id ||
+      inetQrStatus !== "pending"
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const pollStatus = async () => {
+      try {
+        const { response, body } = await fetchJsonWithTimeout<
+          ApiErrorBody & {
+            data?: {
+              status: "pending" | "paid" | "failed" | "expired" | "cancelled";
+              order_id: string;
+              amount: number;
+              paid_at: string | null;
+              provider_order_id: string;
+            };
+          }
+        >(
+          `/api/pos/payments/inet/status?payment_intent_id=${encodeURIComponent(inetPaymentIntent.payment_intent_id)}`,
+          { credentials: "include", cache: "no-store" },
+          12000,
+          0
+        );
+        if (cancelled || !response.ok || body.error || !body.data) return;
+        if (body.data.status === "pending") return;
+        setInetPaymentIntent((current) =>
+          current?.payment_intent_id === inetPaymentIntent.payment_intent_id
+            ? { ...current, status: body.data!.status }
+            : current
+        );
+        if (body.data.status === "paid") {
+          setInetQrStatus("paid");
+          setActiveOrder((current) => (current?.id === transferReviewOrder.order_id ? null : current));
+          setCart([]);
+          setTakeawayCreatingPreview(null);
+          setReviewOrder(null);
+          setCashReviewOrder(null);
+          setTransferReviewOrder(null);
+          setTransferReference("");
+          setTransferError(null);
+          setReceiptSession({
+            order_id: transferReviewOrder.order_id,
+            order_no: transferReviewOrder.order_no,
+            external_order_code: transferReviewOrder.external_order_code,
+            table_id: transferReviewOrder.table_id,
+            created_at: body.data.paid_at ?? new Date().toISOString(),
+            items: transferReviewOrder.items.map((item) => ({ ...item })),
+            total_amount: Number(body.data.amount),
+            discount_amount: transferReviewOrder.discount_amount ?? 0,
+            tax_total: transferReviewOrder.tax_total ?? 0,
+            tax_lines: transferReviewOrder.tax_lines ?? [],
+            payment_method: "bank_transfer",
+            cash_received: Number(body.data.amount),
+            change_amount: 0,
+            store_profile: storeProfile
+          });
+          setReceiptSaving(false);
+          setReceiptSaved(true);
+          setBillPaymentMethod("bank_transfer");
+          setReceiptError(null);
+          pushSubmitMessage(`${text.receiptSaved}: ${transferReviewOrder.order_no}`);
+          if (orderType === "dine_in" && selectedTable) {
+            void loadTableBillContext(selectedTable).catch(() => undefined);
+            void fetchPosTables({ timeoutMs: 10000, retries: 0 }).catch(() => undefined);
+          }
+        } else {
+          setInetQrStatus("failed");
+          setTransferError(text.transferInetFailed);
+        }
+      } catch {
+        // Keep polling; transient network failures should not close the payment modal.
+      }
+    };
+
+    void pollStatus();
+    const timer = window.setInterval(() => void pollStatus(), 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [
+    fetchPosTables,
+    inetPaymentIntent?.payment_intent_id,
+    inetQrStatus,
+    loadTableBillContext,
+    orderType,
+    pushSubmitMessage,
+    selectedTable,
+    storeProfile,
+    text,
+    transferPaymentMode,
+    transferReviewOrder
+  ]);
+
+  useEffect(() => {
     const nowPending = pendingQueue.length + pendingPaymentQueue.length > 0;
     if (nowPending && !lastPendingRef.current) setSubmitMessage(text.pendingSaved);
     lastPendingRef.current = nowPending;
   }, [pendingQueue.length, pendingPaymentQueue.length, text.pendingSaved]);
-
-  useEffect(() => {
-    submitOrderRef.current = submitOrder;
-  });
-
-  useEffect(() => {
-    submitTransferPaymentRef.current = submitTransferPayment;
-  });
 
   useEffect(() => {
     fetchPosTablesRef.current = fetchPosTables;
@@ -3261,6 +3409,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         const nextBranchName = String(salesResponse.body.data?.branch_name ?? (lang === "th" ? "ไม่ทราบสาขา" : "Unknown Branch"));
         const nextStoreProfile = salesResponse.body.data?.store_profile ?? null;
         const nextPaymentAccount = salesResponse.body.data?.payment_account ?? null;
+        const nextPaymentProviders = salesResponse.body.data?.payment_providers ?? {};
         const nextTaxSettings = salesResponse.body.data?.tax_settings ?? DEFAULT_TAX_SETTINGS;
         const nextNotificationSettings = salesResponse.body.data?.notification_settings ?? DEFAULT_TABLE_QR_NOTIFICATION_SETTINGS;
         const nextDevicePolicy = salesResponse.body.data?.device_policy ?? null;
@@ -3305,6 +3454,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         setBranchName(nextBranchName);
         setStoreProfile(nextStoreProfile);
         setPaymentAccount(nextPaymentAccount);
+        setPaymentProviders(nextPaymentProviders);
         setTaxSettings(nextTaxSettings);
         setTableQrNotificationSettings(nextNotificationSettings);
         setDevicePolicy(nextDevicePolicy);
@@ -3329,6 +3479,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
               branch_name: nextBranchName,
               store_profile: nextStoreProfile,
               payment_account: nextPaymentAccount,
+              payment_providers: nextPaymentProviders,
               tax_settings: nextTaxSettings,
               notification_settings: nextNotificationSettings,
               device_policy: nextDevicePolicy,
@@ -3568,6 +3719,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     activePaymentQrMode === "qr_image" && paymentAccount?.qr_image_url
       ? paymentAccount.qr_image_url
       : buildPromptPayQrUrl(activePromptPayPhone, transferPromptPayAmount);
+  const inetQrEnabled = paymentProviders.inet_nops?.is_active === true;
+  const inetQrUrl = normalizeQrImageSource(inetPaymentIntent?.qr_code);
   const promptPayPhoneDisplay = formatPromptPayPhoneDisplay(activePromptPayPhone);
   const expectedPayeeName = (paymentAccount?.account_name || DEFAULT_PROMPTPAY_PAYEE).trim();
   const currentTransferSlipSignature = `${activePaymentQrMode}:${activePaymentQrMode === "qr_image" ? paymentAccount?.qr_image_url ?? "" : activePromptPayPhone}:${transferPromptPayAmount}`;
@@ -3786,8 +3939,6 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       return labelHit || codeHit;
     });
   }, [heldBillPool, normalizedHeldBillSearch]);
-  buildReceiptPrintHtmlRef.current = buildReceiptPrintHtml;
-
   useEffect(() => {
     if (!receiptSession) return;
     void primeReceiptPrintFrameRef.current(receiptSession).catch(() => undefined);
@@ -3814,28 +3965,30 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         snapshot: () => Record<string, unknown>;
       };
     };
-    runtime.__posVerification = {
-      source: "PosSalesModule",
-      clearTrace: clearPosTraceEvents,
-      readTrace: readPosTraceEvents,
-      getReceiptPrintHtml: () => (receiptSession ? buildReceiptPrintHtmlRef.current(receiptSession) : null),
-      snapshot: () => ({
-        quick_mode: quickMode,
-        order_type: orderType,
-        held_bills_total: heldBills.length,
-        held_bills_delivery: heldBillPool.length,
-        delivery_action_busy_ids: Object.keys(deliveryActionBusyById),
-        delivery_action_lock_size: deliveryActionLockRef.current.size,
-        delivery_action_queue_size: deliveryActionQueueByBillRef.current.size,
-        checkout_request_lock: checkoutRequestLockRef.current,
-        table_move_busy: tableMoveBusy,
-        receipt_modal_open: Boolean(receiptSession),
-        receipt_saving: receiptSaving,
-        active_order_id: activeOrder?.id ?? null,
-        selected_table_id: selectedTable?.id ?? null,
-        cart_items: cart.length
-      })
-    };
+    Object.assign(runtime, {
+      __posVerification: {
+        source: "PosSalesModule",
+        clearTrace: clearPosTraceEvents,
+        readTrace: readPosTraceEvents,
+        getReceiptPrintHtml: () => (receiptSession ? buildReceiptPrintHtmlRef.current(receiptSession) : null),
+        snapshot: () => ({
+          quick_mode: quickMode,
+          order_type: orderType,
+          held_bills_total: heldBills.length,
+          held_bills_delivery: heldBillPool.length,
+          delivery_action_busy_ids: Object.keys(deliveryActionBusyById),
+          delivery_action_lock_size: deliveryActionLockRef.current.size,
+          delivery_action_queue_size: deliveryActionQueueByBillRef.current.size,
+          checkout_request_lock: checkoutRequestLockRef.current,
+          table_move_busy: tableMoveBusy,
+          receipt_modal_open: Boolean(receiptSession),
+          receipt_saving: receiptSaving,
+          active_order_id: activeOrder?.id ?? null,
+          selected_table_id: selectedTable?.id ?? null,
+          cart_items: cart.length
+        })
+      }
+    });
     return () => {
       if (runtime.__posVerification?.source === "PosSalesModule") {
         delete runtime.__posVerification;
@@ -5297,6 +5450,9 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     setCashReviewOrder(null);
     setCashError(null);
     setTransferReviewOrder(order);
+    setTransferPaymentMode("manual");
+    setInetPaymentIntent(null);
+    setInetQrStatus("idle");
     setTransferReference("");
     setTransferError(null);
     setTransferSlipFile(null);
@@ -5322,6 +5478,9 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   function closeTransferPaymentPopup() {
     if (transferSubmitting || transferSlipChecking) return;
     setTransferReviewOrder(null);
+    setTransferPaymentMode("manual");
+    setInetPaymentIntent(null);
+    setInetQrStatus("idle");
     setTransferReference("");
     setTransferError(null);
     setTransferSlipFile(null);
@@ -5340,6 +5499,77 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     setTransferSlipChecking(false);
     if (transferSlipInputRef.current) {
       transferSlipInputRef.current.value = "";
+    }
+  }
+
+  function selectTransferPaymentMode(mode: TransferPaymentMode) {
+    if (transferSubmitting || transferSlipChecking) return;
+    if (mode === "inet_nops" && !inetQrEnabled) {
+      setTransferError(text.transferInetDisabled);
+      return;
+    }
+    setTransferPaymentMode(mode);
+    setTransferError(null);
+    if (mode === "manual") {
+      setInetQrStatus(inetPaymentIntent?.status === "paid" ? "paid" : inetPaymentIntent ? "pending" : "idle");
+    }
+  }
+
+  async function createInetQrPayment() {
+    if (!transferReviewOrder || transferSubmitting || transferSlipChecking || receiptSaving) return;
+    if (!inetQrEnabled) {
+      setTransferError(text.transferInetDisabled);
+      return;
+    }
+    setTransferPaymentMode("inet_nops");
+    setInetQrStatus("creating");
+    setTransferSubmitting(true);
+    setTransferError(null);
+    try {
+      const { response, body } = await fetchJsonWithTimeout<
+        ApiErrorBody & {
+          data?: {
+            payment_intent_id: string;
+            provider_order_id: string;
+            qr_code: string;
+            amount: number;
+            status: "pending";
+          };
+        }
+      >(
+        "/api/pos/payments/inet/qr",
+        {
+          method: "POST",
+          credentials: "include",
+          cache: "no-store",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ order_id: transferReviewOrder.order_id })
+        },
+        25000,
+        0
+      );
+      if (!response.ok || body.error || !body.data) {
+        throw new Error(body.error?.message ?? "Failed to create INET QR.");
+      }
+      setInetPaymentIntent({
+        payment_intent_id: body.data.payment_intent_id,
+        provider_order_id: body.data.provider_order_id,
+        qr_code: body.data.qr_code,
+        amount: Number(body.data.amount),
+        status: body.data.status
+      });
+      setInetQrStatus("pending");
+    } catch (inetError) {
+      const message = localizeApiMessage(inetError instanceof Error ? inetError.message : "Unknown error");
+      markConnectivityFromError(inetError);
+      setInetQrStatus("failed");
+      setTransferError(message);
+      pushSubmitMessage(message);
+    } finally {
+      setTransferSubmitting(false);
     }
   }
 
@@ -5448,6 +5678,11 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       pushSubmitMessage
     });
   }
+
+  useEffect(() => {
+    submitOrderRef.current = submitOrder;
+    submitTransferPaymentRef.current = submitTransferPayment;
+  });
 
   function applyQuickCashAmount(amount: number) {
     if (cashSubmitting) return;
@@ -6314,7 +6549,11 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     }
     return frame;
   }
-  primeReceiptPrintFrameRef.current = primeReceiptPrintFrame;
+
+  useEffect(() => {
+    buildReceiptPrintHtmlRef.current = buildReceiptPrintHtml;
+    primeReceiptPrintFrameRef.current = primeReceiptPrintFrame;
+  });
 
   async function handleReceiptPrint() {
     if (!receiptSession || receiptSaving) return;
@@ -7142,6 +7381,11 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           transferCanSubmit={transferCanSubmit}
           transferError={transferError}
           transferReference={transferReference}
+          transferPaymentMode={transferPaymentMode}
+          inetQrEnabled={inetQrEnabled}
+          inetQrUrl={inetQrUrl}
+          inetQrStatus={inetQrStatus}
+          inetProviderOrderId={inetPaymentIntent?.provider_order_id ?? null}
           promptPayQrUrl={promptPayQrUrl}
           promptPayPhoneDisplay={promptPayPhoneDisplay}
           promptPayQrMode={activePaymentQrMode}
@@ -7187,6 +7431,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           onClearCashInput={clearCashInput}
           onBackspaceCashInput={backspaceCashInput}
           onCloseTransfer={closeTransferPaymentPopup}
+          onSelectTransferPaymentMode={selectTransferPaymentMode}
+          onCreateInetQrPayment={createInetQrPayment}
           onTransferSlipFileChange={handleTransferSlipFileChange}
           onVerifyTransferSlip={verifyTransferSlip}
           onRequestTransferOverride={() => setTransferOverrideModalOpen(true)}

@@ -43,7 +43,8 @@ export type PosFeatureCode =
   | "offline_queue_resilience"
   | "desktop_app_runtime"
   | "barcode_scanner_mode"
-  | "kitchen_printing";
+  | "kitchen_printing"
+  | "inet_nops_qr";
 
 export interface Tenant {
   id: UUID;

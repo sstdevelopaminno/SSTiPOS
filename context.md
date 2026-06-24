@@ -452,3 +452,35 @@ ORDER BY p.name;
 * If orders and items exist but `recipe_lines = 0`, repair product recipe/stock bridge setup.
 * If `recipe_lines > 0` but no `stock_movements`, debug the stock deduction execution path in `pos-sales-service`.
 * If `stock_movements` exists but UI stock does not change, debug stock UI refresh/cache.
+
+## INET NOPS QR Payment Additive Provider (2026-06-23)
+
+- Branch: `feature/inet-nops-callback`.
+- Scope: add INET NOPS QR payment as an optional provider without removing PromptPay/manual bank transfer.
+- Existing PromptPay QR link, QR image, and manual bank-transfer confirmation remain the default payment flow.
+- New provider setting table: `pos_payment_provider_settings`.
+- New stored intent/callback tables: `pos_payment_intents`, `pos_payment_callback_logs`.
+- Merchant keys are server-only env vars; no `NEXT_PUBLIC_` INET secret is allowed.
+- POS QR creation endpoint: `POST /api/pos/payments/inet/qr`, accepting only `{ order_id }` and resolving tenant/branch/order/amount from trusted POS session and DB rows.
+- POS status endpoint: `GET /api/pos/payments/inet/status?payment_intent_id=...`, scoped to the current POS session.
+- Public INET callback endpoint: `POST /api/payments/inet/callback`.
+- Callback must resolve tenant/branch only from `pos_payment_intents.provider_order_id`; callback tenant/branch payload fields are not trusted.
+- Successful callback finalizes payment as existing-compatible `bank_transfer` with reference `INET:<payment_reference_id/ref1/order_id>`.
+- INET remains disabled unless `pos_payment_provider_settings.provider='inet_nops'` is active for the tenant/branch.
+- UAT env keys were added to `apps/backoffice-web/.env.example`.
+
+### INET Documentation Alignment (2026-06-23)
+
+- Reviewed the INET `NEW_OPS_API_V.2.pdf` and `Callback Server to Server (QRCode & Other) V.2.pdf` documents.
+- Confirmed the sandbox sequence: OAuth HTTP/JSON code `201`, access-token `201`, CreatePayment QR `200`; sandbox payment success is triggered with INET's `Complete Transactions` action, not a real money transfer.
+- Callback contract is `event=payment_status_change` with `detail.response_code` `0` for success and `1` for failure. INET retries non-200 callback responses at most 10 times, one second apart.
+- Callback logs now retain documented reconciliation fields and redact optional `payer` account/card data. Invalid merchant/amount callbacks are logged but do not fail or settle the stored payment intent.
+- Added `docs/INET-NOPS-UAT-TEST.md` and callback regression coverage for automatic POS settlement and duplicate retries.
+
+### INET QR Settings And Package Gate (2026-06-24)
+
+- Added feature code `inet_nops_qr`, package catalog metadata, and migration `20260623174225_inet_nops_settings_feature.sql`.
+- Added owner-only API `/api/pos/settings/inet-nops` and a separate `INET QR` settings menu with branch selection, UAT/Production, Merchant ID, enable switch, callback URL copy, server-key status, and UAT OAuth probe.
+- Merchant Key remains deployment-secret-only; the browser never receives it.
+- The package gate is enforced in both the POS sales snapshot and QR-creation route, not only the settings UI.
+- Saved pending questions for INET in `docs/INET-NOPS-QUESTIONS-FOR-INET.md`.

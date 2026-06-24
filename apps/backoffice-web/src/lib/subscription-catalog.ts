@@ -143,6 +143,17 @@ export const DEFAULT_PACKAGE_FEATURE_CATALOG: PackageFeatureCatalogItem[] = [
     includedByDefault: false,
     pricedPerBranch: true,
     isActive: true
+  },
+  {
+    code: "inet_nops_qr",
+    name: "INET NOPS QR Payment",
+    description: "Dynamic QR payment with INET server-to-server confirmation",
+    defaultMonthlyPrice: 490,
+    defaultYearlyPrice: 490 * 12,
+    defaultPerpetualPrice: 8900,
+    includedByDefault: false,
+    pricedPerBranch: true,
+    isActive: true
   }
 ];
 

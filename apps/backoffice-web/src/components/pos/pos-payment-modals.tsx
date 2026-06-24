@@ -72,6 +72,8 @@ type TransferVerification = {
   verified_at: string;
 };
 
+type TransferPaymentMode = "manual" | "inet_nops";
+
 type Props = {
   text: any;
   lang: "th" | "en";
@@ -103,6 +105,11 @@ type Props = {
   transferCanSubmit: boolean;
   transferError: string | null;
   transferReference: string;
+  transferPaymentMode: TransferPaymentMode;
+  inetQrEnabled: boolean;
+  inetQrUrl: string | null;
+  inetQrStatus: "idle" | "creating" | "pending" | "paid" | "failed";
+  inetProviderOrderId: string | null;
   promptPayQrUrl: string | null;
   promptPayPhoneDisplay: string;
   promptPayQrMode: "promptpay_link" | "qr_image";
@@ -144,6 +151,8 @@ type Props = {
   onClearCashInput: () => void;
   onBackspaceCashInput: () => void;
   onCloseTransfer: () => void;
+  onSelectTransferPaymentMode: (mode: TransferPaymentMode) => void;
+  onCreateInetQrPayment: () => Promise<void> | void;
   onTransferSlipFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onVerifyTransferSlip: () => Promise<void> | void;
   onRequestTransferOverride: () => void;
@@ -172,6 +181,11 @@ export function PosPaymentModals({
   cashSubmitting,
   transferSubmitting,
   transferError,
+  transferPaymentMode,
+  inetQrEnabled,
+  inetQrUrl,
+  inetQrStatus,
+  inetProviderOrderId,
   promptPayQrUrl,
   cashReceivedInput,
   cashReceivedDisplay,
@@ -202,6 +216,8 @@ export function PosPaymentModals({
   onClearCashInput,
   onBackspaceCashInput,
   onCloseTransfer,
+  onSelectTransferPaymentMode,
+  onCreateInetQrPayment,
   onConfirmTransfer,
   onPrintReceipt,
   onCloseReceipt
@@ -469,7 +485,42 @@ export function PosPaymentModals({
                   {renderTaxSummaryRows(transferReviewOrder, "posui-transfer-tax-row")}
                 </div>
                 <h4 className="posui-transfer-section-title">{text.transferQrTitle}</h4>
-                {promptPayQrUrl ? (
+                {inetQrEnabled ? (
+                  <div className="posui-payment-modal__actions posui-payment-modal__actions--transfer" style={{ justifyContent: "center", paddingTop: 0 }}>
+                    <button
+                      type="button"
+                      className={`posui-btn ${transferPaymentMode === "manual" ? "posui-btn--primary" : ""}`}
+                      onClick={() => onSelectTransferPaymentMode("manual")}
+                      disabled={transferSubmitting}
+                    >
+                      {text.transferManualMode}
+                    </button>
+                    <button
+                      type="button"
+                      className={`posui-btn ${transferPaymentMode === "inet_nops" ? "posui-btn--primary" : ""}`}
+                      onClick={() => onSelectTransferPaymentMode("inet_nops")}
+                      disabled={transferSubmitting}
+                    >
+                      {text.transferInetMode}
+                    </button>
+                  </div>
+                ) : null}
+                {transferPaymentMode === "inet_nops" ? (
+                  inetQrUrl ? (
+                    <div className="posui-transfer-qr-box">
+                      <Image
+                        src={inetQrUrl}
+                        alt={`${text.transferInetQrTitle} ${formatMoney(transferReviewOrder.total_amount)}`}
+                        className="posui-transfer-qr-image"
+                        width={320}
+                        height={320}
+                        unoptimized
+                      />
+                    </div>
+                  ) : (
+                    <p className="posui-transfer-mobile-hint">{text.transferInetNotCreated}</p>
+                  )
+                ) : promptPayQrUrl ? (
                   <div className="posui-transfer-qr-box">
                     <Image
                       src={promptPayQrUrl}
@@ -483,14 +534,36 @@ export function PosPaymentModals({
                 ) : (
                   <p className="posui-payment-modal__error">{lang === "th" ? "กรุณาตั้งค่าพร้อมเพย์หรือภาพ QR ก่อน" : "Please configure PromptPay phone or QR image first."}</p>
                 )}
-                <p className="posui-transfer-mobile-hint">{text.transferScanWithPhone}</p>
+                <p className="posui-transfer-mobile-hint">
+                  {transferPaymentMode === "inet_nops"
+                    ? inetQrStatus === "paid"
+                      ? text.transferInetPaid
+                      : inetQrStatus === "pending"
+                        ? text.transferInetWaiting
+                        : text.transferInetHint
+                    : text.transferScanWithPhone}
+                </p>
+                {transferPaymentMode === "inet_nops" && inetProviderOrderId ? (
+                  <p className="posui-transfer-mobile-hint">{`${text.transferInetOrderRef}: ${inetProviderOrderId}`}</p>
+                ) : null}
               </section>
             </div>
             {transferError ? <p className="posui-payment-modal__error">{transferError}</p> : null}
             <div className="posui-payment-modal__actions posui-payment-modal__actions--transfer">
-              <button type="button" className="posui-btn posui-btn--primary" onClick={() => void onConfirmTransfer()} disabled={transferSubmitting || !promptPayQrUrl}>
-                {transferSubmitting ? text.submitting : text.transferConfirm}
-              </button>
+              {transferPaymentMode === "inet_nops" ? (
+                <button
+                  type="button"
+                  className="posui-btn posui-btn--primary"
+                  onClick={() => void onCreateInetQrPayment()}
+                  disabled={transferSubmitting || inetQrStatus === "creating" || inetQrStatus === "pending" || inetQrStatus === "paid"}
+                >
+                  {inetQrStatus === "creating" ? text.submitting : inetQrUrl ? text.transferInetRetryQr : text.transferInetCreateQr}
+                </button>
+              ) : (
+                <button type="button" className="posui-btn posui-btn--primary" onClick={() => void onConfirmTransfer()} disabled={transferSubmitting || !promptPayQrUrl}>
+                  {transferSubmitting ? text.submitting : text.transferConfirm}
+                </button>
+              )}
             </div>
           </section>
         </div>

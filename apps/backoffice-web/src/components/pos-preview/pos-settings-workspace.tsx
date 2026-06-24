@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import type { ReactNode } from "react";
 import { PosManagerApprovalModal } from "@/components/pos-ui/pos-manager-approval-modal";
 import { PosUsersModule } from "@/components/pos/pos-users-module";
+import { InetNopsSettingsPanel } from "@/components/pos-preview/inet-nops-settings-panel";
 import type {
   BranchSettings,
   PaymentAccountSettings,
@@ -18,7 +19,7 @@ import type {
 import type { ActivityAuditItem, ActivityAuditPeriod } from "@/lib/services/activity-audit-service";
 import type { Language } from "@/lib/i18n";
 
-type SettingsView = "menu" | "store" | "branches" | "devices" | "activity" | "payments" | "taxes" | "notifications" | "users";
+type SettingsView = "menu" | "store" | "branches" | "devices" | "activity" | "payments" | "inet_nops" | "taxes" | "notifications" | "users";
 type MenuIconName = "store" | "branch" | "payment" | "tax" | "users" | "display" | "terminal" | "activity" | "bell" | "back" | "edit" | "trash" | "plus";
 const POS_TAX_SETTINGS_UPDATED_EVENT = "pos:tax-settings-updated";
 const POS_TAX_SETTINGS_UPDATED_KEY = "pos_tax_settings_updated_at_v001";
@@ -2901,6 +2902,12 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
             <MenuButton icon="terminal" title={labels.devices} desc={labels.devicesDesc} onClick={() => setView("devices")} />
             <MenuButton icon="activity" title={labels.activityAudit} desc={labels.activityAuditDesc} onClick={() => setView("activity")} />
             <MenuButton icon="payment" title={labels.payments} desc={labels.paymentsDesc} onClick={() => setView("payments")} />
+            <MenuButton
+              icon="payment"
+              title={lang === "en" ? "INET QR" : "INET QR"}
+              desc={lang === "en" ? "Dynamic QR, branch activation, and UAT connection" : "QR แบบกำหนดยอด, เปิดใช้งานรายสาขา และทดสอบ UAT"}
+              onClick={() => setView("inet_nops")}
+            />
             <MenuButton icon="tax" title={labels.taxes} desc={labels.taxesDesc} onClick={() => setView("taxes")} />
             <MenuButton
               icon="bell"
@@ -2960,6 +2967,16 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
             onBack={() => setView("menu")}
             canManage={canManage}
             activeBranchId={initialData.metadata.branch_id}
+            reportStatus={reportStatus}
+          />
+        ) : null}
+        {view === "inet_nops" ? (
+          <InetNopsSettingsPanel
+            lang={lang}
+            branches={branches}
+            activeBranchId={initialData.metadata.branch_id}
+            canManage={canManage}
+            onBack={() => setView("menu")}
             reportStatus={reportStatus}
           />
         ) : null}
