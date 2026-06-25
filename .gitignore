@@ -28,3 +28,5 @@ tmp-next-*.out.log
 tmp-next-*.err.log
 context.md
 typecheck-output.txt
+.codex/
+.codex_worktrees/
