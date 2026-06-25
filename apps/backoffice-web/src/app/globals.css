@@ -4501,6 +4501,53 @@ a {
   text-align: center;
 }
 
+.posui-transfer-provider-toggle {
+  width: min(100%, 280px);
+  min-height: 40px;
+  margin: 0 auto;
+  padding: 3px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 3px;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.posui-transfer-provider-toggle button {
+  min-width: 0;
+  min-height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.1;
+  cursor: pointer;
+}
+
+.posui-transfer-provider-toggle button.is-active {
+  background: #ff6b16;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(255, 107, 22, 0.22);
+}
+
+.posui-transfer-provider-toggle button:hover:not(:disabled):not(.is-active) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.posui-transfer-provider-toggle button:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.24);
+  outline-offset: 2px;
+}
+
+.posui-transfer-provider-toggle button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 .posui-payment-modal--transfer-qr-only .posui-transfer-qr-box {
   width: 100%;
   max-width: 340px;

@@ -49,6 +49,14 @@ function buildProviderOrderId(): string {
   return `SST${compactDate(new Date())}${randomPart}`;
 }
 
+function describeInetCreateError(environment: string, error: unknown): string {
+  const message = error instanceof Error ? error.message : "INET QR create failed.";
+  if (message.includes("html_response") || message.includes("non_json_response")) {
+    return `INET ${environment.toUpperCase()} endpoint returned a non-JSON page. Please verify the INET ${environment.toUpperCase()} URLs and sandbox availability. (${message})`;
+  }
+  return message;
+}
+
 export async function POST(request: Request) {
   const startedAt = Date.now();
   try {
@@ -253,16 +261,17 @@ export async function POST(request: Request) {
       response.headers.set("x-pos-inet-qr-ms", String(Date.now() - startedAt));
       return response;
     } catch (inetError) {
+      const failedReason = describeInetCreateError(environment, inetError);
       await supabase
         .from("pos_payment_intents")
         .update({
           status: "failed",
-          failed_reason: inetError instanceof Error ? inetError.message : "INET QR create failed."
+          failed_reason: failedReason
         })
         .eq("tenant_id", auth.tenantId!)
         .eq("branch_id", auth.branchId!)
         .eq("id", intent.id);
-      const response = fail("inet_qr_create_failed", inetError instanceof Error ? inetError.message : "INET QR create failed.", 502);
+      const response = fail("inet_qr_create_failed", failedReason, 502);
       response.headers.set("x-pos-inet-qr-ms", String(Date.now() - startedAt));
       return response;
     }

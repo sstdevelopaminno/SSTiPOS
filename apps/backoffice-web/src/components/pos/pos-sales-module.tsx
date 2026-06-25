@@ -1492,7 +1492,15 @@ async function fetchJsonWithTimeout<TBody extends ApiErrorBody>(
         try {
           body = JSON.parse(rawText) as TBody;
         } catch {
-          body = {} as TBody;
+          const message = rawText.trimStart().startsWith("<")
+            ? "Server returned an HTML error page instead of JSON. Please refresh the POS session and try again."
+            : "Server returned an invalid JSON response. Please try again.";
+          body = {
+            error: {
+              code: "invalid_json_response",
+              message
+            }
+          } as TBody;
         }
       }
       const route = resolveApiRoute(input);

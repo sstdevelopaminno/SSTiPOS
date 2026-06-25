@@ -486,10 +486,10 @@ export function PosPaymentModals({
                 </div>
                 <h4 className="posui-transfer-section-title">{text.transferQrTitle}</h4>
                 {inetQrEnabled ? (
-                  <div className="posui-payment-modal__actions posui-payment-modal__actions--transfer" style={{ justifyContent: "center", paddingTop: 0 }}>
+                  <div className="posui-transfer-provider-toggle">
                     <button
                       type="button"
-                      className={`posui-btn ${transferPaymentMode === "manual" ? "posui-btn--primary" : ""}`}
+                      className={transferPaymentMode === "manual" ? "is-active" : ""}
                       onClick={() => onSelectTransferPaymentMode("manual")}
                       disabled={transferSubmitting}
                     >
@@ -497,7 +497,7 @@ export function PosPaymentModals({
                     </button>
                     <button
                       type="button"
-                      className={`posui-btn ${transferPaymentMode === "inet_nops" ? "posui-btn--primary" : ""}`}
+                      className={transferPaymentMode === "inet_nops" ? "is-active" : ""}
                       onClick={() => onSelectTransferPaymentMode("inet_nops")}
                       disabled={transferSubmitting}
                     >

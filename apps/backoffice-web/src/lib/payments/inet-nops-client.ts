@@ -109,7 +109,7 @@ function requireInetSuccessCode(stage: "oauth" | "access_token" | "create_paymen
   throw new Error(`inet_nops_${stage}_failed:${code ?? "missing_code"}:${detail}`);
 }
 
-async function postJson(url: string, body: JsonObject, headers: HeadersInit = {}): Promise<JsonObject> {
+async function postJson(stage: "oauth" | "access_token" | "create_payment", url: string, body: JsonObject, headers: HeadersInit = {}): Promise<JsonObject> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), INET_TIMEOUT_MS);
   try {
@@ -125,12 +125,23 @@ async function postJson(url: string, body: JsonObject, headers: HeadersInit = {}
       cache: "no-store"
     });
     const rawText = await response.text();
-    const parsed = rawText ? JSON.parse(rawText) as unknown : {};
+    let parsed: unknown = {};
+    if (rawText) {
+      try {
+        parsed = JSON.parse(rawText) as unknown;
+      } catch {
+        const kind = rawText.trimStart().startsWith("<") ? "html_response" : "non_json_response";
+        if (!response.ok) {
+          throw new Error(`inet_nops_${stage}_http_${response.status}:${kind}`);
+        }
+        throw new Error(`inet_nops_${stage}_invalid_response:${kind}`);
+      }
+    }
     if (!response.ok) {
       throw new Error(`inet_nops_http_${response.status}:${rawText.slice(0, 240)}`);
     }
     if (!isJsonObject(parsed)) {
-      throw new Error("inet_nops_invalid_json_response");
+      throw new Error(`inet_nops_${stage}_invalid_response`);
     }
     return parsed;
   } catch (error) {
@@ -153,7 +164,7 @@ export async function createInetNopsQrPayment(args: InetCreateQrArgs): Promise<I
     throw new Error("inet_nops_amount_must_be_greater_than_0_01");
   }
 
-  const oauthResponse = await postJson(config.oauthUrl, {
+  const oauthResponse = await postJson("oauth", config.oauthUrl, {
     key: config.merchantKey,
     orderId: args.providerOrderId
   });
@@ -164,6 +175,7 @@ export async function createInetNopsQrPayment(args: InetCreateQrArgs): Promise<I
   }
 
   const accessTokenResponse = await postJson(
+    "access_token",
     config.accessTokenUrl,
     {
       key: config.merchantKey,
@@ -185,7 +197,7 @@ export async function createInetNopsQrPayment(args: InetCreateQrArgs): Promise<I
     throw new Error("inet_nops_access_token_response_invalid");
   }
 
-  const createResponse = await postJson(createPaymentLink, { accessToken });
+  const createResponse = await postJson("create_payment", createPaymentLink, { accessToken });
   requireInetSuccessCode("create_payment", createResponse, 200);
   const qrCode = findString(createResponse, ["qrCode", "qr_code", "qrcode", "qr"]);
   if (!qrCode) {
@@ -204,7 +216,7 @@ export async function createInetNopsQrPayment(args: InetCreateQrArgs): Promise<I
 export async function testInetNopsConnection(environment: InetEnvironment): Promise<InetNopsConnectionTestResult> {
   const config = resolveInetNopsConfig(environment);
   const providerOrderId = buildConnectionProbeOrderId();
-  const oauthResponse = await postJson(config.oauthUrl, {
+  const oauthResponse = await postJson("oauth", config.oauthUrl, {
     key: config.merchantKey,
     orderId: providerOrderId
   });
