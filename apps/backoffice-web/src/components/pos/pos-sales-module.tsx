@@ -5520,6 +5520,12 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     setTransferError(null);
     if (mode === "manual") {
       setInetQrStatus(inetPaymentIntent?.status === "paid" ? "paid" : inetPaymentIntent ? "pending" : "idle");
+      return;
+    }
+    if (!inetPaymentIntent && inetQrStatus !== "creating" && inetQrStatus !== "pending" && inetQrStatus !== "paid") {
+      window.setTimeout(() => {
+        void createInetQrPayment();
+      }, 0);
     }
   }
 
