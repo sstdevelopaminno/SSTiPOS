@@ -11,7 +11,6 @@ Production-oriented monorepo for a noodle shop and small restaurant POS platform
 ## Repository structure
 
 ```text
-pos-platform/
   - apps/![alt text](image-1.png)
     - backoffice-web/    # Back Office + IT Admin + POS preview + Unified Store/POS login
     - pos-android/       # Placeholder docs + API contract reference
@@ -220,9 +219,11 @@ Before go-live, complete:
 - INET merchant keys are server-only env vars. Do not use `NEXT_PUBLIC_` for INET secrets.
 - Public callback URL to register with INET: `/api/payments/inet/callback`.
 - UAT env setup lives in `apps/backoffice-web/.env.example`: `INET_NOPS_ENV`, `INET_NOPS_MERCHANT_KEY_UAT`, `INET_NOPS_MERCHANT_ID_UAT`, `INET_NOPS_OAUTH_URL_UAT`, `INET_NOPS_ACCESS_TOKEN_URL_UAT`, `INET_NOPS_AP_URL_UAT`, and `INET_NOPS_CALLBACK_PUBLIC_URL`.
+- Keep `INET_NOPS_ENV=uat` while testing the sandbox key. After UAT succeeds and INET sends real receiving-payment credentials, switch to `INET_NOPS_ENV=production`, fill `INET_NOPS_MERCHANT_KEY_PROD`, `INET_NOPS_MERCHANT_ID_PROD`, production OAuth/access-token/AP URLs, and `INET_NOPS_CALLBACK_PUBLIC_URL_PROD`, then restart/redeploy before enabling Production in settings.
 - INET's UAT onboarding email may provide only a Merchant Key. Set `INET_NOPS_ALLOW_MISSING_MERCHANT_ID_UAT=true` only for that sandbox case; production always requires a configured merchant ID.
 - INET QR is package-gated with feature code `inet_nops_qr`. Enable it through the tenant package or a branch feature subscription before the POS displays or creates an INET QR.
 - Owner settings include a separate `INET QR` menu for branch-scoped activation, UAT/Production selection, Merchant ID, callback URL copy, server-key status, and an OAuth-only UAT connection test. Manual PromptPay account settings remain separate.
+- Operations guide: `docs/INET-NOPS-QR-OPERATIONS-MANUAL.md`.
 - INET expects `orderId` to be unique and no longer than 30 characters. The POS generates an unguessable 30-character provider order ID and rejects UAT payments of 0.01 THB or less, matching the NOPS API contract.
 - Callback handling follows the INET Server-to-Server payload: `event=payment_status_change`, `response_code=0` settles the bill, `response_code=1` records a failed payment, and malformed/merchant/amount-mismatched callbacks never mutate the pending intent. INET retries non-200 callback responses up to 10 times at one-second intervals, so business validation responses deliberately return HTTP 200.
 - UAT test checklist: disabled branch keeps manual flow only; enabled branch shows INET QR mode; QR creation writes a pending intent before provider calls; the INET sandbox `Complete Transactions` action sends the success callback; POS polling then clears the paid bill without a cashier click; duplicate success returns HTTP 200 duplicate; amount/merchant mismatch logs validation failure and returns HTTP 200.
