@@ -449,7 +449,7 @@ function resolveSessionCookieNames() {
   return { handoffName, sessionIdName, secure, domain };
 }
 
-export async function requirePosSession(): Promise<PosSessionScope> {
+async function resolveSessionFromCookies(): Promise<PosSessionRow> {
   const cookieStore = await cookies();
   const names = resolveSessionCookieNames();
   const sessionIdFromCookie = cookieStore.get(names.sessionIdName)?.value?.trim().replace(/^"+|"+$/g, "") ?? "";
@@ -488,7 +488,25 @@ export async function requirePosSession(): Promise<PosSessionScope> {
     throw new PosGuardError("missing_pos_session", "POS session is required.", 401);
   }
 
+  return session;
+}
+
+export async function requirePosSession(): Promise<PosSessionScope> {
+  const session = await resolveSessionFromCookies();
   assertActiveSession(session);
+  const extras = await loadScopeExtras(session);
+  return {
+    session,
+    ...extras,
+    permissions: computePermissions(session.role)
+  };
+}
+
+export async function requirePosSessionForShiftClose(): Promise<PosSessionScope> {
+  const session = await resolveSessionFromCookies();
+  if (session.status === "revoked") {
+    throw new PosGuardError("session_revoked", "POS session was revoked.", 401);
+  }
   const extras = await loadScopeExtras(session);
   return {
     session,

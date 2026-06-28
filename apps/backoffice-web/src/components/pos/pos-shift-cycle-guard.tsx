@@ -65,6 +65,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closingCash, setClosingCash] = useState("");
   const autoCloseRunRef = useRef<string | null>(null);
+  const loadStateInFlightRef = useRef(false);
 
   const copy = useMemo(
     () =>
@@ -145,6 +146,8 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
   );
 
   const loadState = useCallback(async () => {
+    if (loadStateInFlightRef.current) return;
+    loadStateInFlightRef.current = true;
     try {
       const { response, body } = await fetchJsonWithTimeout("/api/pos/session/current", { cache: "no-store" }, 8000);
       const sessionBody = body as SessionResponse | null;
@@ -157,6 +160,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
     } catch {
       if (phase !== "on_time") setError(copy.requestTimeout);
     } finally {
+      loadStateInFlightRef.current = false;
       setLoading(false);
     }
   }, [applySessionState, copy.requestTimeout, phase]);
@@ -166,14 +170,11 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
       applySessionState((event as CustomEvent<SessionResponse["data"]>).detail);
     };
     window.addEventListener(POS_SESSION_EVENT_NAME, onSessionUpdated);
-    const initialTimer = window.setTimeout(() => {
-      if (!busy) void loadState();
-    }, 15000);
+    if (!busy) void loadState();
     const timer = window.setInterval(() => {
       if (!busy) void loadState();
     }, 60_000);
     return () => {
-      window.clearTimeout(initialTimer);
       window.clearInterval(timer);
       window.removeEventListener(POS_SESSION_EVENT_NAME, onSessionUpdated);
     };

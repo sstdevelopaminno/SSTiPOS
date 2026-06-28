@@ -5,7 +5,7 @@ import {
   getTenantBranchScopeFromSession,
   requireActiveShift,
   requirePermission,
-  requirePosSession,
+  requirePosSessionForShiftClose,
   withPosSessionCookie
 } from "@/lib/pos-session-guard";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
@@ -51,7 +51,9 @@ function isWithinWindow(createdAt: string | null | undefined, openedAt: string, 
 
 export async function POST(request: Request) {
   try {
-    const scope = await requirePosSession();
+    const body = (await request.json().catch(() => null)) as { closing_cash?: number | string | null; quick_close?: boolean | null } | null;
+    const quickClose = body?.quick_close === true;
+    const scope = await requirePosSessionForShiftClose();
     requirePermission(scope, "shift:close");
     const { shift } = await requireActiveShift(scope);
     const isStaffRole = scope.session.role !== "owner" && scope.session.role !== "manager" && scope.session.role !== "accountant";
@@ -61,9 +63,6 @@ export async function POST(request: Request) {
         { status: 403 }
       );
     }
-    const body = (await request.json().catch(() => null)) as { closing_cash?: number | string | null; quick_close?: boolean | null } | null;
-    const quickClose = body?.quick_close === true;
-
     const closingCashRaw = body?.closing_cash;
     const closingCash =
       closingCashRaw === undefined || closingCashRaw === null || closingCashRaw === ""

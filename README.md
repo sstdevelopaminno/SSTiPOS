@@ -154,6 +154,15 @@ psql "$SUPABASE_DB_URL" -f supabase/seed.sql
 - Branch: `BKK-01` (auto-selected in single-branch demo mode)
 - Demo device code (UI shortcut): `POS-DEMO-01`
 
+Solo register demo (no branch-selection UI, one cashier device):
+- Store code: `SOLO-TH-001`
+- Internal branch: `MAIN` / `Default Register` (auto-selected; cashier does not choose branch)
+- Device code: `SOLO-POS-01`
+- Owner employee code: `900001` / PIN `111111`
+- Manager employee code: `900002` / PIN `222222`
+- Staff employee code: `900003` / PIN `333333`
+- Package: `solo` / `Solo Register`, 1 branch, 1 cashier device, 3 users, core POS sales only
+
 4. Open login/POS preview
 - Login: `http://localhost:3000/login/store`
 - POS: `http://localhost:3000/preview/pos`

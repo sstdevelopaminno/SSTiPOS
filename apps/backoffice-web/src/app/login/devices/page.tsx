@@ -115,6 +115,7 @@ function LoginDevicesPageContent() {
   const searchParams = useSearchParams();
   const flow = searchParams.get("flow") === "single" ? "single" : "multi";
   const [branchName, setBranchName] = useState("");
+  const [noBranchMode, setNoBranchMode] = useState(false);
   const [devices, setDevices] = useState<DeviceItem[]>([]);
   const [selectedCode, setSelectedCode] = useState("");
   const [employeeId, setEmployeeId] = useState("");
@@ -139,7 +140,9 @@ function LoginDevicesPageContent() {
         const data = body.data;
         if (!mounted) return;
 
-        setBranchName(data.branch.name ?? "");
+        const resolvedBranchName = data.branch.name ?? "";
+        setBranchName(resolvedBranchName);
+        setNoBranchMode(data.single_device_mode && resolvedBranchName === "Default Register");
         setEmployeeId(data.employee?.id ?? "");
         setDevices(data.devices);
         setCanOverride(data.can_override_in_use);
@@ -302,7 +305,7 @@ function LoginDevicesPageContent() {
               />
             </svg>
           </span>
-          <span>สาขา: {branchName}</span>
+          <span>{noBranchMode ? "โหมดร้านเดี่ยว: ไม่มีการเลือกสาขา" : `สาขา: ${branchName}`}</span>
         </p>
       ) : null}
       {loading ? <p className="ipos-loading-text">กำลังโหลดรายการเครื่องแคชเชียร์...</p> : null}

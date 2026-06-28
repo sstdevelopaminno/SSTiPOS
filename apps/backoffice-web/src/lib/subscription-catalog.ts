@@ -159,6 +159,23 @@ export const DEFAULT_PACKAGE_FEATURE_CATALOG: PackageFeatureCatalogItem[] = [
 
 export const DEFAULT_PACKAGE_CATALOG: PackageCatalogItem[] = [
   {
+    code: "solo",
+    name: "Solo Register",
+    baseMonthlyPrice: 790,
+    baseYearlyPrice: 790 * 12,
+    basePerpetualPrice: 15900,
+    maxBranchesIncluded: 1,
+    extraBranchMonthlyPrice: 0,
+    extraBranchYearlyPrice: 0,
+    extraBranchPerpetualPrice: 0,
+    maxTerminalsPerBranchIncluded: 1,
+    extraTerminalMonthlyPrice: 0,
+    extraTerminalYearlyPrice: 0,
+    extraTerminalPerpetualPrice: 0,
+    includedFeatureCodes: ["core_pos_sales"],
+    isActive: true
+  },
+  {
     code: "starter",
     name: "Starter",
     baseMonthlyPrice: 1490,
