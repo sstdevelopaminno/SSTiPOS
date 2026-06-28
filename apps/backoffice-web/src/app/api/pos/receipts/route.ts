@@ -1,4 +1,5 @@
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { fail, ok } from "@/lib/http";
 import { buildPaginationMeta, parsePagination } from "@/lib/query-params";
 import { loadReceiptStoreProfile } from "@/lib/services/store-profile-service";
@@ -60,6 +61,7 @@ export async function GET(req: Request) {
 
   try {
     const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "receipts:view" });
+    await requirePosApiFeature(auth, "receipt_reprint_history");
     const supabase = getSupabaseServiceClient();
     const { searchParams } = new URL(req.url);
     const { page, pageSize } = parsePagination(searchParams, 20);
@@ -281,6 +283,8 @@ export async function GET(req: Request) {
       pagination: buildPaginationMeta(page, pageSize, count)
     }));
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return withTiming(featureError);
     return withTiming(fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401));
   }
 }

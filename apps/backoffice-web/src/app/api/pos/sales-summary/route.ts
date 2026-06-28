@@ -1,4 +1,5 @@
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { PosGuardError } from "@/lib/pos-session-guard";
 import { fail, ok } from "@/lib/http";
 import { loadPosSalesSummaryData, type PosSalesSummaryFilters } from "@/lib/services/pos-sales-summary-service";
@@ -19,6 +20,7 @@ function readFilters(request: Request): PosSalesSummaryFilters {
 export async function GET(request: Request) {
   try {
     const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "reports:view" });
+    await requirePosApiFeature(auth, "advanced_sales_reports");
     const payload = await loadPosSalesSummaryData(
       {
         userId: auth.userId,
@@ -34,6 +36,8 @@ export async function GET(request: Request) {
     if (error instanceof PosGuardError) {
       return fail(error.code, error.message, error.status);
     }
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     return fail(
       "sales_summary_fetch_failed",
       error instanceof Error ? error.message : "Unable to load sales summary.",

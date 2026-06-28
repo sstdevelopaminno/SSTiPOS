@@ -1,5 +1,6 @@
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
 import { fail, ok } from "@/lib/http";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 type SessionRow = {
@@ -48,6 +49,7 @@ export async function GET(req: Request, context: { params: Promise<{ tableId: st
   };
   try {
     const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "tables:view" });
+    await requirePosApiFeature(auth, "table_management");
     const { tableId } = await context.params;
     const searchParams = new URL(req.url).searchParams;
     const liteMode = searchParams.get("lite") === "1";
@@ -151,6 +153,8 @@ export async function GET(req: Request, context: { params: Promise<{ tableId: st
       transfer_verifications: transferVerifications
     }));
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return withTiming(featureError);
     return withTiming(fail("table_bill_query_failed", error instanceof Error ? error.message : "Unknown error", 400));
   }
 }

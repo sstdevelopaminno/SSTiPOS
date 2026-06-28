@@ -18,7 +18,11 @@ type DbPackageRow = {
   code: string;
   name: string;
   monthly_price: number;
+  yearly_price?: number | null;
   max_branches: number;
+  max_devices?: number | null;
+  max_users?: number | null;
+  metadata?: Record<string, unknown> | null;
   is_active: boolean;
 };
 
@@ -67,15 +71,20 @@ function deriveDefaultPerpetual(monthly: number): number {
 function derivePackageFromDb(row: DbPackageRow): PackageCatalogItem {
   const baseMonthlyPrice = Number(row.monthly_price ?? 0);
   const matchedDefault = DEFAULT_PACKAGE_CATALOG.find((entry) => entry.code === row.code);
+  const baseYearlyPrice = Number(row.yearly_price ?? matchedDefault?.baseYearlyPrice ?? deriveDefaultYearly(baseMonthlyPrice));
+  const metadata = { ...(matchedDefault?.metadata ?? {}), ...(row.metadata ?? {}) };
   if (matchedDefault) {
     return {
       ...matchedDefault,
       id: row.id,
       name: row.name,
       baseMonthlyPrice,
-      baseYearlyPrice: deriveDefaultYearly(baseMonthlyPrice),
+      baseYearlyPrice,
       basePerpetualPrice: deriveDefaultPerpetual(baseMonthlyPrice),
       maxBranchesIncluded: Math.max(1, Number(row.max_branches ?? matchedDefault.maxBranchesIncluded)),
+      maxTerminalsPerBranchIncluded: Math.max(1, Number(row.max_devices ?? matchedDefault.maxTerminalsPerBranchIncluded)),
+      maxUsersIncluded: Math.max(1, Number(row.max_users ?? matchedDefault.maxUsersIncluded ?? 1)),
+      metadata,
       isActive: Boolean(row.is_active)
     };
   }
@@ -85,7 +94,7 @@ function derivePackageFromDb(row: DbPackageRow): PackageCatalogItem {
     code: row.code,
     name: row.name,
     baseMonthlyPrice,
-    baseYearlyPrice: deriveDefaultYearly(baseMonthlyPrice),
+    baseYearlyPrice,
     basePerpetualPrice: deriveDefaultPerpetual(baseMonthlyPrice),
     maxBranchesIncluded: Math.max(1, Number(row.max_branches ?? 1)),
     extraBranchMonthlyPrice: Math.max(0, Number((baseMonthlyPrice * 0.45).toFixed(2))),
@@ -96,6 +105,8 @@ function derivePackageFromDb(row: DbPackageRow): PackageCatalogItem {
     extraTerminalYearlyPrice: Math.max(0, Number((baseMonthlyPrice * 0.15 * 12).toFixed(2))),
     extraTerminalPerpetualPrice: Math.max(0, Number((baseMonthlyPrice * 3.2).toFixed(2))),
     includedFeatureCodes: ["core_pos_sales"],
+    maxUsersIncluded: Math.max(1, Number(row.max_users ?? 1)),
+    metadata: row.metadata ?? {},
     isActive: Boolean(row.is_active)
   };
 }
@@ -119,16 +130,30 @@ export async function getPackageCatalogWithFeatures(): Promise<{
   features: PackageFeatureCatalogItem[];
 }> {
   const supabase = getSupabaseServiceClient();
-  const { data: packageRows, error: packageError } = await supabase
+  const packageResult = await supabase
     .from("subscription_packages")
-    .select("id,code,name,monthly_price,max_branches,is_active")
+    .select("id,code,name,monthly_price,yearly_price,max_branches,max_devices,max_users,metadata,is_active")
     .order("monthly_price", { ascending: true });
+  let packageRows = packageResult.data as DbPackageRow[] | null;
+  let packageError = packageResult.error;
 
   if (packageError) {
     if (isSchemaMissingError(packageError.message)) {
-      return { packages: [...DEFAULT_PACKAGE_CATALOG], features: [...DEFAULT_PACKAGE_FEATURE_CATALOG] };
+      const fallback = await supabase
+        .from("subscription_packages")
+        .select("id,code,name,monthly_price,max_branches,is_active")
+        .order("monthly_price", { ascending: true });
+      packageRows = fallback.data as DbPackageRow[] | null;
+      packageError = fallback.error;
+      if (packageError && isSchemaMissingError(packageError.message)) {
+        return { packages: [...DEFAULT_PACKAGE_CATALOG], features: [...DEFAULT_PACKAGE_FEATURE_CATALOG] };
+      }
+      if (packageError) {
+        throw new Error(`subscription_packages_query_failed:${packageError.message}`);
+      }
+    } else {
+      throw new Error(`subscription_packages_query_failed:${packageError.message}`);
     }
-    throw new Error(`subscription_packages_query_failed:${packageError.message}`);
   }
 
   const basePackages = (packageRows as DbPackageRow[] | null)?.map(derivePackageFromDb) ?? [];
@@ -216,7 +241,7 @@ export async function buildSubscriptionQuote(input: QuoteInput): Promise<{
     deploymentMode: input.deploymentMode,
     branchCount: input.branchCount,
     terminalCountPerBranch: input.terminalCountPerBranch,
-    annualPrepayDiscountPercent: 10
+    annualPrepayDiscountPercent: 0
   });
 
   return {

@@ -1,6 +1,7 @@
 ﻿import { getAuthContext } from "@/lib/auth-context";
 import { fail, ok } from "@/lib/http";
 import { convertToGrams, toIntegerGrams } from "@/lib/ingredient-stock";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { buildPaginationMeta, parsePagination, sanitizeSearchTerm } from "@/lib/query-params";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
@@ -341,6 +342,7 @@ function toRecipeQuantityByIngredientBaseUnit(input: {
 export async function GET(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
+    await requirePosApiFeature(auth, "core_pos_sales");
     const supabase = getSupabaseServiceClient();
     const { searchParams } = new URL(req.url);
     const view = searchParams.get("view")?.trim() || "products";
@@ -771,6 +773,8 @@ export async function GET(req: Request) {
       pagination: buildPaginationMeta(page, pageSize, count)
     });
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     const message = error instanceof Error ? error.message : "Authentication failed.";
     if (message === "forbidden_branch_scope") {
       return fail("forbidden_branch_scope", "Cross-branch access is not allowed.", 403);
@@ -785,6 +789,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
+    await requirePosApiFeature(auth, "core_pos_sales");
     const supabase = getSupabaseServiceClient();
     if (!canManageCatalogRole(auth.branchRole)) {
       return fail("forbidden_role", "Only manager or owner can modify catalog.", 403);
@@ -2186,6 +2191,8 @@ export async function POST(req: Request) {
 
     return fail("unsupported_action", "Unsupported action.", 422);
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     const message = error instanceof Error ? error.message : "Authentication failed.";
     if (message === "forbidden_branch_scope") {
       return fail("forbidden_branch_scope", "Cross-branch access is not allowed.", 403);

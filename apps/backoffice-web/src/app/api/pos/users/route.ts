@@ -5,6 +5,7 @@ import { getAuthContext, type AuthContext } from "@/lib/auth-context";
 import { fail, ok } from "@/lib/http";
 import { validateManagerPin } from "@/lib/pin-approval";
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { PosGuardError, type PosPermission } from "@/lib/pos-session-guard";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
@@ -152,13 +153,31 @@ function canActorEditTarget(input: { actorRole: BranchRole | null | undefined; a
 
 async function getPosUsersAuthContext(requiredPermission: PosPermission): Promise<AuthContext> {
   try {
-    return await getPosApiAuthContext({ requireBranchScope: true, requiredPermission });
+    const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission });
+    await requirePosApiFeature(auth, "user_management");
+    return auth;
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) throw error;
     if (!(error instanceof PosGuardError) || error.status !== 401) {
       throw error;
     }
-    return getAuthContext({ requireBranchScope: true });
+    const auth = await getAuthContext({ requireBranchScope: true });
+    await requirePosApiFeature(auth, "user_management");
+    return auth;
   }
+}
+
+function resolveSessionBranchId(auth: AuthContext, requestedBranchId?: string | null) {
+  const sessionBranchId = String(auth.branchId ?? "").trim();
+  if (!sessionBranchId) {
+    throw new Error("branch_scope_required");
+  }
+  const requested = String(requestedBranchId ?? "").trim();
+  if (requested && requested !== sessionBranchId) {
+    throw new Error("forbidden_branch_scope");
+  }
+  return sessionBranchId;
 }
 
 function normalizeManagerRoleChange(actorRole: BranchRole | null | undefined, requestedRole: BranchRole, currentRole: BranchRole) {
@@ -281,7 +300,7 @@ export async function GET(request: Request) {
 
     const supabase = getSupabaseServiceClient();
     const { searchParams } = new URL(request.url);
-    const branchFilter = String(searchParams.get("branch_id") ?? "").trim();
+    const branchFilter = resolveSessionBranchId(auth, searchParams.get("branch_id"));
 
     const branchesQuery = supabase
       .from("branches")
@@ -313,12 +332,10 @@ export async function GET(request: Request) {
       .eq("tenant_id", auth.tenantId!)
       .eq("action", "cancel_bill");
 
-    if (branchFilter && branchFilter !== "all") {
-      userQuery = userQuery.eq("branch_id", branchFilter);
-      deviceQuery = deviceQuery.eq("branch_id", branchFilter);
-      scopeQuery = scopeQuery.eq("branch_id", branchFilter);
-      approvalPermissionQuery = approvalPermissionQuery.eq("branch_id", branchFilter);
-    }
+    userQuery = userQuery.eq("branch_id", branchFilter);
+    deviceQuery = deviceQuery.eq("branch_id", branchFilter);
+    scopeQuery = scopeQuery.eq("branch_id", branchFilter);
+    approvalPermissionQuery = approvalPermissionQuery.eq("branch_id", branchFilter);
 
     const [branchesResult, usersResult, devicesResult, scopesResult, approvalPermissionsResult] = await Promise.all([
       branchesQuery,
@@ -427,6 +444,11 @@ export async function GET(request: Request) {
       }
     });
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
+    if (error instanceof Error && error.message === "forbidden_branch_scope") {
+      return fail("forbidden_branch_scope", "Cross-branch access is not allowed.", 403);
+    }
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }
 }
@@ -437,7 +459,7 @@ export async function PATCH(request: Request) {
     const body = (await request.json()) as PatchPayload;
     const action = String(body?.action ?? "").trim();
     const userId = String((body as { user_id?: string })?.user_id ?? "").trim();
-    const branchId = String((body as { branch_id?: string })?.branch_id ?? auth.branchId ?? "").trim();
+    const branchId = resolveSessionBranchId(auth, (body as { branch_id?: string })?.branch_id);
     if (!userId || !branchId) return fail("invalid_payload", "user_id and branch_id are required.", 422);
 
     const targetRole = await getTargetRole({ tenantId: auth.tenantId!, branchId, userId });
@@ -672,6 +694,11 @@ export async function PATCH(request: Request) {
 
     return fail("invalid_action", "Unsupported action.", 422);
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
+    if (error instanceof Error && error.message === "forbidden_branch_scope") {
+      return fail("forbidden_branch_scope", "Cross-branch access is not allowed.", 403);
+    }
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }
 }
@@ -684,7 +711,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as CreatePayload;
     const fullName = String(body.full_name ?? "").trim();
     const requestedEmail = String(body.email ?? "").trim().toLowerCase();
-    const branchId = String(body.branch_id ?? auth.branchId ?? "").trim();
+    const branchId = resolveSessionBranchId(auth, body.branch_id);
     const requestedRole = normalizeRole(String(body.role ?? "staff"));
     const role = auth.branchRole === "manager" && (requestedRole === "owner" || requestedRole === "manager") ? "staff" : requestedRole;
     const pin = String(body.pin ?? "").trim();
@@ -903,6 +930,11 @@ export async function POST(request: Request) {
 
     return ok({ user_id: userId, branch_id: branchId, role }, 201);
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
+    if (error instanceof Error && error.message === "forbidden_branch_scope") {
+      return fail("forbidden_branch_scope", "Cross-branch access is not allowed.", 403);
+    }
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }
 }
@@ -914,7 +946,7 @@ export async function DELETE(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const userId = String(searchParams.get("user_id") ?? "").trim();
-    const branchId = String(searchParams.get("branch_id") ?? auth.branchId ?? "").trim();
+    const branchId = resolveSessionBranchId(auth, searchParams.get("branch_id"));
     if (!userId || !branchId) return fail("invalid_payload", "user_id and branch_id are required.", 422);
     if (userId === auth.userId) return fail("delete_self_forbidden", "Owner cannot delete own active access.", 409);
 
@@ -957,6 +989,11 @@ export async function DELETE(request: Request) {
 
     return ok({ user_id: userId, branch_id: branchId, deleted: true });
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
+    if (error instanceof Error && error.message === "forbidden_branch_scope") {
+      return fail("forbidden_branch_scope", "Cross-branch access is not allowed.", 403);
+    }
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }
 }

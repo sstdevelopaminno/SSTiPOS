@@ -6,6 +6,9 @@ import { guardItAdminError, parseTenantParam, requireItAdmin } from "@/lib/it-ad
 type ContractPayload = {
   plan_id?: string;
   status?: "trial" | "active" | "suspended" | "expired" | "cancelled";
+  billing_interval?: "monthly" | "yearly";
+  amount_per_cycle?: number | null;
+  currency?: string | null;
   start_date?: string;
   end_date?: string | null;
   max_branches?: number | null;
@@ -25,8 +28,20 @@ type ContractRow = {
   max_branches: number | null;
   max_devices: number | null;
   max_users: number | null;
+  billing_interval: string | null;
+  amount_per_cycle: number | null;
+  currency: string | null;
   created_at: string;
 };
+
+type PlanPriceRow = {
+  id: string;
+  monthly_price: number | null;
+  yearly_price: number | null;
+};
+
+const CONTRACT_SELECT =
+  "id,tenant_id,package_id,status,started_at,ended_at,branch_limit,terminal_limit_per_branch,max_branches,max_devices,max_users,billing_interval,amount_per_cycle,currency,created_at";
 
 export async function GET(_req: Request, context: { params: Promise<{ tenantId: string }> }) {
   try {
@@ -37,11 +52,11 @@ export async function GET(_req: Request, context: { params: Promise<{ tenantId: 
     const [{ data: plans, error: plansError }, { data: contract, error: contractError }, limits] = await Promise.all([
       supabase
         .from("subscription_packages")
-        .select("id,code,name,monthly_price,max_branches,max_devices,max_users,status,is_active")
+        .select("id,code,name,monthly_price,yearly_price,max_branches,max_devices,max_users,metadata,status,is_active")
         .order("monthly_price", { ascending: true }),
       supabase
         .from("tenant_subscription_contracts")
-        .select("id,tenant_id,package_id,status,started_at,ended_at,branch_limit,terminal_limit_per_branch,max_branches,max_devices,max_users,created_at")
+        .select(CONTRACT_SELECT)
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -75,7 +90,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
 
     const { data: latestContract, error: latestError } = await supabase
       .from("tenant_subscription_contracts")
-      .select("id,tenant_id,package_id,status,started_at,ended_at,branch_limit,terminal_limit_per_branch,max_branches,max_devices,max_users,created_at")
+      .select(CONTRACT_SELECT)
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -94,6 +109,15 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
     if (typeof body.status === "string") {
       patch.status = body.status;
     }
+    if (body.billing_interval === "monthly" || body.billing_interval === "yearly") {
+      patch.billing_interval = body.billing_interval;
+    }
+    if (typeof body.amount_per_cycle === "number" && Number.isFinite(body.amount_per_cycle)) {
+      patch.amount_per_cycle = Math.max(0, body.amount_per_cycle);
+    }
+    if (typeof body.currency === "string" && body.currency.trim()) {
+      patch.currency = body.currency.trim().slice(0, 3).toUpperCase();
+    }
     if (typeof body.start_date === "string" && body.start_date.trim()) {
       patch.started_at = `${body.start_date.trim()}T00:00:00.000Z`;
     }
@@ -105,9 +129,11 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
 
     if (typeof body.max_branches === "number") {
       patch.max_branches = Math.max(1, Math.trunc(body.max_branches));
+      patch.branch_limit = patch.max_branches;
     }
     if (typeof body.max_devices === "number") {
       patch.max_devices = Math.max(1, Math.trunc(body.max_devices));
+      patch.terminal_limit_per_branch = patch.max_devices;
     }
     if (typeof body.max_users === "number") {
       patch.max_users = Math.max(1, Math.trunc(body.max_users));
@@ -117,6 +143,23 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
       return fail("empty_patch", "No contract update fields provided.", 422);
     }
 
+    const pricePackageId = String(patch.package_id ?? latestContract?.package_id ?? "");
+    if ((patch.package_id || patch.billing_interval) && patch.amount_per_cycle === undefined && pricePackageId) {
+      const billingInterval = String(patch.billing_interval ?? latestContract?.billing_interval ?? "monthly");
+      const { data: planPrice, error: planPriceError } = await supabase
+        .from("subscription_packages")
+        .select("id,monthly_price,yearly_price")
+        .eq("id", pricePackageId)
+        .maybeSingle<PlanPriceRow>();
+      if (planPriceError) {
+        throw new Error(planPriceError.message);
+      }
+      if (planPrice) {
+        patch.amount_per_cycle = billingInterval === "yearly" ? planPrice.yearly_price ?? planPrice.monthly_price ?? 0 : planPrice.monthly_price ?? 0;
+        patch.currency = patch.currency ?? "THB";
+      }
+    }
+
     let updated: ContractRow;
     if (latestContract) {
       const { data, error } = await supabase
@@ -124,7 +167,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
         .update(patch)
         .eq("id", latestContract.id)
         .eq("tenant_id", tenantId)
-        .select("id,tenant_id,package_id,status,started_at,ended_at,branch_limit,terminal_limit_per_branch,max_branches,max_devices,max_users,created_at")
+        .select(CONTRACT_SELECT)
         .single<ContractRow>();
 
       if (error) {
@@ -141,7 +184,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
           tenant_id: tenantId,
           package_id: patch.package_id,
           contract_type: "saas",
-          billing_interval: "monthly",
+          billing_interval: patch.billing_interval ?? "monthly",
           deployment_mode: "cloud",
           status: patch.status ?? "trial",
           branch_limit: patch.max_branches ?? 1,
@@ -149,12 +192,12 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
           max_branches: patch.max_branches ?? 1,
           max_devices: patch.max_devices ?? 1,
           max_users: patch.max_users ?? null,
-          amount_per_cycle: 0,
-          currency: "THB",
+          amount_per_cycle: patch.amount_per_cycle ?? 0,
+          currency: patch.currency ?? "THB",
           started_at: patch.started_at ?? nowIso,
           ended_at: patch.ended_at ?? null
         })
-        .select("id,tenant_id,package_id,status,started_at,ended_at,branch_limit,terminal_limit_per_branch,max_branches,max_devices,max_users,created_at")
+        .select(CONTRACT_SELECT)
         .single<ContractRow>();
 
       if (error) {
@@ -164,10 +207,32 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
     }
 
     invalidateTenantFeatureGateCache(tenantId);
+    if (patch.package_id) {
+      const { error: tenantPackageError } = await supabase.from("tenants").update({ package_id: patch.package_id }).eq("id", tenantId);
+      if (tenantPackageError) {
+        throw new Error(tenantPackageError.message);
+      }
+    }
 
     const planChanged = Boolean(latestContract && patch.package_id && latestContract.package_id !== patch.package_id);
     const previousStatus = latestContract?.status ?? null;
     const nextStatus = String(updated.status);
+
+    await appendAuditLog({
+      tenantId,
+      actorUserId: auth.userId,
+      actorRole: "it_admin",
+      action: latestContract ? "contract_updated" : "contract_created",
+      targetTable: "tenant_subscription_contracts",
+      targetId: updated.id,
+      beforeData: latestContract ?? undefined,
+      afterData: updated,
+      metadata: {
+        changed_fields: Object.keys(patch)
+      },
+      ipAddress: requestMeta.ipAddress ?? undefined,
+      userAgent: requestMeta.userAgent ?? undefined
+    });
 
     if (planChanged) {
       await appendAuditLog({

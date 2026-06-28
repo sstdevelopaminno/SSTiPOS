@@ -683,7 +683,7 @@ export async function saveDeviceSettings(auth: AuthContext, input: PosDeviceInpu
 
   const willActivateDevice = status === "active" && (!deviceId || currentDevice?.data?.status !== "active");
   if (willActivateDevice) {
-    await enforceQuota(auth.tenantId, "devices");
+    await enforceQuota(auth.tenantId, "devices", branchId);
   }
 
   const isDeviceIdentityChanged = Boolean(

@@ -287,7 +287,7 @@ export async function getTenantLimits(tenantId: string): Promise<TenantLimits> {
   };
 }
 
-export async function enforceQuota(tenantId: string, resourceType: QuotaResourceType): Promise<TenantLimits> {
+export async function enforceQuota(tenantId: string, resourceType: QuotaResourceType, branchId?: string | null): Promise<TenantLimits> {
   const limits = await getTenantLimits(tenantId);
 
   if (limits.contractStatus && limits.contractStatus !== "active" && limits.contractStatus !== "trial") {
@@ -298,8 +298,24 @@ export async function enforceQuota(tenantId: string, resourceType: QuotaResource
     throw new FeatureGateError("quota_blocked", `Branch quota exceeded (${limits.usage.branches}/${limits.maxBranches}).`, 409);
   }
 
-  if (resourceType === "devices" && limits.maxDevices !== null && limits.usage.devices >= limits.maxDevices) {
-    throw new FeatureGateError("quota_blocked", `Device quota exceeded (${limits.usage.devices}/${limits.maxDevices}).`, 409);
+  if (resourceType === "devices" && limits.maxDevices !== null) {
+    let deviceUsage = limits.usage.devices;
+    if (branchId) {
+      const supabase = getSupabaseServiceClient();
+      const { count, error } = await supabase
+        .from("branch_devices")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId)
+        .eq("branch_id", branchId)
+        .eq("status", "active");
+      if (error) {
+        throw new FeatureGateError("quota_usage_devices_query_failed", error.message, 500);
+      }
+      deviceUsage = Number(count ?? 0);
+    }
+    if (deviceUsage >= limits.maxDevices) {
+      throw new FeatureGateError("quota_blocked", `Device quota exceeded (${deviceUsage}/${limits.maxDevices}).`, 409);
+    }
   }
 
   if (resourceType === "users" && limits.maxUsers !== null && limits.usage.users >= limits.maxUsers) {

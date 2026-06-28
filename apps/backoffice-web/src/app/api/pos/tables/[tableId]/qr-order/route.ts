@@ -1,11 +1,13 @@
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { issueTableQrSession } from "@/lib/table-qr-ordering";
 
 export async function POST(request: Request, context: { params: Promise<{ tableId: string }> }) {
   try {
     const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "tables:manage" });
+    await requirePosApiFeature(auth, "qr_table_ordering");
     const { tableId } = await context.params;
     if (!tableId) return fail("invalid_table_id", "tableId is required.", 422);
 
@@ -33,6 +35,8 @@ export async function POST(request: Request, context: { params: Promise<{ tableI
 
     return ok(data, 201);
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     const message = error instanceof Error ? error.message : "Unable to create table QR.";
     if (message === "table_not_open" || message === "table_session_not_open") {
       return fail(message, "Open the table bill before creating its ordering QR.", 409);

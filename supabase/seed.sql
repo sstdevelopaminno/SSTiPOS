@@ -14,23 +14,25 @@ on conflict (id) do nothing;
 --   Manager employee code: 900002 / PIN 222222
 --   Staff employee code: 900003 / PIN 333333
 
-insert into subscription_packages (id, code, name, monthly_price, max_branches, is_active, status, max_devices, max_users, metadata)
+insert into subscription_packages (id, code, name, monthly_price, yearly_price, max_branches, is_active, status, max_devices, max_users, metadata)
 values (
   '10000000-0000-0000-0000-000000000010',
   'solo',
   'Solo Register',
-  790,
+  350,
+  3850,
   1,
   true,
   'active',
   1,
   3,
-  '{"login_mode":"single_register","branch_selection":"hidden","max_cashier_devices":1}'::jsonb
+  '{"login_mode":"single_register","branch_selection":"hidden","max_cashier_devices":1,"monthly_new_customer_discount_percent":10,"monthly_new_customer_discount_months":3,"yearly_free_months":1}'::jsonb
 )
 on conflict (code) do update
 set
   name = excluded.name,
   monthly_price = excluded.monthly_price,
+  yearly_price = excluded.yearly_price,
   max_branches = excluded.max_branches,
   is_active = excluded.is_active,
   status = excluded.status,
@@ -103,7 +105,7 @@ select
   'active',
   1,
   1,
-  790,
+  350,
   'THB',
   true,
   1,

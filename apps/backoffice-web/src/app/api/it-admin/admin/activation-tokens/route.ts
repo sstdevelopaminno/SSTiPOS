@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     await requireTenantFeatureIfConfigured(tenantId, "mobile_qr_login", branchId);
 
     if (tokenType === "mobile_scanner" || tokenType === "pos_terminal") {
-      await enforceQuota(tenantId, "devices");
+      await enforceQuota(tenantId, "devices", branchId);
     }
 
     const [{ data: tenant }, { data: branch }] = await Promise.all([

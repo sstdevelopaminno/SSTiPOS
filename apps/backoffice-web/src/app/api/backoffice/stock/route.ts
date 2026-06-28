@@ -1,4 +1,5 @@
 import { getAuthContext } from "@/lib/auth-context";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 import { buildPaginationMeta, parseBool, parsePagination, sanitizeSearchTerm } from "@/lib/query-params";
 import { fail, ok } from "@/lib/http";
@@ -9,6 +10,7 @@ const FALLBACK_INGREDIENT_PREFIX = "STOCK:";
 export async function GET(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
+    await requirePosApiFeature(auth, "core_pos_sales");
     const supabase = getSupabaseServiceClient();
     const { searchParams } = new URL(req.url);
     const { page, pageSize } = parsePagination(searchParams, 10);
@@ -85,6 +87,8 @@ export async function GET(req: Request) {
       pagination: buildPaginationMeta(page, pageSize, count)
     });
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }
 }

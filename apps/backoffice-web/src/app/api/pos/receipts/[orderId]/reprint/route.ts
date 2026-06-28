@@ -2,6 +2,7 @@ import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
 import { validateManagerPin } from "@/lib/pin-approval";
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { reprintOrderReceipt } from "@/lib/printing/print-service";
 
 type ReprintPayload = {
@@ -12,6 +13,7 @@ type ReprintPayload = {
 export async function POST(req: Request, context: { params: Promise<{ orderId: string }> }) {
   try {
     const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "receipts:view" });
+    await requirePosApiFeature(auth, "receipt_reprint_history");
     const { orderId } = await context.params;
     const body = (await req.json().catch(() => null)) as ReprintPayload | null;
     const managerPin = String(body?.manager_pin ?? "").trim();
@@ -78,6 +80,8 @@ export async function POST(req: Request, context: { params: Promise<{ orderId: s
 
     return ok(result);
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     const message = error instanceof Error ? error.message : "Unknown error";
     if (message === "forbidden_role") {
       return fail("forbidden_role", "Only manager or owner can reprint receipt.", 403);

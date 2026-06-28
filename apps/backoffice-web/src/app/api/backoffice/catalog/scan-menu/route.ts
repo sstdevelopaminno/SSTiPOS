@@ -3,6 +3,7 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { readEnv } from "@/lib/env";
 import { fail, ok } from "@/lib/http";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 
 export const runtime = "nodejs";
 
@@ -122,7 +123,8 @@ function normalizeScannedPayload(payload: Record<string, unknown> | null): {
 
 export async function POST(req: Request) {
   try {
-    await getAuthContext({ requireBranchScope: true });
+    const auth = await getAuthContext({ requireBranchScope: true });
+    await requirePosApiFeature(auth, "core_pos_sales");
 
     const verifyMode = (readEnv("POS_MENU_SCAN_MODE") ?? "").toLowerCase();
     const apiKey = readEnv("OPENAI_API_KEY");
@@ -235,6 +237,8 @@ export async function POST(req: Request) {
 
     return ok(normalized);
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     if (error instanceof Error && error.name === "AbortError") {
       return fail("menu_scan_timeout", "Menu scan timed out. Please try a smaller/clearer image.", 408);
     }

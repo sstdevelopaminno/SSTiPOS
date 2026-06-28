@@ -7,6 +7,13 @@ import { MouseEvent, useEffect, useState, useTransition } from "react";
 import { LanguageSwitcher } from "@/components/language/language-switcher";
 import { PosStaffMenu } from "@/components/pos-preview/pos-staff-menu";
 import { t, type Language } from "@/lib/i18n";
+import {
+  POS_MENU_LOCK_BODY_EN,
+  POS_MENU_LOCK_BODY_TH,
+  POS_MENU_LOCK_TITLE_EN,
+  POS_MENU_LOCK_TITLE_TH,
+  featureForPosRoute
+} from "@/lib/pos-feature-map";
 type PosRole = "owner" | "manager" | "staff" | "accountant";
 const POS_ROLE_STORAGE_KEY = "pos_session_role_v1";
 const POS_ROLE_EVENT_NAME = "pos-session-role-updated";
@@ -51,11 +58,14 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
   const [isPending, startTransition] = useTransition();
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [sessionRole, setSessionRole] = useState<PosRole | null>(null);
+  const [enabledFeatures, setEnabledFeatures] = useState<Record<string, boolean> | null>(null);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [logoutBusyMode, setLogoutBusyMode] = useState<"switch_device" | "full" | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const isSettingsActive = pathname === "/preview/pos/settings";
   const showAdvancedMenus = sessionRole === "owner";
+  const settingsFeature = featureForPosRoute("/preview/pos/settings");
+  const isSettingsLocked = Boolean(enabledFeatures !== null && settingsFeature && enabledFeatures[settingsFeature] === false);
 
   useEffect(() => {
     const applyStoredRole = () => {
@@ -89,6 +99,25 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
     }
   }, [isPending]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadFeatures() {
+      try {
+        const response = await fetch("/api/pos/features", { cache: "no-store" });
+        const body = (await response.json().catch(() => null)) as { data?: { features?: Record<string, boolean> } | null } | null;
+        if (!cancelled && response.ok) {
+          setEnabledFeatures(body?.data?.features ?? {});
+        }
+      } catch {
+        if (!cancelled) setEnabledFeatures({});
+      }
+    }
+    void loadFeatures();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   function handleSettingsNavigate(event: MouseEvent<HTMLAnchorElement>) {
     if (
       event.defaultPrevented ||
@@ -102,6 +131,13 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
     }
     if (pathname === "/preview/pos/settings") {
       event.preventDefault();
+      return;
+    }
+    if (isSettingsLocked) {
+      event.preventDefault();
+      const title = lang === "th" ? POS_MENU_LOCK_TITLE_TH : POS_MENU_LOCK_TITLE_EN;
+      const body = lang === "th" ? POS_MENU_LOCK_BODY_TH : POS_MENU_LOCK_BODY_EN;
+      window.alert(`${title}\n\n${body}`);
       return;
     }
     event.preventDefault();
@@ -177,7 +213,7 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
         </button>
       </div>
 
-      <PosStaffMenu lang={lang} collapsed={collapsed} sessionRole={sessionRole} />
+      <PosStaffMenu lang={lang} collapsed={collapsed} sessionRole={sessionRole} enabledFeatures={enabledFeatures} />
 
       {showAdvancedMenus ? (
         <Link
@@ -189,10 +225,13 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
           } ${
             isSettingsActive
               ? "rounded-xl border border-blue-400/40 bg-blue-500/25 text-white"
-              : "rounded-xl text-slate-100/90 hover:bg-white/5 hover:text-white"
+              : isSettingsLocked
+                ? "rounded-xl text-slate-400/70"
+                : "rounded-xl text-slate-100/90 hover:bg-white/5 hover:text-white"
           } ${pendingHref === "/preview/pos/settings" && isPending ? "opacity-80" : ""}`}
-          title={collapsed ? settingsLabel : undefined}
+          title={collapsed ? settingsLabel : isSettingsLocked ? (lang === "th" ? POS_MENU_LOCK_TITLE_TH : POS_MENU_LOCK_TITLE_EN) : undefined}
           aria-busy={pendingHref === "/preview/pos/settings" && isPending}
+          aria-disabled={isSettingsLocked}
         >
           <span className="inline-flex w-4 justify-center" aria-hidden>
             <svg

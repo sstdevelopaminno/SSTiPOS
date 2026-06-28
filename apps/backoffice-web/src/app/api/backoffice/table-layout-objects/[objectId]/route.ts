@@ -1,6 +1,7 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { floorObjectTypes } from "@/lib/table-management";
 import { resolveTableBranchScope } from "@/lib/table-branch-scope";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
@@ -24,6 +25,7 @@ type FloorObjectUpdatePayload = {
 export async function PATCH(req: Request, context: { params: Promise<{ objectId: string }> }) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
+    await requirePosApiFeature(auth, "table_management");
     const { objectId } = await context.params;
     if (!objectId) {
       return fail("invalid_object_id", "objectId is required.", 422);
@@ -110,6 +112,8 @@ export async function PATCH(req: Request, context: { params: Promise<{ objectId:
 
     return ok(data);
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }
 }
@@ -117,6 +121,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ objectId:
 export async function DELETE(_req: Request, context: { params: Promise<{ objectId: string }> }) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
+    await requirePosApiFeature(auth, "table_management");
     const { objectId } = await context.params;
     if (!objectId) {
       return fail("invalid_object_id", "objectId is required.", 422);
@@ -167,6 +172,8 @@ export async function DELETE(_req: Request, context: { params: Promise<{ objectI
 
     return ok({ id: data.id, deleted: true });
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }
 }

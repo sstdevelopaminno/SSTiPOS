@@ -1,6 +1,7 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { canManageTables, tableShapes, tableStatuses } from "@/lib/table-management";
 import { resolveTableBranchScope } from "@/lib/table-branch-scope";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
@@ -63,6 +64,7 @@ async function getNextNumericTableCode(args: {
 export async function GET(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
+    await requirePosApiFeature(auth, "table_management");
     const supabase = getSupabaseServiceClient();
     const branchScope = await resolveTableBranchScope({
       auth,
@@ -90,6 +92,8 @@ export async function GET(req: Request) {
 
     return ok({ items: data ?? [], branches: branchScope.branches, branch_id: branchScope.targetBranchId });
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }
 }
@@ -97,6 +101,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
+    await requirePosApiFeature(auth, "table_management");
     if (!canManageTables(auth.branchRole)) {
       return fail("forbidden_role", "Only manager or owner can manage tables.", 403);
     }
@@ -215,6 +220,8 @@ export async function POST(req: Request) {
 
     return ok(data, 201);
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }
 }

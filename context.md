@@ -114,6 +114,13 @@ Primary architectural goals:
   - branches
   - devices
   - users
+- Thai-market package matrix update:
+  - `solo`: THB 350 monthly / THB 3,850 yearly, 1 branch, 1 device, 3 users
+  - `starter`: THB 690 monthly / THB 7,590 yearly, 1 branch, 2 devices, 5 users
+  - `growth`: THB 1,290 monthly / THB 14,190 yearly, 2 branches, 2 devices per branch, 10 users
+  - `enterprise`: THB 2,490 monthly / THB 27,390 yearly, 5 branches, 4 devices per branch, 30 users
+- POS menu and API package locks are centralized through `apps/backoffice-web/src/lib/pos-feature-map.ts` plus server-side feature checks. Locked APIs return `feature_not_enabled`.
+- Stock remains mapped to `core_pos_sales` until `stock_management` is production-ready as a separate entitlement.
 
 ### Prompt 7: Production Deployment Readiness
 - Added CI and operations documentation:
@@ -369,6 +376,8 @@ For product stock that should behave like simple unit stock, use the existing br
 * Set the product to recipe-based stock deduction mode when supported.
 
 Do not rely on client-side totals or client-submitted tenant/branch ids. Tenant, branch, user, role, device, POS session, shift, and feature gates must remain server-resolved.
+
+Package and feature changes must stay compatible with the separate SSTiPOSSupport IT Admin surface because both systems share the Supabase tenant/package contract data.
 
 ### Next verification queries
 

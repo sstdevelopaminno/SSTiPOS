@@ -1,6 +1,7 @@
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
 import { fail, ok } from "@/lib/http";
 import { invalidatePosScopeRuntimeCaches } from "@/lib/pos-cache-invalidation";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { openTableBillSession } from "@/lib/services/table-service";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
@@ -32,6 +33,7 @@ export async function POST(req: Request, context: { params: Promise<{ tableId: s
   };
   try {
     const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "tables:manage" });
+    await requirePosApiFeature(auth, "table_management");
     const { tableId } = await context.params;
     if (!tableId) {
       return withTiming(fail("invalid_table_id", "tableId is required.", 422));
@@ -95,6 +97,8 @@ export async function POST(req: Request, context: { params: Promise<{ tableId: s
       shift_id: openShiftId
     }, 201), openBillPerf);
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return withTiming(featureError);
     return withTiming(fail("open_bill_failed", error instanceof Error ? error.message : "Unknown error", 400));
   }
 }

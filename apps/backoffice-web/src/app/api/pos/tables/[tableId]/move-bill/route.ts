@@ -2,6 +2,7 @@ import { getPosApiAuthContext } from "@/lib/pos-api-auth";
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
 import { invalidatePosScopeRuntimeCaches } from "@/lib/pos-cache-invalidation";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 type MoveBillPayload = {
@@ -12,6 +13,7 @@ type MoveBillPayload = {
 export async function POST(req: Request, context: { params: Promise<{ tableId: string }> }) {
   try {
     const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "tables:manage" });
+    await requirePosApiFeature(auth, "table_management");
     const { tableId } = await context.params;
     if (!tableId) {
       return fail("invalid_table_id", "tableId is required.", 422);
@@ -165,6 +167,8 @@ export async function POST(req: Request, context: { params: Promise<{ tableId: s
       target_session_id: targetSession.id
     });
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     return fail("table_move_failed", error instanceof Error ? error.message : "Unknown error", 400);
   }
 }

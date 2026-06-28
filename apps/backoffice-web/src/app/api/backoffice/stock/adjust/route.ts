@@ -1,12 +1,14 @@
 import { requiresPinApproval } from "@pos/pos-domain";
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { executeStockAdjustmentTransaction } from "@/lib/services/stock-transaction-service";
 import { ok, fail } from "@/lib/http";
 
 export async function POST(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
+    await requirePosApiFeature(auth, "core_pos_sales");
     const body = (await req.json()) as {
       ingredient_id: string;
       quantity_delta: number;
@@ -38,6 +40,8 @@ export async function POST(req: Request) {
 
     return ok(result.data, result.data.duplicate_request ? 200 : 201);
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }
 }

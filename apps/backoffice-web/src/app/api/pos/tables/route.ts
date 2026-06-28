@@ -1,4 +1,5 @@
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { fail, ok } from "@/lib/http";
 import { readThroughRuntimeCache } from "@/lib/route-runtime-cache";
 import { getEffectiveTableStatus, naturalCompareTableCode } from "@/lib/table-management";
@@ -59,6 +60,7 @@ export async function GET() {
   };
   try {
     const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "tables:view" });
+    await requirePosApiFeature(auth, "table_management");
 
     const cacheKey = `pos-tables:${auth.tenantId}:${auth.branchId}`;
     const { value: payload, source: cacheSource } = await readThroughRuntimeCache({
@@ -187,6 +189,8 @@ export async function GET() {
     response.headers.set("x-pos-tables-cache", cacheSource);
     return withTiming(response);
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return withTiming(featureError);
     const message = error instanceof Error ? error.message : "Authentication failed.";
     if (typeof message === "string") {
       if (message.startsWith("zone_query_failed:")) return withTiming(fail("zone_query_failed", message.slice("zone_query_failed:".length), 500));

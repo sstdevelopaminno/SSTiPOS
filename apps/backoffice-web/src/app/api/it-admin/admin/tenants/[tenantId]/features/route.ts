@@ -166,6 +166,21 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
       return fail("invalid_payload", "feature_code and is_enabled are required.", 422);
     }
 
+    if (branchId) {
+      const { data: branch, error: branchError } = await supabase
+        .from("branches")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("id", branchId)
+        .maybeSingle<{ id: string }>();
+      if (branchError) {
+        throw new Error(branchError.message);
+      }
+      if (!branch) {
+        return fail("forbidden_branch_scope", "Branch does not belong to this tenant.", 403);
+      }
+    }
+
     let current: FeatureSubscriptionRow | null = null;
     {
       let query = supabase

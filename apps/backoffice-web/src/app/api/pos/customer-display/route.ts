@@ -1,4 +1,5 @@
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { hashSecret, normalizeDisplayChannel } from "@/lib/customer-display-pairing";
 import { fail, ok } from "@/lib/http";
 import { invalidateRuntimeCacheByPrefix, readThroughRuntimeCache } from "@/lib/route-runtime-cache";
@@ -111,6 +112,7 @@ async function resolveReadScope(req: Request): Promise<DisplayReadScope> {
     requireBranchScope: true,
     requiredPermission: "customer_display:view"
   });
+  await requirePosApiFeature(auth, "customer_facing_display");
   return {
     tenantId: auth.tenantId!,
     branchId: auth.branchId!,
@@ -123,6 +125,7 @@ export async function GET(req: Request) {
   const startedAt = Date.now();
   try {
     const scope = await resolveReadScope(req);
+    await requirePosApiFeature({ tenantId: scope.tenantId, branchId: scope.branchId }, "customer_facing_display");
     const supabase = getSupabaseServiceClient();
     const cacheKey = `pos-customer-display:${scope.tenantId}:${scope.branchId}:${scope.channel}`;
 
@@ -157,6 +160,11 @@ export async function GET(req: Request) {
     response.headers.set("x-pos-customer-display-ms", String(Date.now() - startedAt));
     return response;
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) {
+      featureError.headers.set("x-pos-customer-display-ms", String(Date.now() - startedAt));
+      return featureError;
+    }
     const message = error instanceof Error ? error.message : "Unknown error";
     if (message === "customer_display_pairing_invalid") {
       const response = fail("customer_display_pairing_invalid", "Pairing token is invalid or expired.", 401);
@@ -200,6 +208,7 @@ export async function POST(req: Request) {
       requireBranchScope: true,
       requiredPermission: "customer_display:manage"
     });
+    await requirePosApiFeature(auth, "customer_facing_display");
     const supabase = getSupabaseServiceClient();
     const body = (await req.json().catch(() => null)) as {
       channel?: string;
@@ -248,6 +257,11 @@ export async function POST(req: Request) {
     response.headers.set("x-pos-customer-display-ms", String(Date.now() - startedAt));
     return response;
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) {
+      featureError.headers.set("x-pos-customer-display-ms", String(Date.now() - startedAt));
+      return featureError;
+    }
     const message = error instanceof Error ? error.message : "Unknown error";
     const authError = message.toLowerCase().includes("authenticated") || message.toLowerCase().includes("unauthorized");
     const response = fail(authError ? "unauthorized" : "pos_customer_display_post_failed", message, authError ? 401 : 500);

@@ -1,11 +1,15 @@
 -- Solo/single-register package for shops that do not expose branch selection.
 -- Runtime still uses one internal default branch to preserve tenant/branch scoping.
 
+alter table if exists subscription_packages
+  add column if not exists yearly_price numeric(12,2);
+
 insert into subscription_packages (
   id,
   code,
   name,
   monthly_price,
+  yearly_price,
   max_branches,
   is_active,
   status,
@@ -17,7 +21,8 @@ values (
   '10000000-0000-0000-0000-000000000010',
   'solo',
   'Solo Register',
-  790,
+  350,
+  3850,
   1,
   true,
   'active',
@@ -29,6 +34,7 @@ on conflict (code) do update
 set
   name = excluded.name,
   monthly_price = excluded.monthly_price,
+  yearly_price = excluded.yearly_price,
   max_branches = excluded.max_branches,
   is_active = excluded.is_active,
   status = excluded.status,

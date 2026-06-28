@@ -1,6 +1,6 @@
 export type UUID = string;
 
-export type PlatformRole = "it_admin" | "tenant_user";
+export type PlatformRole = "it_admin" | "it_support" | "tenant_user";
 export type BranchRole = "owner" | "manager" | "staff" | "accountant";
 
 export type PaymentMethod = "cash" | "bank_transfer";
@@ -44,7 +44,16 @@ export type PosFeatureCode =
   | "desktop_app_runtime"
   | "barcode_scanner_mode"
   | "kitchen_printing"
-  | "inet_nops_qr";
+  | "inet_nops_qr"
+  | "qr_login"
+  | "pin_login"
+  | "staff_card_login"
+  | "attendance_tracking"
+  | "device_management"
+  | "branch_management"
+  | "user_management"
+  | "mobile_qr_login"
+  | "mobile_device_enrollment";
 
 export interface Tenant {
   id: UUID;
@@ -98,8 +107,12 @@ export interface SubscriptionPackage {
   code: string;
   name: string;
   monthly_price: number;
+  yearly_price?: number | null;
   max_branches: number;
+  max_devices?: number | null;
+  max_users?: number | null;
   is_active: boolean;
+  metadata?: Record<string, unknown> | null;
   created_at: string;
 }
 

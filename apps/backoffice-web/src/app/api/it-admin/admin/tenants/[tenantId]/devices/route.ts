@@ -97,7 +97,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
     if (action === "approve") {
       if (current.status !== "active") {
         try {
-          await enforceQuota(tenantId, "devices");
+          await enforceQuota(tenantId, "devices", current.branch_id);
         } catch (error) {
           if (error instanceof FeatureGateError && error.code === "quota_blocked") {
             await appendAuditLog({
@@ -128,7 +128,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ tenantId:
     if (action === "activate") {
       if (current.status !== "active") {
         try {
-          await enforceQuota(tenantId, "devices");
+          await enforceQuota(tenantId, "devices", current.branch_id);
         } catch (error) {
           if (error instanceof FeatureGateError && error.code === "quota_blocked") {
             await appendAuditLog({

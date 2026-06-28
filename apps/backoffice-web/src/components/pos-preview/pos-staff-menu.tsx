@@ -4,9 +4,25 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { MouseEvent, useEffect, useMemo, useState, useTransition } from "react";
 import { t, type Language } from "@/lib/i18n";
+import {
+  POS_MENU_LOCK_BODY_EN,
+  POS_MENU_LOCK_BODY_TH,
+  POS_MENU_LOCK_TITLE_EN,
+  POS_MENU_LOCK_TITLE_TH,
+  featureForPosRoute
+} from "@/lib/pos-feature-map";
 
 type IconName = "sales" | "list" | "stock" | "summary" | "receipt" | "tables" | "users" | "display" | "shift" | "logout";
 type PosRole = "owner" | "manager" | "staff" | "accountant";
+
+function LockIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  );
+}
 
 function MenuIcon({ name }: { name: IconName }) {
   const common = {
@@ -125,14 +141,15 @@ const MENU_DEFS: Array<{
   href: string;
   icon: IconName;
   roles: PosRole[];
+  feature: ReturnType<typeof featureForPosRoute>;
 }> = [
-  { key: "pos_menu_sales", href: "/preview/pos", icon: "sales", roles: ["owner", "manager", "staff"] },
-  { key: "pos_menu_sales_list", href: "/preview/pos/sales-list", icon: "list", roles: ["owner", "manager", "staff"] },
-  { key: "pos_menu_stock", href: "/preview/pos/stock", icon: "stock", roles: ["owner", "manager", "accountant"] },
-  { key: "pos_menu_sales_summary", href: "/preview/pos/sales-summary", icon: "summary", roles: ["owner", "manager", "accountant"] },
-  { key: "pos_menu_receipts", href: "/preview/pos/receipts", icon: "receipt", roles: ["owner", "manager", "accountant"] },
-  { key: "pos_menu_tables", href: "/preview/pos/tables", icon: "tables", roles: ["owner", "manager"] },
-  { key: "pos_menu_shift", href: "/preview/pos/shift", icon: "shift", roles: ["owner", "manager", "staff"] }
+  { key: "pos_menu_sales", href: "/preview/pos", icon: "sales", roles: ["owner", "manager", "staff"], feature: featureForPosRoute("/preview/pos") },
+  { key: "pos_menu_sales_list", href: "/preview/pos/sales-list", icon: "list", roles: ["owner", "manager", "staff"], feature: featureForPosRoute("/preview/pos/sales-list") },
+  { key: "pos_menu_stock", href: "/preview/pos/stock", icon: "stock", roles: ["owner", "manager", "accountant"], feature: featureForPosRoute("/preview/pos/stock") },
+  { key: "pos_menu_sales_summary", href: "/preview/pos/sales-summary", icon: "summary", roles: ["owner", "manager", "accountant"], feature: featureForPosRoute("/preview/pos/sales-summary") },
+  { key: "pos_menu_receipts", href: "/preview/pos/receipts", icon: "receipt", roles: ["owner", "manager", "accountant"], feature: featureForPosRoute("/preview/pos/receipts") },
+  { key: "pos_menu_tables", href: "/preview/pos/tables", icon: "tables", roles: ["owner", "manager"], feature: featureForPosRoute("/preview/pos/tables") },
+  { key: "pos_menu_shift", href: "/preview/pos/shift", icon: "shift", roles: ["owner", "manager", "staff"], feature: featureForPosRoute("/preview/pos/shift") }
 ];
 
 function resolveMenuRole(role: PosRole | null): PosRole {
@@ -145,11 +162,13 @@ function resolveMenuRole(role: PosRole | null): PosRole {
 export function PosStaffMenu({
   lang,
   collapsed,
-  sessionRole
+  sessionRole,
+  enabledFeatures
 }: {
   lang: Language;
   collapsed: boolean;
   sessionRole: PosRole | null;
+  enabledFeatures: Record<string, boolean> | null;
 }) {
   const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
@@ -163,7 +182,8 @@ export function PosStaffMenu({
         label: t(lang, item.key),
         href: item.href,
         icon: item.icon,
-        roles: item.roles
+        roles: item.roles,
+        feature: item.feature
       })).filter((item) => item.roles.includes(effectiveRole)),
     [effectiveRole, lang]
   );
@@ -200,31 +220,44 @@ export function PosStaffMenu({
     });
   }
 
+  function handleLockedNavigate(event: MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault();
+    const title = lang === "th" ? POS_MENU_LOCK_TITLE_TH : POS_MENU_LOCK_TITLE_EN;
+    const body = lang === "th" ? POS_MENU_LOCK_BODY_TH : POS_MENU_LOCK_BODY_EN;
+    window.alert(`${title}\n\n${body}`);
+  }
+
   return (
     <nav className="mt-2 grid gap-1" aria-label={t(lang, "pos_menu_staff_aria")}>
       {(mounted ? menuItems : []).map((item) => {
         const isActive = pathname === item.href;
         const isNavigating = pendingHref === item.href && isPending;
+        const isFeatureLoaded = enabledFeatures !== null;
+        const isLocked = Boolean(isFeatureLoaded && item.feature && enabledFeatures?.[item.feature] === false);
         return (
           <Link
             key={item.href}
             href={item.href}
             prefetch={false}
-            onClick={(event) => handleNavigate(event, item.href)}
+            onClick={(event) => (isLocked ? handleLockedNavigate(event) : handleNavigate(event, item.href))}
             className={`group relative inline-flex min-h-[42px] items-center px-2 text-[13px] font-semibold leading-tight transition ${
               collapsed ? "justify-center" : "justify-start gap-2"
             } ${
               isActive
                 ? "rounded-xl border border-cyan-300/45 bg-[linear-gradient(145deg,rgba(59,130,246,0.45),rgba(14,165,233,0.35))] text-white shadow-[0_10px_24px_rgba(14,116,255,0.25),inset_0_1px_0_rgba(255,255,255,0.2)]"
-                : "rounded-xl text-slate-100/90 hover:bg-white/8 hover:text-white"
+                : isLocked
+                  ? "rounded-xl text-slate-400/85 hover:bg-white/5 hover:text-slate-200"
+                  : "rounded-xl text-slate-100/90 hover:bg-white/8 hover:text-white"
             } ${isNavigating ? "opacity-80" : ""}`}
-            title={collapsed ? item.label : undefined}
+            title={collapsed ? item.label : isLocked ? (lang === "th" ? POS_MENU_LOCK_TITLE_TH : POS_MENU_LOCK_TITLE_EN) : undefined}
             aria-busy={isNavigating}
+            aria-disabled={isLocked}
           >
             <span className="inline-flex w-4 justify-center" aria-hidden>
               <MenuIcon name={item.icon} />
             </span>
             {!collapsed ? <span className="truncate text-[13px]">{item.label}</span> : null}
+            {isLocked ? <span className={`ml-auto inline-flex text-slate-300 ${collapsed ? "absolute right-1 top-1" : ""}`}><LockIcon /></span> : null}
           </Link>
         );
       })}

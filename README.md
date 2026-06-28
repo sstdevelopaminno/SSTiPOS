@@ -161,7 +161,7 @@ Solo register demo (no branch-selection UI, one cashier device):
 - Owner employee code: `900001` / PIN `111111`
 - Manager employee code: `900002` / PIN `222222`
 - Staff employee code: `900003` / PIN `333333`
-- Package: `solo` / `Solo Register`, 1 branch, 1 cashier device, 3 users, core POS sales only
+- Package: `solo` / `Solo Register`, monthly THB 350, yearly THB 3,850, 1 branch, 1 cashier device, 3 users, core POS sales, PIN login, attendance, user management, and device management.
 
 4. Open login/POS preview
 - Login: `http://localhost:3000/login/store`
@@ -441,6 +441,9 @@ Use this section as the current source of truth before changing the Payment Sett
 - Branch-level overrides are read from `tenant_feature_subscriptions` where `branch_id = current branch`.
 - Effective rule: package default -> tenant override -> branch override.
 - POS sales now checks `core_pos_sales` in the `/api/pos/sales` runtime path before returning sales data or creating orders.
+- Thai-market package catalog is seeded by `supabase/migrations/202606290001_thai_market_package_matrix.sql`: `solo` THB 350/3,850, `starter` THB 690/7,590, `growth` THB 1,290/14,190, and `enterprise` THB 2,490/27,390. Monthly promo metadata is 10% for 3 months.
+- POS menu route locks are centralized in `apps/backoffice-web/src/lib/pos-feature-map.ts`; locked menu clicks show the Thai package-upgrade alert and protected APIs return `403 { ok:false, error:"feature_not_enabled", feature }`.
+- `/preview/pos/stock` is temporarily mapped to `core_pos_sales`; do not introduce a separate `stock_management` feature until stock workflows are production-ready as a standalone package entitlement.
 - Feature decisions are cached for a short TTL in `apps/backoffice-web/src/lib/feature-gate.ts` to reduce DB fan-out under concurrent POS traffic.
 - IT admin contract/feature updates invalidate the feature gate cache for the changed tenant.
 

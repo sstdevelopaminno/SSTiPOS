@@ -1,4 +1,5 @@
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { fail, ok } from "@/lib/http";
 import { buildBridgeEnvelope } from "@/lib/printing/bridge-contract";
 import { queueAndProcessBluetoothReceiptHtml } from "@/lib/printing/print-service";
@@ -12,6 +13,7 @@ type PrintBluetoothReceiptPayload = {
 export async function POST(req: Request) {
   try {
     const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "receipts:view" });
+    await requirePosApiFeature(auth, "receipt_reprint_history");
     const body = (await req.json()) as PrintBluetoothReceiptPayload;
     const receiptHtml = body.receipt_html?.trim() ?? "";
     if (!receiptHtml) {
@@ -42,6 +44,8 @@ export async function POST(req: Request) {
       })
     );
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     const message = error instanceof Error ? error.message : "Unknown error";
     if (message === "bluetooth_receipt_html_required") {
       return fail("invalid_receipt_html", "receipt_html is required.", 422);

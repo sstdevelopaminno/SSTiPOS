@@ -1,6 +1,7 @@
 import { getAuthContext } from "@/lib/auth-context";
 import { appendAuditLog } from "@/lib/audit-log";
 import { fail, ok } from "@/lib/http";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { resolveTableBranchScope } from "@/lib/table-branch-scope";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
@@ -40,6 +41,7 @@ type SavePayload = {
 export async function POST(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
+    await requirePosApiFeature(auth, "table_management");
     const body = (await req.json()) as SavePayload;
     const supabase = getSupabaseServiceClient();
     const branchScope = await resolveTableBranchScope({
@@ -188,6 +190,8 @@ export async function POST(req: Request) {
       reset: body.reset ?? false
     });
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     return fail("unauthorized", error instanceof Error ? error.message : "Authentication failed.", 401);
   }
 }

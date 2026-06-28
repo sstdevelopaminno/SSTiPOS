@@ -26,6 +26,7 @@ export type PackageCatalogItem = {
   baseYearlyPrice: number;
   basePerpetualPrice: number;
   maxBranchesIncluded: number;
+  maxUsersIncluded?: number;
   extraBranchMonthlyPrice: number;
   extraBranchYearlyPrice: number;
   extraBranchPerpetualPrice: number;
@@ -34,6 +35,11 @@ export type PackageCatalogItem = {
   extraTerminalYearlyPrice: number;
   extraTerminalPerpetualPrice: number;
   includedFeatureCodes: PosFeatureCode[];
+  monthlyNewCustomerDiscountPercent?: number;
+  monthlyNewCustomerDiscountMonths?: number;
+  yearlyFreeMonths?: number;
+  target?: string;
+  metadata?: Record<string, unknown>;
   isActive: boolean;
 };
 

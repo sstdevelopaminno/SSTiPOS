@@ -1,10 +1,12 @@
 import { fail, ok } from "@/lib/http";
 import { getPosApiAuthContext } from "@/lib/pos-api-auth";
+import { featureGateFail, requirePosApiFeature } from "@/lib/pos-api-feature-guard";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 export async function GET(request: Request, context: { params: Promise<{ tableId: string }> }) {
   try {
     const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "tables:view" });
+    await requirePosApiFeature(auth, "qr_table_ordering");
     const { tableId } = await context.params;
     const after = new URL(request.url).searchParams.get("after");
     if (!tableId) return fail("invalid_table_id", "tableId is required.", 422);
@@ -30,6 +32,8 @@ export async function GET(request: Request, context: { params: Promise<{ tableId
     if (error) return fail("table_qr_orders_query_failed", error.message, 500);
     return ok({ items: data ?? [], server_time: cursorBoundary });
   } catch (error) {
+    const featureError = featureGateFail(error);
+    if (featureError) return featureError;
     return fail("table_qr_orders_failed", error instanceof Error ? error.message : "Authentication failed.", 401);
   }
 }
