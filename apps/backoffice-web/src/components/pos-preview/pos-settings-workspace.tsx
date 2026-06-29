@@ -6,6 +6,8 @@ import type { ReactNode } from "react";
 import { PosManagerApprovalModal } from "@/components/pos-ui/pos-manager-approval-modal";
 import { PosUsersModule } from "@/components/pos/pos-users-module";
 import { InetNopsSettingsPanel } from "@/components/pos-preview/inet-nops-settings-panel";
+import { PackageLockDialog } from "@/components/pos-preview/package-lock-dialog";
+import { POS_SETTINGS_FEATURES } from "@/lib/pos-feature-map";
 import type {
   BranchSettings,
   PaymentAccountSettings,
@@ -951,20 +953,25 @@ function MenuButton({
   icon,
   title,
   desc,
-  onClick
+  onClick,
+  locked = false
 }: {
   icon: MenuIconName;
   title: string;
   desc: string;
   onClick: () => void;
+  locked?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group grid min-h-[92px] grid-cols-[42px_1fr_24px] items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-blue-200 hover:bg-blue-50/50"
+      aria-disabled={locked}
+      className={`group grid min-h-[92px] grid-cols-[42px_1fr_28px] items-center gap-3 rounded-lg border p-4 text-left transition ${
+        locked ? "border-slate-200 bg-slate-50 text-slate-500 hover:border-blue-200" : "border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/50"
+      }`}
     >
-      <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-700 group-hover:bg-blue-100 group-hover:text-blue-700">
+      <span className={`inline-flex h-10 w-10 items-center justify-center rounded-lg ${locked ? "bg-slate-100 text-slate-400" : "bg-slate-100 text-slate-700 group-hover:bg-blue-100 group-hover:text-blue-700"}`}>
         <Icon name={icon} />
       </span>
       <span className="min-w-0">
@@ -976,14 +983,22 @@ function MenuButton({
   );
 }
 
-function MenuLink({ icon, title, desc, href }: { icon: MenuIconName; title: string; desc: string; href: string }) {
+function MenuLink({ icon, title, desc, href, locked = false, onLocked }: { icon: MenuIconName; title: string; desc: string; href: string; locked?: boolean; onLocked?: () => void }) {
   return (
     <Link
       href={href}
       prefetch={false}
-      className="group grid min-h-[92px] grid-cols-[42px_1fr_24px] items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-blue-200 hover:bg-blue-50/50"
+      onClick={(event) => {
+        if (!locked) return;
+        event.preventDefault();
+        onLocked?.();
+      }}
+      aria-disabled={locked}
+      className={`group grid min-h-[92px] grid-cols-[42px_1fr_24px] items-center gap-3 rounded-lg border p-4 text-left transition ${
+        locked ? "border-slate-200 bg-slate-50 text-slate-500 hover:border-blue-200" : "border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/50"
+      }`}
     >
-      <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-700 group-hover:bg-blue-100 group-hover:text-blue-700">
+      <span className={`inline-flex h-10 w-10 items-center justify-center rounded-lg ${locked ? "bg-slate-100 text-slate-400" : "bg-slate-100 text-slate-700 group-hover:bg-blue-100 group-hover:text-blue-700"}`}>
         <Icon name={icon} />
       </span>
       <span className="min-w-0">
@@ -2876,6 +2891,8 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
   const [devicesLoaded, setDevicesLoaded] = useState(false);
   const [status, setStatus] = useState("");
   const [savePopup, setSavePopup] = useState("");
+  const [enabledFeatures, setEnabledFeatures] = useState<Record<string, boolean> | null>(null);
+  const [packageLockOpen, setPackageLockOpen] = useState(false);
   const canManage = initialData.metadata.can_manage;
 
   const reportStatus = useCallback((message: string, options?: { popup?: boolean }) => {
@@ -2885,6 +2902,36 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
     }
     window.setTimeout(() => setStatus(""), 2800);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadFeatures() {
+      try {
+        const response = await fetch("/api/pos/features", { cache: "no-store" });
+        const body = (await response.json().catch(() => null)) as { data?: { features?: Record<string, boolean> } | null } | null;
+        if (!cancelled && response.ok) setEnabledFeatures(body?.data?.features ?? {});
+      } catch {
+        if (!cancelled) setEnabledFeatures({});
+      }
+    }
+    void loadFeatures();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function isSettingLocked(viewKey: keyof typeof POS_SETTINGS_FEATURES) {
+    const feature = POS_SETTINGS_FEATURES[viewKey];
+    return Boolean(enabledFeatures !== null && enabledFeatures[feature] === false);
+  }
+
+  function openSettingsView(viewKey: Exclude<SettingsView, "menu">) {
+    if (isSettingLocked(viewKey)) {
+      setPackageLockOpen(true);
+      return;
+    }
+    setView(viewKey);
+  }
 
   return (
     <main className="min-h-full bg-slate-50 p-3 sm:p-5">
@@ -2897,26 +2944,28 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
 
         {view === "menu" ? (
           <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-            <MenuButton icon="store" title={labels.store} desc={labels.storeDesc} onClick={() => setView("store")} />
-            <MenuButton icon="branch" title={labels.branches} desc={labels.branchesDesc} onClick={() => setView("branches")} />
-            <MenuButton icon="terminal" title={labels.devices} desc={labels.devicesDesc} onClick={() => setView("devices")} />
-            <MenuButton icon="activity" title={labels.activityAudit} desc={labels.activityAuditDesc} onClick={() => setView("activity")} />
-            <MenuButton icon="payment" title={labels.payments} desc={labels.paymentsDesc} onClick={() => setView("payments")} />
+            <MenuButton icon="store" title={labels.store} desc={labels.storeDesc} onClick={() => openSettingsView("store")} locked={isSettingLocked("store")} />
+            <MenuButton icon="branch" title={labels.branches} desc={labels.branchesDesc} onClick={() => openSettingsView("branches")} locked={isSettingLocked("branches")} />
+            <MenuButton icon="terminal" title={labels.devices} desc={labels.devicesDesc} onClick={() => openSettingsView("devices")} locked={isSettingLocked("devices")} />
+            <MenuButton icon="activity" title={labels.activityAudit} desc={labels.activityAuditDesc} onClick={() => openSettingsView("activity")} locked={isSettingLocked("activity")} />
+            <MenuButton icon="payment" title={labels.payments} desc={labels.paymentsDesc} onClick={() => openSettingsView("payments")} locked={isSettingLocked("payments")} />
             <MenuButton
               icon="payment"
               title={lang === "en" ? "INET QR" : "INET QR"}
               desc={lang === "en" ? "Dynamic QR, branch activation, and UAT connection" : "QR แบบกำหนดยอด, เปิดใช้งานรายสาขา และทดสอบ UAT"}
-              onClick={() => setView("inet_nops")}
+              onClick={() => openSettingsView("inet_nops")}
+              locked={isSettingLocked("inet_nops")}
             />
-            <MenuButton icon="tax" title={labels.taxes} desc={labels.taxesDesc} onClick={() => setView("taxes")} />
+            <MenuButton icon="tax" title={labels.taxes} desc={labels.taxesDesc} onClick={() => openSettingsView("taxes")} locked={isSettingLocked("taxes")} />
             <MenuButton
               icon="bell"
               title={lang === "en" ? "Notification Settings" : "ตั้งค่าการแจ้งเตือน"}
               desc={lang === "en" ? "Popup and sound alerts for table QR customer calls" : "POP UP และเสียงแจ้งเตือนเมื่อลูกค้าเรียกจาก QR โต๊ะ"}
-              onClick={() => setView("notifications")}
+              onClick={() => openSettingsView("notifications")}
+              locked={isSettingLocked("notifications")}
             />
-            <MenuButton icon="users" title={labels.users} desc={labels.usersDesc} onClick={() => setView("users")} />
-            <MenuLink icon="display" title={labels.display} desc={labels.displayDesc} href="/preview/pos/customer-display" />
+            <MenuButton icon="users" title={labels.users} desc={labels.usersDesc} onClick={() => openSettingsView("users")} locked={isSettingLocked("users")} />
+            <MenuLink icon="display" title={labels.display} desc={labels.displayDesc} href="/preview/pos/customer-display" locked={isSettingLocked("display")} onLocked={() => setPackageLockOpen(true)} />
           </div>
         ) : null}
 
@@ -3008,6 +3057,7 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
         {view === "users" ? <PosUsersModule lang={lang === "en" ? "en" : "th"} embedded onBack={() => setView("menu")} /> : null}
       </section>
       {savePopup ? <SaveSuccessPopup labels={labels} message={savePopup} onClose={() => setSavePopup("")} /> : null}
+      <PackageLockDialog lang={lang} open={packageLockOpen} onClose={() => setPackageLockOpen(false)} />
     </main>
   );
 }

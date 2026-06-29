@@ -10,7 +10,7 @@ const FALLBACK_INGREDIENT_PREFIX = "STOCK:";
 export async function GET(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    await requirePosApiFeature(auth, "core_pos_sales");
+    await requirePosApiFeature(auth, "stock_management");
     const supabase = getSupabaseServiceClient();
     const { searchParams } = new URL(req.url);
     const { page, pageSize } = parsePagination(searchParams, 10);

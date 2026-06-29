@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { FeatureGateError, requireTenantFeature } from "@/lib/feature-gate";
 import { PosGuardError, requirePermission, requirePosSession, withPosSessionCookie } from "@/lib/pos-session-guard";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
@@ -49,6 +50,7 @@ export async function GET() {
   try {
     const scope = await requirePosSession();
     requirePermission(scope, "shift:join");
+    await requireTenantFeature(scope.session.tenant_id, "attendance_tracking", scope.session.branch_id);
     const supabase = getSupabaseServiceClient();
 
     const currentShiftQuery = await supabase
@@ -120,6 +122,13 @@ export async function GET() {
     response.headers.set("server-timing", `total;dur=${durationMs}`);
     return withPosSessionCookie(response, scope.session.id);
   } catch (error) {
+    if (error instanceof FeatureGateError) {
+      const response = NextResponse.json({ data: null, error: { code: error.code, message: error.message } }, { status: error.status });
+      const durationMs = Date.now() - startedAt;
+      response.headers.set("x-pos-api-ms", String(durationMs));
+      response.headers.set("server-timing", `total;dur=${durationMs}`);
+      return response;
+    }
     if (error instanceof PosGuardError) {
       const response = NextResponse.json({ data: null, error: { code: error.code, message: error.message } }, { status: error.status });
       const durationMs = Date.now() - startedAt;

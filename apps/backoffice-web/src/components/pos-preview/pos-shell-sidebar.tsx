@@ -5,11 +5,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { MouseEvent, useEffect, useState, useTransition } from "react";
 import { LanguageSwitcher } from "@/components/language/language-switcher";
+import { PackageLockDialog } from "@/components/pos-preview/package-lock-dialog";
 import { PosStaffMenu } from "@/components/pos-preview/pos-staff-menu";
 import { t, type Language } from "@/lib/i18n";
 import {
-  POS_MENU_LOCK_BODY_EN,
-  POS_MENU_LOCK_BODY_TH,
   POS_MENU_LOCK_TITLE_EN,
   POS_MENU_LOCK_TITLE_TH,
   featureForPosRoute
@@ -59,6 +58,7 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [sessionRole, setSessionRole] = useState<PosRole | null>(null);
   const [enabledFeatures, setEnabledFeatures] = useState<Record<string, boolean> | null>(null);
+  const [packageLockOpen, setPackageLockOpen] = useState(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [logoutBusyMode, setLogoutBusyMode] = useState<"switch_device" | "full" | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
@@ -135,9 +135,7 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
     }
     if (isSettingsLocked) {
       event.preventDefault();
-      const title = lang === "th" ? POS_MENU_LOCK_TITLE_TH : POS_MENU_LOCK_TITLE_EN;
-      const body = lang === "th" ? POS_MENU_LOCK_BODY_TH : POS_MENU_LOCK_BODY_EN;
-      window.alert(`${title}\n\n${body}`);
+      setPackageLockOpen(true);
       return;
     }
     event.preventDefault();
@@ -213,7 +211,13 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
         </button>
       </div>
 
-      <PosStaffMenu lang={lang} collapsed={collapsed} sessionRole={sessionRole} enabledFeatures={enabledFeatures} />
+      <PosStaffMenu
+        lang={lang}
+        collapsed={collapsed}
+        sessionRole={sessionRole}
+        enabledFeatures={enabledFeatures}
+        onLockedFeature={() => setPackageLockOpen(true)}
+      />
 
       {showAdvancedMenus ? (
         <Link
@@ -336,6 +340,7 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
           </section>
         </div>
       ) : null}
+      <PackageLockDialog lang={lang} open={packageLockOpen} onClose={() => setPackageLockOpen(false)} />
     </aside>
   );
 }

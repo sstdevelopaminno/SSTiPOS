@@ -4,6 +4,7 @@ import { fail, ok } from "@/lib/http";
 import { PosGuardError, requirePermission, requirePosSession, type PosSessionScope } from "@/lib/pos-session-guard";
 import { executeShiftClose } from "@/lib/services/shift-close-service";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
+import { FeatureGateError, requireTenantFeature } from "@/lib/feature-gate";
 
 type PosShiftPayload =
   | { action: "open"; opening_cash: number }
@@ -34,6 +35,7 @@ export async function GET() {
   try {
     const scope = await requirePosSession();
     requirePermission(scope, "shift:join");
+    await requireTenantFeature(scope.session.tenant_id, "attendance_tracking", scope.session.branch_id);
     const auth = toAuthContext(scope);
     const supabase = getSupabaseServiceClient();
 
@@ -68,6 +70,9 @@ export async function GET() {
       queued_orders: queuedOrders
     });
   } catch (error) {
+    if (error instanceof FeatureGateError) {
+      return fail(error.code, error.message, error.status);
+    }
     if (error instanceof PosGuardError) {
       return fail(error.code, error.message, error.status);
     }

@@ -21,9 +21,11 @@ import { PosCategoryNav } from "@/components/pos-ui/pos-category-nav";
 import { PosManagerApprovalModal } from "@/components/pos-ui/pos-manager-approval-modal";
 import { PosPaymentPanel } from "@/components/pos-ui/pos-payment-panel";
 import { PosShell } from "@/components/pos-ui/pos-shell";
+import { PackageLockDialog } from "@/components/pos-preview/package-lock-dialog";
 import { sendPendingDeliveryBillNowWithEffects, submitOrderWithEffects, submitTransferPaymentWithEffects } from "@/components/pos/services/pos-sales-service-module";
 import type { DiningTableItem, TableZoneItem } from "@/components/tables/types";
 import { calculateDeliveryPricingBreakdown } from "@/lib/delivery-pricing";
+import { POS_MODE_FEATURES } from "@/lib/pos-feature-map";
 import { beginPosActionTrace, clearPosTraceEvents, endPosActionTrace, readPosTraceEvents, usePosRenderProfiler } from "@/lib/pos-ui-profiler";
 import { naturalCompareTableCode } from "@/lib/table-management";
 
@@ -1747,6 +1749,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [discountEditMode, setDiscountEditMode] = useState<"percent" | "amount">("percent");
   const [quickMode, setQuickMode] = useState<QuickMode>("home");
   const [modeSelectorOpen, setModeSelectorOpen] = useState(false);
+  const [enabledFeatures, setEnabledFeatures] = useState<Record<string, boolean> | null>(null);
+  const [packageLockOpen, setPackageLockOpen] = useState(false);
   const [orderType, setOrderType] = useState<OrderType>("takeaway");
   const [submitting, setSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
@@ -1923,6 +1927,25 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const selectedTableRef = useRef<DiningTableItem | null>(null);
   const cartRef = useRef<CartItem[]>([]);
   const dineInDraftByTableIdRef = useRef<Record<string, CartItem[]>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadFeatures() {
+      try {
+        const response = await fetch("/api/pos/features", { cache: "no-store" });
+        const body = (await response.json().catch(() => null)) as { data?: { features?: Record<string, boolean> } | null } | null;
+        if (!cancelled && response.ok) {
+          setEnabledFeatures(body?.data?.features ?? {});
+        }
+      } catch {
+        if (!cancelled) setEnabledFeatures({});
+      }
+    }
+    void loadFeatures();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const refreshTaxSettings = useCallback(async (): Promise<TaxSettings | null> => {
     if (typeof window === "undefined" || !navigator.onLine) return null;
@@ -4751,9 +4774,19 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     pushSubmitMessage(text.delivery);
   }
 
+  function isQuickModeLocked(mode: QuickMode) {
+    const feature = mode === "dine_in" ? POS_MODE_FEATURES.dine_in : mode === "delivery" ? POS_MODE_FEATURES.delivery : null;
+    return Boolean(enabledFeatures !== null && feature && enabledFeatures[feature] === false);
+  }
+
   function selectQuickMode(mode: QuickMode) {
     if (mode === quickMode) {
       setModeSelectorOpen(false);
+      return;
+    }
+    if (isQuickModeLocked(mode)) {
+      setModeSelectorOpen(false);
+      setPackageLockOpen(true);
       return;
     }
     applyQuickMode(mode);
@@ -6216,10 +6249,10 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         <div className="posui-cart-empty" aria-label={lang === "th" ? "ตะกร้าว่าง" : "Empty cart"}>
           <Image
             className="posui-cart-empty__logo"
-            src="/brand/sst-ipos-empty-state.png"
+            src="/brand/sst-ipos-logo-new.png"
             alt={lang === "th" ? "โลโก้ SST iPOS" : "SST iPOS logo"}
-            width={1536}
-            height={1024}
+            width={640}
+            height={240}
             priority
           />
         </div>
@@ -7046,8 +7079,10 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
               </button>
               <button
                 type="button"
-                className={`posui-mode-option ${quickMode === "dine_in" ? "is-active" : ""}`}
+                className={`posui-mode-option ${quickMode === "dine_in" ? "is-active" : ""} ${isQuickModeLocked("dine_in") ? "is-locked" : ""}`}
                 onClick={() => selectQuickMode("dine_in")}
+                aria-disabled={isQuickModeLocked("dine_in")}
+                title={isQuickModeLocked("dine_in") ? (lang === "th" ? "แพ็กเกจปัจจุบันยังไม่เปิดใช้งานฟีเจอร์นี้" : "This feature is not enabled in your package") : undefined}
               >
                 <span className="posui-mode-option__icon" aria-hidden="true">
                   <QuickModeIcon mode="dine_in" />
@@ -7060,8 +7095,10 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
               </button>
               <button
                 type="button"
-                className={`posui-mode-option ${quickMode === "delivery" ? "is-active" : ""}`}
+                className={`posui-mode-option ${quickMode === "delivery" ? "is-active" : ""} ${isQuickModeLocked("delivery") ? "is-locked" : ""}`}
                 onClick={() => selectQuickMode("delivery")}
+                aria-disabled={isQuickModeLocked("delivery")}
+                title={isQuickModeLocked("delivery") ? (lang === "th" ? "แพ็กเกจปัจจุบันยังไม่เปิดใช้งานฟีเจอร์นี้" : "This feature is not enabled in your package") : undefined}
               >
                 <span className="posui-mode-option__icon" aria-hidden="true">
                   <QuickModeIcon mode="delivery" />
@@ -7724,6 +7761,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         </div>
       ) : null}
       {stockAdjusting ? <LoadingState label={text.applyingStock} /> : null}
+      <PackageLockDialog lang={lang} open={packageLockOpen} onClose={() => setPackageLockOpen(false)} />
     </section>
   );
 }

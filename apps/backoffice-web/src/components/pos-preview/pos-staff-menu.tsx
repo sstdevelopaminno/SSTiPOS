@@ -5,8 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { MouseEvent, useEffect, useMemo, useState, useTransition } from "react";
 import { t, type Language } from "@/lib/i18n";
 import {
-  POS_MENU_LOCK_BODY_EN,
-  POS_MENU_LOCK_BODY_TH,
   POS_MENU_LOCK_TITLE_EN,
   POS_MENU_LOCK_TITLE_TH,
   featureForPosRoute
@@ -163,12 +161,14 @@ export function PosStaffMenu({
   lang,
   collapsed,
   sessionRole,
-  enabledFeatures
+  enabledFeatures,
+  onLockedFeature
 }: {
   lang: Language;
   collapsed: boolean;
   sessionRole: PosRole | null;
   enabledFeatures: Record<string, boolean> | null;
+  onLockedFeature: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
@@ -222,9 +222,7 @@ export function PosStaffMenu({
 
   function handleLockedNavigate(event: MouseEvent<HTMLAnchorElement>) {
     event.preventDefault();
-    const title = lang === "th" ? POS_MENU_LOCK_TITLE_TH : POS_MENU_LOCK_TITLE_EN;
-    const body = lang === "th" ? POS_MENU_LOCK_BODY_TH : POS_MENU_LOCK_BODY_EN;
-    window.alert(`${title}\n\n${body}`);
+    onLockedFeature();
   }
 
   return (

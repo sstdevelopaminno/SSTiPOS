@@ -8,7 +8,7 @@ import { ok, fail } from "@/lib/http";
 export async function POST(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    await requirePosApiFeature(auth, "core_pos_sales");
+    await requirePosApiFeature(auth, "stock_management");
     const body = (await req.json()) as {
       ingredient_id: string;
       quantity_delta: number;

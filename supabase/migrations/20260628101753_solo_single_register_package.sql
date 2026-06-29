@@ -45,8 +45,9 @@ set
 with solo_features(feature_code) as (
   values
     ('core_pos_sales'),
+    ('advanced_sales_reports'),
+    ('receipt_reprint_history'),
     ('pin_login'),
-    ('attendance_tracking'),
     ('user_management'),
     ('device_management')
 )
@@ -59,3 +60,12 @@ on conflict (package_id, feature_code) do update
 set
   included = excluded.included,
   updated_at = now();
+
+update subscription_package_features spf
+set included = false,
+    updated_at = now()
+from subscription_packages p
+where spf.package_id = p.id
+  and p.code = 'solo'
+  and spf.feature_code = 'attendance_tracking'
+  and spf.included = true;

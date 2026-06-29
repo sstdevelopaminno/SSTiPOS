@@ -43,8 +43,9 @@ set
 with solo_features(feature_code) as (
   values
     ('core_pos_sales'),
+    ('advanced_sales_reports'),
+    ('receipt_reprint_history'),
     ('pin_login'),
-    ('attendance_tracking'),
     ('user_management'),
     ('device_management')
 )
@@ -57,6 +58,15 @@ on conflict (package_id, feature_code) do update
 set
   included = excluded.included,
   updated_at = now();
+
+update subscription_package_features spf
+set included = false,
+    updated_at = now()
+from subscription_packages p
+where spf.package_id = p.id
+  and p.code = 'solo'
+  and spf.feature_code = 'attendance_tracking'
+  and spf.included = true;
 
 insert into tenants (id, code, name, owner_name, owner_phone, package_id, is_active)
 values (
@@ -265,14 +275,23 @@ set
 insert into tenant_feature_subscriptions (tenant_id, branch_id, feature_code, is_enabled, source)
 values
   ('00000000-0000-0000-0000-000000019001', '00000000-0000-0000-0000-000000029001', 'core_pos_sales', true, 'package'),
+  ('00000000-0000-0000-0000-000000019001', '00000000-0000-0000-0000-000000029001', 'advanced_sales_reports', true, 'package'),
+  ('00000000-0000-0000-0000-000000019001', '00000000-0000-0000-0000-000000029001', 'receipt_reprint_history', true, 'package'),
   ('00000000-0000-0000-0000-000000019001', '00000000-0000-0000-0000-000000029001', 'pin_login', true, 'package'),
-  ('00000000-0000-0000-0000-000000019001', '00000000-0000-0000-0000-000000029001', 'attendance_tracking', true, 'package'),
   ('00000000-0000-0000-0000-000000019001', '00000000-0000-0000-0000-000000029001', 'user_management', true, 'package'),
   ('00000000-0000-0000-0000-000000019001', '00000000-0000-0000-0000-000000029001', 'device_management', true, 'package')
 on conflict (tenant_id, branch_id, feature_code) do update
 set
   is_enabled = excluded.is_enabled,
   source = excluded.source;
+
+update tenant_feature_subscriptions
+set is_enabled = false,
+    source = 'package'
+where tenant_id = '00000000-0000-0000-0000-000000019001'
+  and branch_id = '00000000-0000-0000-0000-000000029001'
+  and feature_code = 'attendance_tracking'
+  and is_enabled = true;
 
 insert into merchant_channels (id, tenant_id, branch_id, channel_code, channel_name, is_manual, is_active)
 values

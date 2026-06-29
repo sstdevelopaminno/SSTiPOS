@@ -124,7 +124,7 @@ function normalizeScannedPayload(payload: Record<string, unknown> | null): {
 export async function POST(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    await requirePosApiFeature(auth, "core_pos_sales");
+    await requirePosApiFeature(auth, "stock_management");
 
     const verifyMode = (readEnv("POS_MENU_SCAN_MODE") ?? "").toLowerCase();
     const apiKey = readEnv("OPENAI_API_KEY");

@@ -32,8 +32,10 @@ export type PackageDeploymentMode = "cloud" | "desktop_online" | "desktop_offlin
 export type PackageCurrency = "THB";
 export type PosFeatureCode =
   | "core_pos_sales"
+  | "stock_management"
   | "table_management"
   | "qr_table_ordering"
+  | "delivery_ordering"
   | "customer_facing_display"
   | "transfer_slip_verification"
   | "staff_qr_clockin"

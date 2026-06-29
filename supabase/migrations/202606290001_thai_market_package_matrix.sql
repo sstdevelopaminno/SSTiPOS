@@ -20,8 +20,10 @@ insert into package_feature_catalog (
 )
 values
   ('core_pos_sales', 'Core POS Sales', 'Core sales screen, order creation, checkout, and receipt workflow.', 0, 0, 0, false, false, true),
+  ('stock_management', 'Stock Management', 'Product catalog, menu scan, recipes, ingredients, and stock adjustments.', 290, 3190, 5900, false, true, true),
   ('table_management', 'Table Management', 'Open tables, move bills, manage floor zones, and track dine-in bill status.', 490, 5390, 8900, false, true, true),
   ('qr_table_ordering', 'QR Table Ordering', 'Customer table QR ordering that sends items into the active POS table bill.', 690, 7590, 14900, false, true, true),
+  ('delivery_ordering', 'Delivery Ordering', 'Delivery app order mode, held delivery bills, and channel-specific pricing.', 390, 4290, 6900, false, true, true),
   ('customer_facing_display', 'Customer Display', 'Customer-facing realtime item and total display.', 250, 2750, 4900, false, false, true),
   ('transfer_slip_verification', 'Transfer Slip Verification', 'Upload and verify transfer slips before closing a bill.', 390, 4290, 6900, false, true, true),
   ('staff_qr_clockin', 'Staff QR Clock-in', 'QR-based staff clock-in flow.', 190, 2090, 3900, false, true, true),
@@ -79,22 +81,33 @@ set
 with package_features(package_code, feature_code) as (
   values
     ('solo', 'core_pos_sales'),
+    ('solo', 'advanced_sales_reports'),
+    ('solo', 'receipt_reprint_history'),
     ('solo', 'pin_login'),
-    ('solo', 'attendance_tracking'),
     ('solo', 'user_management'),
     ('solo', 'device_management'),
     ('starter', 'core_pos_sales'),
+    ('starter', 'stock_management'),
+    ('starter', 'delivery_ordering'),
+    ('starter', 'advanced_sales_reports'),
     ('starter', 'receipt_reprint_history'),
     ('starter', 'qr_login'),
     ('starter', 'mobile_qr_login'),
     ('starter', 'device_management'),
     ('growth', 'core_pos_sales'),
+    ('growth', 'stock_management'),
+    ('growth', 'delivery_ordering'),
     ('growth', 'multi_terminal_sync'),
     ('growth', 'offline_queue_resilience'),
     ('growth', 'advanced_sales_reports'),
+    ('growth', 'receipt_reprint_history'),
     ('growth', 'branch_management'),
     ('growth', 'user_management'),
     ('enterprise', 'core_pos_sales'),
+    ('enterprise', 'stock_management'),
+    ('enterprise', 'delivery_ordering'),
+    ('enterprise', 'advanced_sales_reports'),
+    ('enterprise', 'receipt_reprint_history'),
     ('enterprise', 'table_management'),
     ('enterprise', 'qr_table_ordering'),
     ('enterprise', 'kitchen_printing'),
@@ -111,3 +124,12 @@ on conflict (package_id, feature_code) do update
 set
   included = excluded.included,
   updated_at = now();
+
+update subscription_package_features spf
+set included = false,
+    updated_at = now()
+from subscription_packages p
+where spf.package_id = p.id
+  and p.code = 'solo'
+  and spf.feature_code in ('attendance_tracking', 'stock_management', 'table_management', 'qr_table_ordering', 'delivery_ordering', 'customer_facing_display', 'inet_nops_qr', 'mobile_device_enrollment', 'branch_management')
+  and spf.included = true;

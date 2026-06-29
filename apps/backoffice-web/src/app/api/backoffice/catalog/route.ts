@@ -342,7 +342,7 @@ function toRecipeQuantityByIngredientBaseUnit(input: {
 export async function GET(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    await requirePosApiFeature(auth, "core_pos_sales");
+    await requirePosApiFeature(auth, "stock_management");
     const supabase = getSupabaseServiceClient();
     const { searchParams } = new URL(req.url);
     const view = searchParams.get("view")?.trim() || "products";
@@ -789,7 +789,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const auth = await getAuthContext({ requireBranchScope: true });
-    await requirePosApiFeature(auth, "core_pos_sales");
+    await requirePosApiFeature(auth, "stock_management");
     const supabase = getSupabaseServiceClient();
     if (!canManageCatalogRole(auth.branchRole)) {
       return fail("forbidden_role", "Only manager or owner can modify catalog.", 403);

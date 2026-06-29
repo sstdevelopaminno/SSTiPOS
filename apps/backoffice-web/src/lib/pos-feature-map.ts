@@ -30,21 +30,39 @@ export type PosPermissionKey =
 export const POS_ROUTE_FEATURES = {
   "/preview/pos": "core_pos_sales",
   "/preview/pos/sales-list": "advanced_sales_reports",
-  "/preview/pos/stock": "core_pos_sales",
+  "/preview/pos/stock": "stock_management",
   "/preview/pos/sales-summary": "advanced_sales_reports",
   "/preview/pos/receipts": "receipt_reprint_history",
   "/preview/pos/tables": "table_management",
   "/preview/pos/customer-display": "customer_facing_display",
   "/preview/pos/users": "user_management",
-  "/preview/pos/shift": "core_pos_sales",
+  "/preview/pos/shift": "attendance_tracking",
   "/preview/pos/settings": "core_pos_sales"
+} as const satisfies Record<string, PosFeatureCode>;
+
+export const POS_MODE_FEATURES = {
+  dine_in: "table_management",
+  delivery: "delivery_ordering"
+} as const satisfies Record<"dine_in" | "delivery", PosFeatureCode>;
+
+export const POS_SETTINGS_FEATURES = {
+  store: "core_pos_sales",
+  branches: "branch_management",
+  devices: "mobile_device_enrollment",
+  activity: "core_pos_sales",
+  payments: "core_pos_sales",
+  inet_nops: "inet_nops_qr",
+  taxes: "core_pos_sales",
+  notifications: "qr_table_ordering",
+  users: "user_management",
+  display: "customer_facing_display"
 } as const satisfies Record<string, PosFeatureCode>;
 
 export const POS_PERMISSION_FEATURES = {
   "sale:create": "core_pos_sales",
   "sales:create": "core_pos_sales",
   "sales:list:view": "advanced_sales_reports",
-  "inventory:view": "core_pos_sales",
+  "inventory:view": "stock_management",
   "reports:view": "advanced_sales_reports",
   "receipts:view": "receipt_reprint_history",
   "tables:view": "table_management",
@@ -53,7 +71,7 @@ export const POS_PERMISSION_FEATURES = {
   "customer_display:manage": "customer_facing_display",
   "users:view": "user_management",
   "users:manage": "user_management",
-  "shift:join": "core_pos_sales",
+  "shift:join": "attendance_tracking",
   "settings:view": "core_pos_sales"
 } as const satisfies Partial<Record<PosPermissionKey, PosFeatureCode>>;
 
@@ -84,5 +102,12 @@ export function featureForPosRoute(pathname: string): PosFeatureCode | null {
 }
 
 export function allPosMenuFeatureCodes(): PosFeatureCode[] {
-  return Array.from(new Set(Object.values(POS_ROUTE_FEATURES)));
+  return Array.from(
+    new Set([
+      ...Object.values(POS_ROUTE_FEATURES),
+      ...Object.values(POS_PERMISSION_FEATURES),
+      ...Object.values(POS_MODE_FEATURES),
+      ...Object.values(POS_SETTINGS_FEATURES)
+    ])
+  );
 }

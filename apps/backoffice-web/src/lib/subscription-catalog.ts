@@ -21,6 +21,17 @@ export const DEFAULT_PACKAGE_FEATURE_CATALOG: PackageFeatureCatalogItem[] = [
     isActive: true
   },
   {
+    code: "stock_management",
+    name: "Stock Management",
+    description: "Product catalog, menu scan, recipes, ingredients, and stock adjustments.",
+    defaultMonthlyPrice: 290,
+    defaultYearlyPrice: yearly(290),
+    defaultPerpetualPrice: 5900,
+    includedByDefault: false,
+    pricedPerBranch: true,
+    isActive: true
+  },
+  {
     code: "table_management",
     name: "Table Management",
     description: "Open tables, move bills, manage floor zones, and track dine-in bill status.",
@@ -38,6 +49,17 @@ export const DEFAULT_PACKAGE_FEATURE_CATALOG: PackageFeatureCatalogItem[] = [
     defaultMonthlyPrice: 690,
     defaultYearlyPrice: yearly(690),
     defaultPerpetualPrice: 14900,
+    includedByDefault: false,
+    pricedPerBranch: true,
+    isActive: true
+  },
+  {
+    code: "delivery_ordering",
+    name: "Delivery Ordering",
+    description: "Delivery app order mode, held delivery bills, and channel-specific pricing.",
+    defaultMonthlyPrice: 390,
+    defaultYearlyPrice: yearly(390),
+    defaultPerpetualPrice: 6900,
     includedByDefault: false,
     pricedPerBranch: true,
     isActive: true
@@ -286,7 +308,7 @@ export const DEFAULT_PACKAGE_CATALOG: PackageCatalogItem[] = [
     extraTerminalMonthlyPrice: 0,
     extraTerminalYearlyPrice: 0,
     extraTerminalPerpetualPrice: 0,
-    includedFeatureCodes: ["core_pos_sales", "pin_login", "attendance_tracking", "user_management", "device_management"],
+    includedFeatureCodes: ["core_pos_sales", "advanced_sales_reports", "receipt_reprint_history", "pin_login", "user_management", "device_management"],
     target: "small shop / single register",
     metadata: { login_mode: "single_register", branch_selection: "hidden", max_cashier_devices: 1 },
     ...PACKAGE_PROMO,
@@ -307,7 +329,7 @@ export const DEFAULT_PACKAGE_CATALOG: PackageCatalogItem[] = [
     extraTerminalMonthlyPrice: 190,
     extraTerminalYearlyPrice: yearly(190),
     extraTerminalPerpetualPrice: 5900,
-    includedFeatureCodes: ["core_pos_sales", "receipt_reprint_history", "qr_login", "mobile_qr_login", "device_management"],
+    includedFeatureCodes: ["core_pos_sales", "stock_management", "delivery_ordering", "advanced_sales_reports", "receipt_reprint_history", "qr_login", "mobile_qr_login", "device_management"],
     target: "affordable starter package",
     ...PACKAGE_PROMO,
     isActive: true
@@ -327,7 +349,7 @@ export const DEFAULT_PACKAGE_CATALOG: PackageCatalogItem[] = [
     extraTerminalMonthlyPrice: 220,
     extraTerminalYearlyPrice: yearly(220),
     extraTerminalPerpetualPrice: 4900,
-    includedFeatureCodes: ["core_pos_sales", "multi_terminal_sync", "offline_queue_resilience", "advanced_sales_reports", "branch_management", "user_management"],
+    includedFeatureCodes: ["core_pos_sales", "stock_management", "delivery_ordering", "multi_terminal_sync", "offline_queue_resilience", "advanced_sales_reports", "receipt_reprint_history", "branch_management", "user_management"],
     target: "multi-terminal / multi-branch growth",
     ...PACKAGE_PROMO,
     isActive: true
@@ -349,6 +371,10 @@ export const DEFAULT_PACKAGE_CATALOG: PackageCatalogItem[] = [
     extraTerminalPerpetualPrice: 3900,
     includedFeatureCodes: [
       "core_pos_sales",
+      "stock_management",
+      "delivery_ordering",
+      "advanced_sales_reports",
+      "receipt_reprint_history",
       "table_management",
       "qr_table_ordering",
       "kitchen_printing",
