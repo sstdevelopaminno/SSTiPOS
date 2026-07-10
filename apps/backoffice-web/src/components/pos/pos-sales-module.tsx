@@ -1315,6 +1315,14 @@ function getAbsoluteAssetUrl(path: string): string {
   return new URL(path, window.location.origin).toString();
 }
 
+function normalizeReceiptLogoPath(value: unknown): string | null {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("/") || trimmed.startsWith("data:image/")) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return null;
+}
+
 function formatCashBlockAmount(value: number): string {
   return new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 2,
@@ -1638,7 +1646,7 @@ function PosDeviceBlockedOverlay({
           <DeviceBlockIcon status={devicePolicy.status} />
         </div>
         <div className="posui-device-blocker__content">
-          <p className="posui-device-blocker__eyebrow">SST iPOS</p>
+          <p className="posui-device-blocker__eyebrow">CpIPOS</p>
           <h2 id="pos-device-blocker-title">{title}</h2>
           <p id="pos-device-blocker-body">{body}</p>
           <dl className="posui-device-blocker__meta">
@@ -3031,6 +3039,15 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
 
   useEffect(() => {
     if (!isHydrated || typeof window === "undefined") return;
+    if (enabledFeatures?.customer_facing_display !== true) {
+      if (customerDisplayPublishTimerRef.current !== null) {
+        window.clearTimeout(customerDisplayPublishTimerRef.current);
+        customerDisplayPublishTimerRef.current = null;
+      }
+      customerDisplayPendingRef.current = null;
+      customerDisplayPublishInFlightRef.current = false;
+      return;
+    }
     if (customerDisplayPublishTimerRef.current !== null) {
       window.clearTimeout(customerDisplayPublishTimerRef.current);
     }
@@ -3098,6 +3115,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     activeOrder?.order_no,
     branchName,
     cart,
+    enabledFeatures,
     isHydrated,
     orderType,
     selectedTable?.table_code,
@@ -3524,46 +3542,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           // Ignore storage quota/private mode errors; live data is already applied.
         }
 
-        setTableLoading(true);
+        setTableLoading(false);
         setTableLoadError(null);
-        void fetchJsonWithTimeout<{ data: { zones?: TableZoneItem[]; tables?: DiningTableItem[] } } & ApiErrorBody>(
-          "/api/pos/tables",
-          { cache: "no-store", signal: controller.signal },
-          30000,
-          2
-        )
-          .then((tableResponse) => {
-            if (controller.signal.aborted) return;
-            const serverDurationMs = parseServerDurationMs(tableResponse.response, "x-pos-tables-ms");
-            reportEndpointPerf("/api/pos/tables", serverDurationMs ?? 0, serverDurationMs, "dine_in_tables_bootstrap");
-            if (!tableResponse.response.ok || tableResponse.body.error) {
-              const nextMessage = tableResponse.body.error?.message ?? "Failed to load table layout.";
-              setTableLoadError(nextMessage);
-              throw new Error(nextMessage);
-            }
-            const tables = (tableResponse.body.data?.tables ?? []) as DiningTableItem[];
-            setTableZones((tableResponse.body.data?.zones ?? []) as TableZoneItem[]);
-            setPosTables(tables);
-            setSelectedTable((current) => {
-              if (!current) return null;
-              return tables.find((table) => table.id === current.id) ?? null;
-            });
-            setTableLoadError(null);
-          })
-          .catch((tableError) => {
-            if (controller.signal.aborted) return;
-            markConnectivityFromError(tableError);
-            const nextMessage = tableError instanceof Error ? tableError.message : "Failed to load table layout.";
-            setTableLoadError(nextMessage);
-            if (!hasRenderableDataRef.current) {
-              setError((current) => current ?? nextMessage);
-            }
-          })
-          .finally(() => {
-            if (!controller.signal.aborted) {
-              setTableLoading(false);
-            }
-          });
       } catch (loadError) {
         if (controller.signal.aborted) return;
         markConnectivityFromError(loadError);
@@ -3894,8 +3874,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const receiptStoreAddress = String(activeReceiptStoreProfile?.company_address ?? "").trim();
   const receiptStorePhone = String(activeReceiptStoreProfile?.contact_phone ?? "").trim();
   const receiptBranchLabel = branchName;
-  const receiptStoreLogoPath = String(activeReceiptStoreProfile?.logo_url ?? "").trim() || null;
-  const receiptFallbackLogoPath = "/brand/sst-ipos-logo-new.png";
+  const receiptFallbackLogoPath = "/brand/cpipos-logo.png";
+  const receiptStoreLogoPath = normalizeReceiptLogoPath(activeReceiptStoreProfile?.logo_url);
   const receiptLogoPath = receiptStoreLogoPath ?? receiptFallbackLogoPath;
   const showTableBrowser = quickMode === "dine_in" && tableBrowserOpen;
   const showDeliverySetup = quickMode === "delivery" && !deliveryCatalogOpen;
@@ -6249,8 +6229,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         <div className="posui-cart-empty" aria-label={lang === "th" ? "ตะกร้าว่าง" : "Empty cart"}>
           <Image
             className="posui-cart-empty__logo"
-            src="/brand/sst-ipos-logo-new.png"
-            alt={lang === "th" ? "โลโก้ SST iPOS" : "SST iPOS logo"}
+            src="/brand/cpipos-logo.png"
+            alt={lang === "th" ? "โลโก้ CpIPOS" : "CpIPOS logo"}
             width={640}
             height={240}
             priority
@@ -6506,7 +6486,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     <div class="summary-line grand"><span>${escapeHtml(text.paymentTotalDue)}</span><strong>฿${escapeHtml(formatMoneyPlain(session.total_amount))}</strong></div>
     ${cashSummaryLines}
     <div class="hr"></div>
-    <div class="foot">SST iPOS</div>
+    <div class="foot">CpIPOS</div>
   </main>
 </body>
 </html>`;
@@ -7594,7 +7574,17 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         <section className="posui-print-receipt-root" aria-hidden="true">
           <article className="posui-print-receipt58">
             <header className="posui-print-receipt58__head">
-              <Image src={receiptLogoPath} alt="Receipt logo" className="posui-print-receipt58__logo" width={196} height={78} unoptimized />
+              <Image
+                src={receiptLogoPath}
+                alt="Receipt logo"
+                className="posui-print-receipt58__logo"
+                width={196}
+                height={78}
+                unoptimized
+                onError={(event) => {
+                  event.currentTarget.src = receiptFallbackLogoPath;
+                }}
+              />
               <h1>{receiptStoreName}</h1>
               {receiptStoreAddress ? <p>{receiptStoreAddress}</p> : null}
               {receiptStorePhone ? <p>{receiptStorePhone}</p> : null}
@@ -7681,7 +7671,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
               ) : null}
             </div>
             <div className="posui-print-receipt58__divider" />
-            <p className="posui-print-receipt58__footer">SST iPOS</p>
+            <p className="posui-print-receipt58__footer">CpIPOS</p>
           </article>
         </section>
       ) : null}

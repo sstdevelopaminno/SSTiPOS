@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useEffect, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
 type QuickMode = "home" | "dine_in" | "delivery";
@@ -73,6 +74,29 @@ type TransferVerification = {
 };
 
 type TransferPaymentMode = "manual" | "inet_nops";
+const SYSTEM_RECEIPT_LOGO_PATH = "/brand/cpipos-logo.png";
+
+function ReceiptLogoImage({ src, alt, className }: { src: string; alt: string; className: string }) {
+  const [currentSrc, setCurrentSrc] = useState(src || SYSTEM_RECEIPT_LOGO_PATH);
+
+  useEffect(() => {
+    setCurrentSrc(src || SYSTEM_RECEIPT_LOGO_PATH);
+  }, [src]);
+
+  return (
+    <Image
+      src={currentSrc}
+      alt={alt}
+      className={className}
+      width={196}
+      height={78}
+      unoptimized
+      onError={() => {
+        if (currentSrc !== SYSTEM_RECEIPT_LOGO_PATH) setCurrentSrc(SYSTEM_RECEIPT_LOGO_PATH);
+      }}
+    />
+  );
+}
 
 type Props = {
   text: any;
@@ -580,7 +604,7 @@ export function PosPaymentModals({
             </header>
             <article className="posui-receipt-card-preview" aria-label={text.receiptTitle}>
               <header className="posui-receipt-card-preview__head">
-                <Image src={receiptLogoPath} alt="Receipt logo" className="posui-receipt-card-preview__logo" width={196} height={78} unoptimized />
+                <ReceiptLogoImage src={receiptLogoPath} alt="Receipt logo" className="posui-receipt-card-preview__logo" />
                 <h4>{receiptStoreName}</h4>
                 {receiptStoreAddress ? <p>{receiptStoreAddress}</p> : null}
                 {receiptStorePhone ? <p>{receiptStorePhone}</p> : null}

@@ -208,7 +208,7 @@ h1,p{margin:0;}
     ${line(labels.transfer, money(receipt.summary.transfer_total))}
     ${line(labels.receiptClosingCash, money(receipt.receipt.closing_cash))}
   </section>
-  <p class="brand">SST iPOS</p>
+  <p class="brand">CpIPOS</p>
 </main></body></html>`;
 }
 
@@ -1155,7 +1155,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
               </p>
             </div>
             <div className="posui-print-receipt58__divider" />
-            <p className="posui-print-receipt58__footer">SST iPOS</p>
+            <p className="posui-print-receipt58__footer">CpIPOS</p>
           </article>
         </section>
       ) : null}

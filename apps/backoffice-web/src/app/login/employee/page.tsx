@@ -31,7 +31,7 @@ type PopupState =
   | { type: "loading"; message: string }
   | { type: "error"; message: string };
 
-const AUTH_REQUEST_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 60000 : 15000;
+const AUTH_REQUEST_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 20000 : 15000;
 
 function getCopy(lang: AppLanguage) {
   if (lang === "en") {
@@ -156,7 +156,7 @@ function LoginEmployeePageContent() {
 
     void (async () => {
       try {
-        const response = await fetch("/api/auth/session/context", { cache: "no-store" });
+        const response = await fetchWithTimeout("/api/auth/session/context", { cache: "no-store" });
         const body = (await response.json().catch(() => null)) as SessionContextResponse | null;
         if (!mounted) return;
 
@@ -228,12 +228,12 @@ function LoginEmployeePageContent() {
 
   async function handleBack() {
     setError("");
-    await fetch("/api/auth/session/logout", {
+    await fetchWithTimeout("/api/auth/session/logout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: "switch_employee" }),
       cache: "no-store"
-    }).catch(() => null);
+    }, 5000).catch(() => null);
     router.replace(flow === "multi" ? "/login/branches?flow=multi" : "/login/store");
   }
 

@@ -17,6 +17,7 @@ const getPosApiAuthContext = vi.fn();
 const getSupabaseServiceClient = vi.fn();
 const validateManagerPin = vi.fn();
 const appendAuditLog = vi.fn();
+const requirePosApiFeature = vi.fn(async () => undefined);
 
 vi.mock("@/lib/audit-log", () => ({ appendAuditLog }));
 vi.mock("@/lib/auth-context", () => ({ getAuthContext }));
@@ -24,6 +25,10 @@ vi.mock("@/lib/pos-api-auth", () => ({ getPosApiAuthContext }));
 vi.mock("@/lib/pos-session-guard", () => ({ PosGuardError }));
 vi.mock("@/lib/supabase-admin", () => ({ getSupabaseServiceClient }));
 vi.mock("@/lib/pin-approval", () => ({ validateManagerPin }));
+vi.mock("@/lib/pos-api-feature-guard", () => ({
+  featureGateFail: () => null,
+  requirePosApiFeature
+}));
 
 type QueryResult<T> = {
   data: T;

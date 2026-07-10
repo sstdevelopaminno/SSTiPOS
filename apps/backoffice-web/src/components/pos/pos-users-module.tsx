@@ -537,7 +537,7 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
       <div className={embedded ? "space-y-5" : "mx-auto max-w-[1440px] space-y-5"}>
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-600">SST iPOS</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-600">CpIPOS</p>
             <h1 className="mt-1 text-2xl font-bold tracking-normal text-slate-950">{t.title}</h1>
             {t.subtitle ? <p className="mt-2 max-w-3xl text-sm text-slate-600">{t.subtitle}</p> : null}
             {currentRole !== "owner" ? <p className="mt-2 text-xs font-semibold text-slate-500">{t.accessManager}</p> : null}

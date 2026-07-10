@@ -112,7 +112,7 @@ img{display:block;width:46mm;height:46mm;object-fit:contain;margin:2mm auto}
 </style>
 </head>
 <body>
-<h1>SST iPOS</h1>
+<h1>CpIPOS</h1>
 <p>สแกน QR เพื่อสั่งอาหาร</p>
 <div class="line"></div>
 <p class="table">โต๊ะ ${safeTable}</p>
@@ -325,7 +325,7 @@ export function TableQrOrderModal({
           ) : data ? (
             <>
               <div className="posui-table-qr-ticket">
-                <strong>SST iPOS</strong>
+                <strong>CpIPOS</strong>
                 <span>สแกน QR เพื่อสั่งอาหาร</span>
                 <hr />
                 <b>โต๊ะ {data.table_code}</b>

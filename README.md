@@ -11,19 +11,19 @@ Production-oriented monorepo for a noodle shop and small restaurant POS platform
 ## Repository structure
 
 ```text
-  - apps/![alt text](image-1.png)
-    - backoffice-web/    # Back Office + IT Admin + POS preview + Unified Store/POS login
-    - pos-android/       # Placeholder docs + API contract reference
-  - packages/
-  - shared-types/        # Shared domain types and API payload contracts
-  - pos-domain/          # Business rules and policy guards
-  - ui/                  # Reusable UI primitives
-  - supabase/
-  - migrations/
-  - seeds/
-  - seed.sql
-  - rls-policies.sql
-```
+apps/
+  backoffice-web/    # Back Office + IT Admin + POS preview + Unified Store/POS login
+  pos-android/       # Placeholder docs + API contract reference
+packages/
+  shared-types/      # Shared domain types and API payload contracts
+  pos-domain/        # Business rules and policy guards
+  ui/                # Reusable UI primitives
+supabase/
+  migrations/
+  seeds/
+  seed.sql
+  rls-policies.sql
+```![alt text](image-2.png)
 
 ## Business coverage included
 - POS sales/orders/receipts
@@ -179,6 +179,7 @@ Solo register demo (no branch-selection UI, one cashier device):
 - `POST /api/pos/perf` is non-blocking by design; telemetry write failures should not block POS preview rendering.
 
 ## Key docs
+- `docs/POS-SHIFT-CLOSE-RELIABILITY-2026-07-10.md` (shift continue/close timeout recovery + sidebar logo update)
 - `docs/PROJECT-AUDIT-HANDOFF-2026-06-02.md` (latest project audit + development handoff)
 - `docs/database-schema-plan.md`
 - `docs/rls-policy-plan.md`

@@ -1,6 +1,5 @@
 ﻿"use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { MouseEvent, useEffect, useState, useTransition } from "react";
@@ -181,17 +180,15 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
             collapsed ? "h-8 w-8" : "h-14 w-full"
           }`}
         >
-          <Image
-            src="/brand/sst-ipos-logo-new.png"
-            alt="SST iPOS"
-            fill
-            priority
-            sizes={collapsed ? "32px" : "200px"}
-            className={`${
-              collapsed
-                ? "object-cover object-center"
-                : "object-cover object-center"
-            }`}
+          <span
+            role="img"
+            aria-label="CpIPOS"
+            className="block h-full w-full bg-no-repeat"
+            style={{
+              backgroundImage: "url('/brand/cpipos-logo.png')",
+              backgroundPosition: collapsed ? "center -14px" : "center -30px",
+              backgroundSize: collapsed ? "120px 90px" : "230px 173px"
+            }}
           />
         </div>
       </div>

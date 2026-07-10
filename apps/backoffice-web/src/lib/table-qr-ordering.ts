@@ -218,7 +218,7 @@ export async function resolveTableQrContext(token: string): Promise<QrContext> {
     table_code: table.table_code,
     table_name: table.table_name,
     branch_name: branch?.name?.trim() || "Branch",
-    store_name: store?.display_name?.trim() || store?.name?.trim() || "SST iPOS"
+    store_name: store?.display_name?.trim() || store?.name?.trim() || "CpIPOS"
   };
 }
 

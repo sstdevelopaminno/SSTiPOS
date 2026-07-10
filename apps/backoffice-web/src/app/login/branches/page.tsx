@@ -36,7 +36,7 @@ type PopupState =
   | { type: "loading"; message: string }
   | { type: "error"; message: string };
 
-const AUTH_REQUEST_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 60000 : 15000;
+const AUTH_REQUEST_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 20000 : 15000;
 
 function isRetryableRequestError(error: unknown) {
   if (error instanceof DOMException && error.name === "AbortError") return true;
@@ -220,7 +220,7 @@ function LoginBranchesPageContent() {
   }
 
   async function handleLogout() {
-    await fetch("/api/auth/session/context", { method: "DELETE" }).catch(() => null);
+    await fetchWithTimeout("/api/auth/session/context", { method: "DELETE" }, 5000).catch(() => null);
     clearPreEntryClientCache();
     router.replace("/login/store");
   }

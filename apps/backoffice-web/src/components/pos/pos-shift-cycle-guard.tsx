@@ -25,6 +25,7 @@ type ApiBody = {
 } | null;
 
 const POS_SESSION_EVENT_NAME = "pos-session-current-updated";
+const SHIFT_MUTATION_TIMEOUT_MS = 30_000;
 
 function formatDateTime(value: string, lang: Lang) {
   const d = new Date(value);
@@ -188,7 +189,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode: "switch_branch" })
       },
-      10000
+      15000
     );
     const logoutBody = body as { data?: { redirect_to?: string } | null; error?: { message?: string } | null } | null;
     if (!response.ok) {
@@ -207,7 +208,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ closing_cash: closingCashValue, quick_close: true })
         },
-        12000
+        SHIFT_MUTATION_TIMEOUT_MS
       );
       if (!response.ok) {
         throw new Error(body?.error?.message ?? copy.unknownError);
@@ -229,7 +230,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ opening_cash: 0 })
         },
-        12000
+        SHIFT_MUTATION_TIMEOUT_MS
       );
       if (!response.ok) {
         throw new Error(body?.error?.message ?? copy.unknownError);
@@ -237,6 +238,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
       await loadState();
     } catch (continueError) {
       setError(toErrorMessage(continueError));
+      await loadState();
     } finally {
       setBusy(null);
     }
@@ -256,6 +258,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
       await logoutToBranchSelection();
     } catch (closeError) {
       setError(toErrorMessage(closeError));
+      await loadState();
       setBusy(null);
     }
   }

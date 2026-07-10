@@ -29,7 +29,7 @@ type PopupState =
   | { type: "loading"; message: string }
   | { type: "error"; message: string };
 
-const AUTH_REQUEST_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 60000 : 15000;
+const AUTH_REQUEST_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 20000 : 15000;
 
 function getCopy(lang: AppLanguage) {
   if (lang === "en") {
@@ -235,18 +235,15 @@ export default function LoginStorePage() {
 
         <div className="store-v2-logo-wrap">
           <Image
-            src="/brand/sst-ipos-logo-new.png"
-            alt="SST iPOS Logo"
+            src="/brand/cpipos-logo.png"
+            alt="CpIPOS Logo"
             className="store-v2-logo"
-            width={330}
-            height={160}
-            style={{ height: "auto" }}
+            width={1448}
+            height={1086}
+            style={{ width: "220px", height: "165px", objectFit: "contain" }}
             priority
           />
         </div>
-
-        <div className="store-v2-divider" />
-        <p className="store-v2-step-text">{copy.subtitle}</p>
 
         <form className="store-v2-form" onSubmit={handleSubmit}>
           <label htmlFor="storeCode">{copy.storeCodeLabel}</label>
