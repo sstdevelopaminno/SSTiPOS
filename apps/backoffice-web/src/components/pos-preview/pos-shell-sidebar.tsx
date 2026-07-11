@@ -174,21 +174,16 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
         collapsed ? "md:w-[68px] xl:w-[70px]" : "md:w-[188px] xl:w-[214px]"
       }`}
     >
-      <div className={`${collapsed ? "flex justify-center" : ""}`}>
+      <div className={`pos-shell-sidebar__brand ${collapsed ? "flex justify-center" : ""}`}>
         <div
-          className={`relative overflow-hidden ${
-            collapsed ? "h-8 w-8" : "h-14 w-full"
+          className={`pos-shell-sidebar__logo ${
+            collapsed ? "pos-shell-sidebar__logo--collapsed" : ""
           }`}
         >
           <span
             role="img"
             aria-label="CpIPOS"
-            className="block h-full w-full bg-no-repeat"
-            style={{
-              backgroundImage: "url('/brand/cpipos-logo.png')",
-              backgroundPosition: collapsed ? "center -14px" : "center -30px",
-              backgroundSize: collapsed ? "120px 90px" : "230px 173px"
-            }}
+            className="pos-shell-sidebar__logo-mark"
           />
         </div>
       </div>

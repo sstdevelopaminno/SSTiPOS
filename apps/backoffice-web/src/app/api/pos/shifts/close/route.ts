@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { appendAuditLog } from "@/lib/audit-log";
+import { validateManagerPin } from "@/lib/pin-approval";
+import { resolveShiftCycle } from "@/lib/pos-shift-schedule";
 import {
   PosGuardError,
   getTenantBranchScopeFromSession,
@@ -49,15 +51,47 @@ function isWithinWindow(createdAt: string | null | undefined, openedAt: string, 
   return created.getTime() >= opened.getTime() && created.getTime() <= endAt.getTime();
 }
 
+function shiftRequiresManagerApproval(openedAt: string) {
+  const cycle = resolveShiftCycle(openedAt);
+  if (!cycle) return false;
+  return Date.now() >= cycle.autoCloseAt.getTime();
+}
+
 export async function POST(request: Request) {
   try {
-    const body = (await request.json().catch(() => null)) as { closing_cash?: number | string | null; quick_close?: boolean | null } | null;
+    const body = (await request.json().catch(() => null)) as {
+      closing_cash?: number | string | null;
+      quick_close?: boolean | null;
+      manager_pin?: string | null;
+    } | null;
     const quickClose = body?.quick_close === true;
     const scope = await requirePosSessionForShiftClose();
     requirePermission(scope, "shift:close");
     const { shift } = await requireActiveShift(scope);
     const isStaffRole = scope.session.role !== "owner" && scope.session.role !== "manager" && scope.session.role !== "accountant";
-    if (isStaffRole && shift.opened_by !== scope.session.user_id) {
+
+    const sessionScope = getTenantBranchScopeFromSession(scope);
+    const requiresManagerApproval = shiftRequiresManagerApproval(shift.opened_at);
+    let managerApproval: Awaited<ReturnType<typeof validateManagerPin>> | null = null;
+    if (requiresManagerApproval && scope.session.role !== "owner" && scope.session.role !== "manager") {
+      managerApproval = await validateManagerPin("shift_close_override", String(body?.manager_pin ?? "").trim(), {
+        tenantId: sessionScope.tenantId,
+        branchId: sessionScope.branchId
+      });
+      if (!managerApproval.approved || (managerApproval.approverRole !== "owner" && managerApproval.approverRole !== "manager")) {
+        return NextResponse.json(
+          {
+            data: null,
+            error: {
+              code: "shift_close_manager_approval_required",
+              message: "กะนี้ค้างนานเกินไป ต้องใช้ PIN ผู้จัดการหรือเจ้าของร้านเพื่อปิดกะ"
+            }
+          },
+          { status: 403 }
+        );
+      }
+    }
+    if (isStaffRole && shift.opened_by !== scope.session.user_id && !managerApproval) {
       return NextResponse.json(
         { data: null, error: { code: "shift_close_forbidden", message: "Staff can close only their own shift." } },
         { status: 403 }
@@ -75,11 +109,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const sessionScope = getTenantBranchScopeFromSession(scope);
     const supabase = getSupabaseServiceClient();
     const closedAtIso = new Date().toISOString();
     const closedByDifferentUser = shift.opened_by !== sessionScope.userId;
-    const closeReason = closedByDifferentUser ? "manager_owner_close_for_staff" : "self_close";
+    const closeReason = managerApproval
+      ? "manager_owner_pin_close_overdue_shift"
+      : closedByDifferentUser
+        ? "manager_owner_close_for_staff"
+        : "self_close";
 
     const expectedCash = closingCash ?? 0;
     const actualCash = closingCash ?? 0;
@@ -96,6 +133,9 @@ export async function POST(request: Request) {
           ...(typeof shift === "object" ? { closed_via: "pos_session_gate" } : {}),
           pos_session_id: scope.session.id,
           close_reason: closeReason,
+          manager_approval_required: requiresManagerApproval,
+          manager_approval_by_user_id: managerApproval?.approverUserId ?? null,
+          manager_approval_role: managerApproval?.approverRole ?? null,
           opened_by_user_id: shift.opened_by,
           closed_by_user_id: sessionScope.userId
         }
@@ -144,6 +184,9 @@ export async function POST(request: Request) {
           pos_session_id: scope.session.id,
           quick_close: true,
           close_reason: closeReason,
+          manager_approval_required: requiresManagerApproval,
+          manager_approval_by_user_id: managerApproval?.approverUserId ?? null,
+          manager_approval_role: managerApproval?.approverRole ?? null,
           opened_by_user_id: shift.opened_by,
           closed_by_user_id: sessionScope.userId
         }
@@ -292,6 +335,9 @@ export async function POST(request: Request) {
         closing_cash: closingCash,
         pos_session_id: scope.session.id,
         close_reason: closeReason,
+        manager_approval_required: requiresManagerApproval,
+        manager_approval_by_user_id: managerApproval?.approverUserId ?? null,
+        manager_approval_role: managerApproval?.approverRole ?? null,
         opened_by_user_id: shift.opened_by,
         closed_by_user_id: sessionScope.userId
       }

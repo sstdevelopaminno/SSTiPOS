@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PreEntryShell } from "@/components/pre-entry/pre-entry-shell";
 import { clearPreEntryClientCache, warmRoute } from "@/lib/pre-entry-client-cache";
@@ -37,6 +38,9 @@ type PopupState =
   | { type: "error"; message: string };
 
 const AUTH_REQUEST_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 20000 : 15000;
+const DEVICE_SELECT_REQUEST_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 60000 : 45000;
+const POS_ENTRY_GATE_SKIP_SPLASH_KEY = "pos_skip_entry_gate_overlay_once_v1";
+const SPLASH_LOGO_SRC = "/brand/cpipos-symbol-transparent.png";
 
 function statusLabel(status: DeviceItem["status"]) {
   if (status === "ready") return "พร้อมใช้งาน";
@@ -90,12 +94,12 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, ti
   }
 }
 
-async function fetchJsonWithRetry<T>(input: RequestInfo | URL, init?: RequestInit, attempts = 1) {
+async function fetchJsonWithRetry<T>(input: RequestInfo | URL, init?: RequestInit, attempts = 1, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) {
   let lastError: unknown = null;
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const response = await fetchWithTimeout(input, init);
+      const response = await fetchWithTimeout(input, init, timeoutMs);
       const body = (await response.json().catch(() => null)) as T | null;
       return { response, body };
     } catch (error) {
@@ -177,6 +181,12 @@ function LoginDevicesPageContent() {
   }, [flow, router]);
 
   useEffect(() => {
+    const preload = new window.Image();
+    preload.src = SPLASH_LOGO_SRC;
+    warmRoute(router, "/preview/pos");
+  }, [router]);
+
+  useEffect(() => {
     if (!submitting) return undefined;
 
     const slowTimer = window.setTimeout(() => {
@@ -234,7 +244,8 @@ function LoginDevicesPageContent() {
           force_override: isOverridingDevice
         })
         },
-        2
+        2,
+        DEVICE_SELECT_REQUEST_TIMEOUT_MS
       );
 
       if (!response.ok || !body?.data?.redirect_to) {
@@ -252,14 +263,21 @@ function LoginDevicesPageContent() {
       setPopup({ type: "error", message });
       hasFailure = true;
     } finally {
-      setSubmitting(false);
       if (redirectTo) {
-        setPopup({ type: "none" });
+        setPopup({ type: "loading", message: "กำลังเปิดหน้าระบบขาย..." });
         clearPreEntryClientCache();
+        try {
+          window.sessionStorage.setItem(POS_ENTRY_GATE_SKIP_SPLASH_KEY, "1");
+        } catch {
+          // Continue routing even if browser storage is unavailable.
+        }
         warmRoute(router, redirectTo);
         router.push(redirectTo);
       } else if (!hasFailure) {
+        setSubmitting(false);
         setPopup({ type: "none" });
+      } else {
+        setSubmitting(false);
       }
     }
   }
@@ -364,8 +382,11 @@ function LoginDevicesPageContent() {
           <div className="store-v2-popup-card">
             {popup.type === "loading" ? (
               <>
-                <div className="store-v2-popup-spinner" aria-hidden="true" />
-                <p className="store-v2-popup-title">กำลังเข้าสู่ระบบ</p>
+                <div className="ipos-entry-splash-logo" aria-hidden="true">
+                  <Image src={SPLASH_LOGO_SRC} alt="" width={180} height={180} sizes="180px" priority />
+                </div>
+                <div className="store-v2-popup-spinner ipos-entry-splash-spinner" aria-hidden="true" />
+                <p className="store-v2-popup-title">กำลังเปิดแคช</p>
                 <p className="store-v2-popup-text">{popup.message}</p>
               </>
             ) : (

@@ -15,6 +15,7 @@ type SessionResponse = {
   data?: {
     shift: { id: string; status: string; opened_at: string; closed_at: string | null } | null;
     has_active_shift: boolean;
+    role?: string | null;
   } | null;
   error?: { code?: string; message?: string } | null;
 };
@@ -25,7 +26,7 @@ type ApiBody = {
 } | null;
 
 const POS_SESSION_EVENT_NAME = "pos-session-current-updated";
-const SHIFT_MUTATION_TIMEOUT_MS = 30_000;
+const SHIFT_MUTATION_TIMEOUT_MS = 60_000;
 
 function formatDateTime(value: string, lang: Lang) {
   const d = new Date(value);
@@ -63,8 +64,10 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<ShiftGuardPhase>("on_time");
   const [shift, setShift] = useState<{ id: string; opened_at: string; status: string } | null>(null);
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closingCash, setClosingCash] = useState("");
+  const [managerPin, setManagerPin] = useState("");
   const autoCloseRunRef = useRef<string | null>(null);
   const loadStateInFlightRef = useRef(false);
 
@@ -88,6 +91,9 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
             closingProgress: "กำลังปิดกะและออกจากหน้าขาย...",
             continuingProgress: "กำลังต่อกะและเตรียมหน้าขาย...",
             requestTimeout: "ระบบใช้เวลานานเกินไป กรุณาลองอีกครั้ง",
+            managerApprovalRequired: "กะนี้ค้างนานเกินไป ต้องใช้ PIN ผู้จัดการหรือเจ้าของร้าน",
+            managerPinLabel: "PIN ผู้จัดการ/เจ้าของ",
+            managerPinPlaceholder: "กรอก PIN เพื่ออนุมัติ",
             invalidClosingCash: "กรุณากรอกเงินสดปลายกะให้ถูกต้อง",
             unknownError: "ดำเนินการไม่สำเร็จ",
             opened: "เริ่มกะ",
@@ -110,6 +116,9 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
             closingProgress: "Closing shift and leaving sales screen...",
             continuingProgress: "Continuing shift and preparing sales screen...",
             requestTimeout: "Request took too long. Please try again.",
+            managerApprovalRequired: "This shift is overdue. Manager or owner PIN approval is required.",
+            managerPinLabel: "Manager / owner PIN",
+            managerPinPlaceholder: "Enter approval PIN",
             invalidClosingCash: "Please enter a valid closing cash amount.",
             unknownError: "Unable to complete request.",
             opened: "Opened",
@@ -124,10 +133,12 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
     const activeShift = sessionData?.has_active_shift && sessionData.shift?.status === "open" ? sessionData.shift : null;
     if (!activeShift) {
       setShift(null);
+      setSessionRole(null);
       setPhase("on_time");
       setLoading(false);
       return;
     }
+    setSessionRole(sessionData?.role ?? null);
     setShift({
       id: activeShift.id,
       opened_at: activeShift.opened_at,
@@ -199,14 +210,18 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
   }, [copy.unknownError]);
 
   const closeShift = useCallback(
-    async (closingCashValue: number) => {
+    async (closingCashValue: number, approvalPin = "") => {
       if (!shift) return;
       const { response, body } = await fetchJsonWithTimeout(
         "/api/pos/shifts/close",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ closing_cash: closingCashValue, quick_close: true })
+          body: JSON.stringify({
+            closing_cash: closingCashValue,
+            quick_close: true,
+            manager_pin: approvalPin.trim() || undefined
+          })
         },
         SHIFT_MUTATION_TIMEOUT_MS
       );
@@ -217,12 +232,25 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
     [copy.unknownError, shift]
   );
 
+  const canCloseOverdueShift = sessionRole === "owner" || sessionRole === "manager";
+  const needsManagerApproval = (phase === "urgent" || phase === "auto_close") && !canCloseOverdueShift;
+
+  function getApprovalPinOrFail() {
+    if (!needsManagerApproval) return "";
+    const pin = managerPin.trim();
+    if (pin.length >= 4) return pin;
+    setError(copy.managerApprovalRequired);
+    return null;
+  }
+
   async function handleContinueToNextShift() {
     if (!shift || busy) return;
+    const approvalPin = getApprovalPinOrFail();
+    if (approvalPin === null) return;
     setBusy("continue");
     setError(null);
     try {
-      await closeShift(0);
+      await closeShift(0, approvalPin);
       const { response, body } = await fetchJsonWithTimeout(
         "/api/pos/shifts/open",
         {
@@ -235,6 +263,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
       if (!response.ok) {
         throw new Error(body?.error?.message ?? copy.unknownError);
       }
+      setManagerPin("");
       await loadState();
     } catch (continueError) {
       setError(toErrorMessage(continueError));
@@ -251,10 +280,13 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
       setError(copy.invalidClosingCash);
       return;
     }
+    const approvalPin = getApprovalPinOrFail();
+    if (approvalPin === null) return;
     setBusy("close");
     setError(null);
     try {
-      await closeShift(parsed);
+      await closeShift(parsed, approvalPin);
+      setManagerPin("");
       await logoutToBranchSelection();
     } catch (closeError) {
       setError(toErrorMessage(closeError));
@@ -266,6 +298,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
   useEffect(() => {
     if (!shift || !cycle) return;
     if (phase !== "auto_close") return;
+    if (needsManagerApproval) return;
     if (autoCloseRunRef.current === shift.id) return;
     autoCloseRunRef.current = shift.id;
     setBusy("autoclose");
@@ -276,11 +309,11 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
         setError(toErrorMessage(closeError));
         setBusy(null);
       });
-  }, [closeShift, cycle, logoutToBranchSelection, phase, shift, toErrorMessage]);
+  }, [closeShift, cycle, logoutToBranchSelection, needsManagerApproval, phase, shift, toErrorMessage]);
 
   if (loading || !shift || !cycle || phase === "on_time") return null;
 
-  const forceClose = phase === "urgent" || phase === "auto_close";
+  const forceClose = (phase === "urgent" || phase === "auto_close") && !needsManagerApproval;
   const progressText = busy === "continue" ? copy.continuingProgress : busy ? copy.closingProgress : null;
 
   return (
@@ -307,6 +340,26 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
           {phase === "urgent" ? <p className="mt-1 font-bold text-amber-700">{copy.urgentHint}</p> : null}
           {phase === "auto_close" ? <p className="mt-1 font-bold text-rose-700">{copy.autoClosing}</p> : null}
         </div>
+
+        {needsManagerApproval ? (
+          <label className="mt-3 grid gap-1 text-sm font-semibold text-slate-700">
+            {copy.managerPinLabel}
+            <input
+              type="password"
+              inputMode="numeric"
+              autoComplete="current-password"
+              value={managerPin}
+              disabled={Boolean(busy)}
+              onChange={(event) => {
+                setManagerPin(event.target.value);
+                if (error) setError(null);
+              }}
+              className="h-11 rounded-xl border border-amber-200 bg-amber-50/60 px-3 text-sm font-semibold outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100 disabled:bg-slate-100 disabled:text-slate-500"
+              placeholder={copy.managerPinPlaceholder}
+            />
+            <span className="text-xs font-semibold text-amber-700">{copy.managerApprovalRequired}</span>
+          </label>
+        ) : null}
 
         {progressText ? (
           <div className="mt-3 flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-3 text-sm font-semibold text-blue-800">
@@ -349,6 +402,25 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
               <span className="h-5 w-5 animate-spin rounded-full border-2 border-blue-200 border-t-blue-700" aria-hidden />
               <span>{copy.closingProgress}</span>
             </div>
+          ) : null}
+          {needsManagerApproval ? (
+            <label className="mt-3 grid gap-1 text-sm font-semibold text-slate-700">
+              {copy.managerPinLabel}
+              <input
+                type="password"
+                inputMode="numeric"
+                autoComplete="current-password"
+                value={managerPin}
+                disabled={Boolean(busy)}
+                onChange={(event) => {
+                  setManagerPin(event.target.value);
+                  if (error) setError(null);
+                }}
+                className="h-11 rounded-xl border border-amber-200 bg-amber-50/60 px-3 text-sm font-semibold outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100 disabled:bg-slate-100 disabled:text-slate-500"
+                placeholder={copy.managerPinPlaceholder}
+              />
+              <span className="text-xs font-semibold text-amber-700">{copy.managerApprovalRequired}</span>
+            </label>
           ) : null}
           <label className="mt-3 grid gap-1 text-sm font-semibold text-slate-700">
             {copy.closingCash}

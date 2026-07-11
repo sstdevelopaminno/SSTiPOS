@@ -17,3 +17,10 @@
 - Run TypeScript, ESLint, integration tests, and production build.
 - Manually test both actions after the configured shift window: `Continue shift` must close the prior shift and open/reuse the next shift; `Close shift` must close the shift and return to branch selection.
 - Test a delayed response and confirm the buttons recover with refreshed shift state instead of remaining disabled.
+
+## 2026-07-11 follow-up
+
+- Shift close/open popup requests now allow 60 seconds before the client reports a timeout.
+- Morning and afternoon shifts now move from overdue to urgent after 30 minutes, and to overdue-lock after 45 minutes, matching the night-shift timing model.
+- When a shift is overdue-lock and the current POS session is not owner/manager, the popup requires a manager/owner PIN before continuing or closing the shift.
+- The close-shift API enforces the same manager/owner PIN rule server-side with `shift_close_override`, so the rule is not UI-only.

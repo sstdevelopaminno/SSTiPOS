@@ -22,6 +22,10 @@ function withTime(base: Date, hours: number, minutes: number) {
   return d;
 }
 
+function addMinutes(base: Date, minutes: number) {
+  return new Date(base.getTime() + minutes * 60 * 1000);
+}
+
 export function resolveShiftCycle(openedAtRaw: string | Date): ShiftCycle | null {
   const openedAt = openedAtRaw instanceof Date ? openedAtRaw : new Date(openedAtRaw);
   if (Number.isNaN(openedAt.valueOf())) return null;
@@ -35,8 +39,8 @@ export function resolveShiftCycle(openedAtRaw: string | Date): ShiftCycle | null
       slot: "morning",
       openedAt,
       endAt,
-      warningAt: endAt,
-      autoCloseAt: endAt,
+      warningAt: addMinutes(endAt, 30),
+      autoCloseAt: addMinutes(endAt, 45),
       nextSlot: "afternoon"
     };
   }
@@ -47,8 +51,8 @@ export function resolveShiftCycle(openedAtRaw: string | Date): ShiftCycle | null
       slot: "afternoon",
       openedAt,
       endAt,
-      warningAt: endAt,
-      autoCloseAt: endAt,
+      warningAt: addMinutes(endAt, 30),
+      autoCloseAt: addMinutes(endAt, 45),
       nextSlot: "night"
     };
   }
@@ -70,7 +74,6 @@ export function resolveShiftCycle(openedAtRaw: string | Date): ShiftCycle | null
 
 export function resolveShiftGuardPhase(cycle: ShiftCycle, now = new Date()): ShiftGuardPhase {
   if (now < cycle.endAt) return "on_time";
-  if (cycle.slot !== "night") return "overdue";
   if (now < cycle.warningAt) return "overdue";
   if (now < cycle.autoCloseAt) return "urgent";
   return "auto_close";

@@ -636,6 +636,37 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
+.pos-shell-sidebar__brand {
+  min-height: 64px;
+}
+
+.pos-shell-sidebar__logo {
+  height: 64px;
+  width: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+.pos-shell-sidebar__logo-mark {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background-image: url("/brand/cpipos-symbol-sidebar.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: auto 68px;
+  filter: drop-shadow(0 8px 18px rgba(14, 165, 233, 0.25));
+}
+
+.pos-shell-sidebar__logo--collapsed {
+  height: 40px;
+  width: 40px;
+}
+
+.pos-shell-sidebar__logo--collapsed .pos-shell-sidebar__logo-mark {
+  background-size: auto 42px;
+}
+
 /* Tablet Landscape zone: 1024 x 768 */
 @media screen and (min-width: 980px) and (max-width: 1100px) and (min-height: 700px) and (max-height: 820px) and (orientation: landscape) {
   .pos-shell {
@@ -8488,6 +8519,40 @@ a {
   justify-items: center;
   text-align: center;
   padding: 18px 16px;
+}
+
+.ipos-entry-splash-logo {
+  width: min(42vw, 150px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: transparent;
+  animation: ipos-entry-splash-pop 0.42s ease-out both;
+}
+
+.ipos-entry-splash-logo img {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.ipos-entry-splash-spinner {
+  width: 24px;
+  height: 24px;
+  border-width: 2px;
+}
+
+@keyframes ipos-entry-splash-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .store-v2-popup-title {

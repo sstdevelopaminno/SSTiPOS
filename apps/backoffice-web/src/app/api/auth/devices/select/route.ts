@@ -78,6 +78,7 @@ function pickNewestActiveSession(rows: Array<ActiveSessionRow | null | undefined
 }
 
 const POS_SALES_FEATURE_KEYS = ["pos.sales.access", "pos_sales", "core_pos_sales"] as const;
+const DEVICE_SELECT_AUTH_TIMEOUT_MS = 30000;
 
 function isMissingBranchFeatureOverrideError(error: { code?: string | null; message?: string | null } | null | undefined) {
   if (!error) return false;
@@ -185,7 +186,8 @@ export async function POST(request: Request) {
           userId: flow.userId
         })
       ]),
-      "device_select_core_lookup_timeout"
+      "device_select_core_lookup_timeout",
+      DEVICE_SELECT_AUTH_TIMEOUT_MS
     );
 
     if (!posSalesEnabled) {
@@ -223,7 +225,8 @@ export async function POST(request: Request) {
         .eq("branch_id", flow.branchId)
         .eq("user_id", employee.userId)
         .maybeSingle<UserDeviceScopeRow>(),
-      "device_scope_lookup_timeout"
+      "device_scope_lookup_timeout",
+      DEVICE_SELECT_AUTH_TIMEOUT_MS
     );
 
     const [activeSessionById, activeSessionByCode] = await withAuthTimeout(
@@ -251,7 +254,8 @@ export async function POST(request: Request) {
           .limit(1)
           .maybeSingle<ActiveSessionRow>()
       ]),
-      "device_active_session_lookup_timeout"
+      "device_active_session_lookup_timeout",
+      DEVICE_SELECT_AUTH_TIMEOUT_MS
     );
 
     if (activeSessionById.error || activeSessionByCode.error) {
@@ -289,7 +293,8 @@ export async function POST(request: Request) {
               .eq("status", "active")
               .eq("device_code", selectedDeviceCode)
           ]),
-          "device_session_revoke_timeout"
+          "device_session_revoke_timeout",
+          DEVICE_SELECT_AUTH_TIMEOUT_MS
         );
 
         if (revokeByDeviceId.error || revokeByDeviceCode.error) {
@@ -330,7 +335,8 @@ export async function POST(request: Request) {
         })
         .select("id")
         .single<{ id: string }>(),
-      "device_context_create_timeout"
+      "device_context_create_timeout",
+      DEVICE_SELECT_AUTH_TIMEOUT_MS
     );
 
     if (contextResult.error || !contextResult.data?.id) {
@@ -359,7 +365,8 @@ export async function POST(request: Request) {
           force_override_requested: forceOverride
         }
       }),
-      "device_session_create_timeout"
+      "device_session_create_timeout",
+      DEVICE_SELECT_AUTH_TIMEOUT_MS
     );
 
     if (!sessionCreated.ok) {
