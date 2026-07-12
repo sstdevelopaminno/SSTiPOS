@@ -64,7 +64,6 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<ShiftGuardPhase>("on_time");
   const [shift, setShift] = useState<{ id: string; opened_at: string; status: string } | null>(null);
-  const [sessionRole, setSessionRole] = useState<string | null>(null);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closingCash, setClosingCash] = useState("");
   const [managerPin, setManagerPin] = useState("");
@@ -116,7 +115,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
             closingProgress: "Closing shift and leaving sales screen...",
             continuingProgress: "Continuing shift and preparing sales screen...",
             requestTimeout: "Request took too long. Please try again.",
-            managerApprovalRequired: "This shift is overdue. Manager or owner PIN approval is required.",
+            managerApprovalRequired: "This overdue shift can be closed automatically without manager approval.",
             managerPinLabel: "Manager / owner PIN",
             managerPinPlaceholder: "Enter approval PIN",
             invalidClosingCash: "Please enter a valid closing cash amount.",
@@ -133,12 +132,10 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
     const activeShift = sessionData?.has_active_shift && sessionData.shift?.status === "open" ? sessionData.shift : null;
     if (!activeShift) {
       setShift(null);
-      setSessionRole(null);
       setPhase("on_time");
       setLoading(false);
       return;
     }
-    setSessionRole(sessionData?.role ?? null);
     setShift({
       id: activeShift.id,
       opened_at: activeShift.opened_at,
@@ -210,7 +207,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
   }, [copy.unknownError]);
 
   const closeShift = useCallback(
-    async (closingCashValue: number, approvalPin = "") => {
+    async (closingCashValue: number | null, approvalPin = "") => {
       if (!shift) return;
       const { response, body } = await fetchJsonWithTimeout(
         "/api/pos/shifts/close",
@@ -218,7 +215,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            closing_cash: closingCashValue,
+            closing_cash: closingCashValue ?? undefined,
             quick_close: true,
             manager_pin: approvalPin.trim() || undefined
           })
@@ -232,8 +229,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
     [copy.unknownError, shift]
   );
 
-  const canCloseOverdueShift = sessionRole === "owner" || sessionRole === "manager";
-  const needsManagerApproval = (phase === "urgent" || phase === "auto_close") && !canCloseOverdueShift;
+  const needsManagerApproval = false;
 
   function getApprovalPinOrFail() {
     if (!needsManagerApproval) return "";
@@ -250,7 +246,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
     setBusy("continue");
     setError(null);
     try {
-      await closeShift(0, approvalPin);
+      await closeShift(null, approvalPin);
       const { response, body } = await fetchJsonWithTimeout(
         "/api/pos/shifts/open",
         {
@@ -303,7 +299,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
     autoCloseRunRef.current = shift.id;
     setBusy("autoclose");
     setError(null);
-    void closeShift(0)
+    void closeShift(null)
       .then(() => logoutToBranchSelection())
       .catch((closeError) => {
         setError(toErrorMessage(closeError));

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { appendAuditLog } from "@/lib/audit-log";
-import { validateManagerPin } from "@/lib/pin-approval";
 import { resolveShiftCycle } from "@/lib/pos-shift-schedule";
 import {
   PosGuardError,
@@ -71,27 +70,8 @@ export async function POST(request: Request) {
     const isStaffRole = scope.session.role !== "owner" && scope.session.role !== "manager" && scope.session.role !== "accountant";
 
     const sessionScope = getTenantBranchScopeFromSession(scope);
-    const requiresManagerApproval = shiftRequiresManagerApproval(shift.opened_at);
-    let managerApproval: Awaited<ReturnType<typeof validateManagerPin>> | null = null;
-    if (requiresManagerApproval && scope.session.role !== "owner" && scope.session.role !== "manager") {
-      managerApproval = await validateManagerPin("shift_close_override", String(body?.manager_pin ?? "").trim(), {
-        tenantId: sessionScope.tenantId,
-        branchId: sessionScope.branchId
-      });
-      if (!managerApproval.approved || (managerApproval.approverRole !== "owner" && managerApproval.approverRole !== "manager")) {
-        return NextResponse.json(
-          {
-            data: null,
-            error: {
-              code: "shift_close_manager_approval_required",
-              message: "กะนี้ค้างนานเกินไป ต้องใช้ PIN ผู้จัดการหรือเจ้าของร้านเพื่อปิดกะ"
-            }
-          },
-          { status: 403 }
-        );
-      }
-    }
-    if (isStaffRole && shift.opened_by !== scope.session.user_id && !managerApproval) {
+    const overdueAutoClose = shiftRequiresManagerApproval(shift.opened_at);
+    if (isStaffRole && shift.opened_by !== scope.session.user_id) {
       return NextResponse.json(
         { data: null, error: { code: "shift_close_forbidden", message: "Staff can close only their own shift." } },
         { status: 403 }
@@ -112,14 +92,15 @@ export async function POST(request: Request) {
     const supabase = getSupabaseServiceClient();
     const closedAtIso = new Date().toISOString();
     const closedByDifferentUser = shift.opened_by !== sessionScope.userId;
-    const closeReason = managerApproval
-      ? "manager_owner_pin_close_overdue_shift"
+    const autoCloseWithoutCashCount = overdueAutoClose && closingCash === null;
+    const closeReason = autoCloseWithoutCashCount
+      ? "system_auto_close_overdue_shift"
       : closedByDifferentUser
         ? "manager_owner_close_for_staff"
         : "self_close";
 
-    const expectedCash = closingCash ?? 0;
-    const actualCash = closingCash ?? 0;
+    const expectedCash = autoCloseWithoutCashCount ? null : closingCash ?? 0;
+    const actualCash = autoCloseWithoutCashCount ? null : closingCash ?? 0;
     const { error: closeError } = await supabase
       .from("shifts")
       .update({
@@ -133,9 +114,11 @@ export async function POST(request: Request) {
           ...(typeof shift === "object" ? { closed_via: "pos_session_gate" } : {}),
           pos_session_id: scope.session.id,
           close_reason: closeReason,
-          manager_approval_required: requiresManagerApproval,
-          manager_approval_by_user_id: managerApproval?.approverUserId ?? null,
-          manager_approval_role: managerApproval?.approverRole ?? null,
+          overdue_auto_close: overdueAutoClose,
+          cash_count_required: !autoCloseWithoutCashCount,
+          auto_close_uses_sales_total: autoCloseWithoutCashCount,
+          manager_approval_required: false,
+          manager_approval_removed_reason: overdueAutoClose ? "overdue_shift_can_close_without_manager_pin" : null,
           opened_by_user_id: shift.opened_by,
           closed_by_user_id: sessionScope.userId
         }
@@ -184,9 +167,10 @@ export async function POST(request: Request) {
           pos_session_id: scope.session.id,
           quick_close: true,
           close_reason: closeReason,
-          manager_approval_required: requiresManagerApproval,
-          manager_approval_by_user_id: managerApproval?.approverUserId ?? null,
-          manager_approval_role: managerApproval?.approverRole ?? null,
+          overdue_auto_close: overdueAutoClose,
+          cash_count_required: !autoCloseWithoutCashCount,
+          auto_close_uses_sales_total: autoCloseWithoutCashCount,
+          manager_approval_required: false,
           opened_by_user_id: shift.opened_by,
           closed_by_user_id: sessionScope.userId
         }
@@ -335,9 +319,10 @@ export async function POST(request: Request) {
         closing_cash: closingCash,
         pos_session_id: scope.session.id,
         close_reason: closeReason,
-        manager_approval_required: requiresManagerApproval,
-        manager_approval_by_user_id: managerApproval?.approverUserId ?? null,
-        manager_approval_role: managerApproval?.approverRole ?? null,
+        overdue_auto_close: overdueAutoClose,
+        cash_count_required: !autoCloseWithoutCashCount,
+        auto_close_uses_sales_total: autoCloseWithoutCashCount,
+        manager_approval_required: false,
         opened_by_user_id: shift.opened_by,
         closed_by_user_id: sessionScope.userId
       }
@@ -364,8 +349,9 @@ export async function POST(request: Request) {
           opened_at: shift.opened_at,
           opening_cash: openingCashValue,
           closing_cash: closingCash ?? 0,
-          expected_cash: expectedCash,
-          actual_cash: actualCash
+          expected_cash: expectedCash ?? openingCashValue + cashTotal,
+          actual_cash: actualCash,
+          auto_closed_without_cash_count: autoCloseWithoutCashCount
         }
       },
       error: null

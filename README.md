@@ -95,7 +95,7 @@ Implemented in domain logic + SQL triggers:
 - Staff cannot self-cancel bills
 - Bill cancellation requires manager/owner PIN approval
 - Stock adjustment requires manager/owner PIN approval
-- Shift close with unpaid dine-in bills or cash mismatch requires manager/owner override
+- Normal shift close with unpaid dine-in bills or cash mismatch still requires manager/owner override. Overdue auto-close no longer requires manager/owner PIN; it closes from system sales totals without a manual cash count.
 - Recipe-based stock deduction hook (`app.consume_ingredient`) with stock movements
 
 ## Setup
@@ -522,7 +522,7 @@ Use this section as the current source of truth before changing the Payment Sett
 - Manager and owner users can enter an in-use cashier device for emergency takeover. The old active device session is revoked when the in-use session belongs to another user.
 - Takeover creates a new POS session for the manager/owner, so new sales orders continue to use the current session user as `created_by`.
 - The device selection UI allows a staff user to pick their own in-use device, but disables in-use devices owned by another staff user unless the current user has manager/owner override permission.
-- Shift close now records `closed_by` as the current session user. If a manager/owner closes a staff user's shift, shift/audit metadata records `manager_owner_close_for_staff` with opened-by and closed-by user ids.
+- Shift close now records `closed_by` as the current session user. If a manager/owner closes a staff user's shift, shift/audit metadata records `manager_owner_close_for_staff` with opened-by and closed-by user ids. If a staff-owned shift is overdue, the POS can auto-close it without manager/owner PIN, leaves `closing_cash`/`actual_cash` empty, and records `system_auto_close_overdue_shift` metadata for audit/history review.
 
 ### Files/routes/components affected
 - Device selection UI: `apps/backoffice-web/src/app/login/devices/page.tsx`.
@@ -534,7 +534,7 @@ Use this section as the current source of truth before changing the Payment Sett
 - Staff A may recover into Staff A's same in-use device after a login interruption while the shift is still open.
 - Staff B must choose another ready cashier device when Staff A still owns the selected device session. This avoids mixing staff device ownership across current/next shifts.
 - Manager/owner takeover is intentionally allowed for break/emergency coverage and should attribute subsequent sales to the manager/owner session, not the previous staff session.
-- If Staff A leaves without closing the shift, manager/owner can enter the device and close the shift; the close action is attributed to the manager/owner while metadata keeps the original shift opener.
+- If Staff A leaves without closing the shift until the overdue auto-close window, Staff A can close/continue without waiting for manager/owner. The close uses recorded sales/payment totals, does not require manual cash count, and is visible later in shift history/audit metadata.
 - Shift and order calculation logic was not changed; this rule changes only who may open a device session and which session owns subsequent orders.
 - Device in-use errors should explain that staff must choose another device or ask a manager/owner to enter instead.
 
