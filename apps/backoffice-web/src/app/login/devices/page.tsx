@@ -271,8 +271,7 @@ function LoginDevicesPageContent() {
         } catch {
           // Continue routing even if browser storage is unavailable.
         }
-        warmRoute(router, redirectTo);
-        router.push(redirectTo);
+        window.location.assign(redirectTo);
       } else if (!hasFailure) {
         setSubmitting(false);
         setPopup({ type: "none" });

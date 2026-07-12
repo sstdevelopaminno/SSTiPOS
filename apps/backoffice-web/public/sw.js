@@ -1,5 +1,14 @@
-const CACHE_NAME = "sstipos-shell-v2";
+const CACHE_NAME = "sstipos-shell-v3";
 const ASSETS_TO_CACHE = ["/", "/manifest.webmanifest", "/brand/sst-ipos-logo-new.png", "/icons/sstipos-icon-192.png", "/icons/sstipos-icon-512.png"];
+
+function shouldBypassCache(url) {
+  return (
+    url.pathname.startsWith("/login") ||
+    url.pathname.startsWith("/preview/pos") ||
+    url.pathname.startsWith("/api/auth") ||
+    url.pathname.startsWith("/api/pos")
+  );
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -34,6 +43,11 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  if (shouldBypassCache(url)) {
+    event.respondWith(fetch(request));
+    return;
+  }
 
   if (request.mode === "navigate") {
     event.respondWith(

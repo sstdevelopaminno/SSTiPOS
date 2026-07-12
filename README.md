@@ -23,7 +23,7 @@ supabase/
   seeds/
   seed.sql
   rls-policies.sql
-```![alt text](image-2.png)
+```
 
 ## Business coverage included
 - POS sales/orders/receipts
@@ -85,6 +85,10 @@ supabase/
 - device list/status/in-use override behavior
 - successful handoff redirects to existing POS route
 - shift gate still applies in POS APIs after login
+
+### Login loop prevention
+- POS pre-entry pages, POS preview pages, and auth/POS APIs must bypass the service worker cache so stale login or session responses cannot send a newly authenticated device back to `/login/store`.
+- After successful device selection, the browser performs a full navigation to the POS route so the server layout reads the newly issued POS session cookies on the first POS render.
 
 ## Important rule enforcement
 Implemented in domain logic + SQL triggers:
