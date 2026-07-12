@@ -7,6 +7,7 @@ Production-oriented monorepo for a noodle shop and small restaurant POS platform
 - Web apps: Next.js 16 App Router + TypeScript
 - Database/Auth: Supabase (PostgreSQL + RLS)
 - Shared contracts: TypeScript packages for Android POS and web modules
+- Local workspace path: E:\SSTiPOS (renamed from E:\POS Preview on 2026-07-12 to match GitHub SSTiPOS)
 
 ## Repository structure
 

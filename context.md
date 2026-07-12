@@ -1,7 +1,9 @@
 # SST iPOS Project Context (Authoritative Handoff)
 
-Last updated: 2026-06-01
-Workspace: `e:\POS Preview`
+Last updated: 2026-07-12
+Workspace: `e:\SSTiPOS`
+
+Local folder rename note (2026-07-12): this checkout was renamed from `e:\POS Preview` to `e:\SSTiPOS` to match the GitHub repository name. Use `e:\SSTiPOS` for future local work.
 
 This file is the primary context handoff for future GPT/Codex runs.
 Read this file before making any code changes.
