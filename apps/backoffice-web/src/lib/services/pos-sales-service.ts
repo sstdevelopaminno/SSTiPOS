@@ -8,7 +8,7 @@ import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 type RpcResult<T> = {
   data: T | null;
-  error: { message: string } | null;
+  error: { code?: string | null; message: string } | null;
 };
 
 type RpcInvoker = <T>(fn: string, params: Record<string, unknown>) => Promise<RpcResult<T>>;
@@ -18,7 +18,7 @@ async function defaultRpcInvoker<T>(fn: string, params: Record<string, unknown>)
   const { data, error } = await supabase.rpc(fn, params as never);
   return {
     data: (data as T | null) ?? null,
-    error: error ? { message: error.message } : null
+    error: error ? { code: error.code, message: error.message } : null
   };
 }
 
@@ -109,6 +109,11 @@ function hasMissingOrderDeliverySnapshotColumnError(message: string): boolean {
   return ORDER_DELIVERY_SNAPSHOT_COLUMNS.some((column) => isMissingColumnError(message, "orders", column));
 }
 
+function isUniqueViolationError(error: { code?: string | null; message?: string | null } | null | undefined) {
+  const message = String(error?.message ?? "").toLowerCase();
+  return error?.code === "23505" || message.includes("duplicate key value") || message.includes("unique constraint");
+}
+
 type PosOrderTxRow = {
   order_id: string;
   order_no: string;
@@ -131,9 +136,25 @@ function buildOrderNoPrefix(orderType: OrderType) {
 }
 
 function buildOrderNo(orderType: OrderType) {
-  const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 17);
+  const datePart = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "2-digit",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date()).replace(/\D/g, "");
   const suffix = crypto.randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
-  return `${buildOrderNoPrefix(orderType)}-${timestamp}-${suffix}`;
+  return `${buildOrderNoPrefix(orderType)}-${datePart}-${suffix}`;
+}
+
+async function nextSharedOrderNo(orderType: OrderType, tenantId: string, branchId: string) {
+  const supabase = getSupabaseServiceClient();
+  const { data, error } = await supabase.rpc("next_pos_order_no", {
+    p_tenant_id: tenantId,
+    p_branch_id: branchId,
+    p_prefix: buildOrderNoPrefix(orderType)
+  });
+  if (error || typeof data !== "string" || !data.trim()) return buildOrderNo(orderType);
+  return data;
 }
 
 const POS_ALLOW_NEGATIVE_STOCK_FALLBACK =
@@ -402,9 +423,10 @@ async function executeCreatePosOrderDirectFallback(args: {
     }>;
   };
   idempotencyKey?: string;
+  orderNo?: string;
   softBypassInsufficientStock?: boolean;
 }) {
-  const { auth, input, idempotencyKey, softBypassInsufficientStock = false } = args;
+  const { auth, input, idempotencyKey, orderNo: providedOrderNo, softBypassInsufficientStock = false } = args;
   if (!auth.tenantId || !auth.branchId) {
     return { ok: false as const, code: "missing_scope", status: 401, message: "Missing tenant/branch scope." };
   }
@@ -532,9 +554,8 @@ async function executeCreatePosOrderDirectFallback(args: {
   }
 
   const orderId = crypto.randomUUID();
-  const orderNo = buildOrderNo(input.order_type);
   const nowIso = new Date().toISOString();
-  const baseOrderInsertPayload = {
+  const buildBaseOrderInsertPayload = (orderNo: string) => ({
     id: orderId,
     tenant_id: auth.tenantId,
     branch_id: auth.branchId,
@@ -568,8 +589,8 @@ async function executeCreatePosOrderDirectFallback(args: {
     },
     status: "queued",
     created_by: auth.userId
-  };
-  const baseOrderInsertPayloadLegacy = {
+  });
+  const buildBaseOrderInsertPayloadLegacy = (orderNo: string) => ({
     id: orderId,
     tenant_id: auth.tenantId,
     branch_id: auth.branchId,
@@ -592,34 +613,47 @@ async function executeCreatePosOrderDirectFallback(args: {
     },
     status: "queued",
     created_by: auth.userId
-  };
-  const orderInsertPayload =
-    supportsRequestId && idempotencyKey
-      ? {
-          ...baseOrderInsertPayload,
-          request_id: idempotencyKey
-        }
-      : baseOrderInsertPayload;
-  let { error: orderInsertError } = await supabase.from("orders").insert(orderInsertPayload);
+  });
 
-  if (orderInsertError && supportsRequestId && isMissingColumnError(orderInsertError.message, "orders", "request_id")) {
-    supportsRequestId = false;
-    ({ error: orderInsertError } = await supabase.from("orders").insert(baseOrderInsertPayload));
-  }
-  if (orderInsertError && hasMissingOrderDeliverySnapshotColumnError(orderInsertError.message)) {
-    const legacyOrderInsertPayload =
+  let orderNo = providedOrderNo ?? await nextSharedOrderNo(input.order_type, auth.tenantId, auth.branchId);
+  let orderInsertError: { code?: string | null; message: string } | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) {
+      orderNo = await nextSharedOrderNo(input.order_type, auth.tenantId, auth.branchId);
+    }
+
+    const baseOrderInsertPayload = buildBaseOrderInsertPayload(orderNo);
+    const baseOrderInsertPayloadLegacy = buildBaseOrderInsertPayloadLegacy(orderNo);
+    const orderInsertPayload =
       supportsRequestId && idempotencyKey
         ? {
-            ...baseOrderInsertPayloadLegacy,
+            ...baseOrderInsertPayload,
             request_id: idempotencyKey
           }
-        : baseOrderInsertPayloadLegacy;
-    ({ error: orderInsertError } = await supabase.from("orders").insert(legacyOrderInsertPayload));
+        : baseOrderInsertPayload;
+    ({ error: orderInsertError } = await supabase.from("orders").insert(orderInsertPayload));
 
     if (orderInsertError && supportsRequestId && isMissingColumnError(orderInsertError.message, "orders", "request_id")) {
       supportsRequestId = false;
-      ({ error: orderInsertError } = await supabase.from("orders").insert(baseOrderInsertPayloadLegacy));
+      ({ error: orderInsertError } = await supabase.from("orders").insert(baseOrderInsertPayload));
     }
+    if (orderInsertError && hasMissingOrderDeliverySnapshotColumnError(orderInsertError.message)) {
+      const legacyOrderInsertPayload =
+        supportsRequestId && idempotencyKey
+          ? {
+              ...baseOrderInsertPayloadLegacy,
+              request_id: idempotencyKey
+            }
+          : baseOrderInsertPayloadLegacy;
+      ({ error: orderInsertError } = await supabase.from("orders").insert(legacyOrderInsertPayload));
+
+      if (orderInsertError && supportsRequestId && isMissingColumnError(orderInsertError.message, "orders", "request_id")) {
+        supportsRequestId = false;
+        ({ error: orderInsertError } = await supabase.from("orders").insert(baseOrderInsertPayloadLegacy));
+      }
+    }
+
+    if (!orderInsertError || providedOrderNo || !isUniqueViolationError(orderInsertError)) break;
   }
 
   if (orderInsertError) {
@@ -919,6 +953,9 @@ export async function executeCreatePosOrderTransaction(args: {
   invokeRpc?: RpcInvoker;
 }) {
   const { auth, input, idempotencyKey, invokeRpc = defaultRpcInvoker } = args;
+  if (!auth.tenantId || !auth.branchId) {
+    return { ok: false as const, code: "missing_scope", status: 401, message: "Missing tenant/branch scope." };
+  }
   if (shouldPreferDirectCreatePath(input.order_type)) {
     return executeCreatePosOrderDirectFallback({
       auth,
@@ -927,43 +964,50 @@ export async function executeCreatePosOrderTransaction(args: {
       softBypassInsufficientStock: shouldSoftBypassInsufficientStock(input.order_type)
     });
   }
+  let sharedOrderNo = await nextSharedOrderNo(input.order_type, auth.tenantId, auth.branchId);
   let data: PosOrderTxRow[] | null = null;
-  let error: { message: string } | null = null;
+  let error: { code?: string | null; message: string } | null = null;
   try {
-    const rpcResult = await withTimeout(
-      invokeRpc<PosOrderTxRow[]>("create_pos_order_tx", {
-        p_tenant_id: auth.tenantId,
-        p_branch_id: auth.branchId,
-        p_shift_id: input.shift_id,
-        p_created_by: auth.userId,
-        p_order_type: input.order_type,
-        p_channel: input.channel,
-        p_table_id: input.table_id ?? null,
-        p_external_order_code: input.external_order_code ?? null,
-        p_customer_name: input.customer_name ?? null,
-        p_notes: input.notes ?? null,
-        p_app_total_amount: input.app_total_amount,
-        p_discount_amount: input.discount_amount ?? 0,
-        p_gp_amount: input.gp_amount ?? 0,
-        p_delivery_pricing_channel: input.delivery_pricing_channel ?? null,
-        p_delivery_app_subtotal: input.delivery_app_subtotal ?? null,
-        p_delivery_commission_rate_pct: input.delivery_commission_rate_pct ?? null,
-        p_delivery_commission_amount: input.delivery_commission_amount ?? null,
-        p_delivery_commission_vat_rate_pct: input.delivery_commission_vat_rate_pct ?? null,
-        p_delivery_commission_vat_amount: input.delivery_commission_vat_amount ?? null,
-        p_delivery_platform_fee_amount: input.delivery_platform_fee_amount ?? null,
-        p_delivery_net_payout_amount: input.delivery_net_payout_amount ?? null,
-        p_delivery_pricing_source_url: input.delivery_pricing_source_url ?? null,
-        p_delivery_pricing_note: input.delivery_pricing_note ?? null,
-        p_items: input.items,
-        p_request_id: idempotencyKey ?? null,
-        p_order_no: null
-      }),
-      POS_TIMEOUT_POLICY.orderCreateMs,
-      "pos_order_tx"
-    );
-    data = rpcResult.data;
-    error = rpcResult.error;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (attempt > 0) {
+        sharedOrderNo = await nextSharedOrderNo(input.order_type, auth.tenantId, auth.branchId);
+      }
+      const rpcResult = await withTimeout(
+        invokeRpc<PosOrderTxRow[]>("create_pos_order_tx", {
+          p_tenant_id: auth.tenantId,
+          p_branch_id: auth.branchId,
+          p_shift_id: input.shift_id,
+          p_created_by: auth.userId,
+          p_order_type: input.order_type,
+          p_channel: input.channel,
+          p_table_id: input.table_id ?? null,
+          p_external_order_code: input.external_order_code ?? null,
+          p_customer_name: input.customer_name ?? null,
+          p_notes: input.notes ?? null,
+          p_app_total_amount: input.app_total_amount,
+          p_discount_amount: input.discount_amount ?? 0,
+          p_gp_amount: input.gp_amount ?? 0,
+          p_delivery_pricing_channel: input.delivery_pricing_channel ?? null,
+          p_delivery_app_subtotal: input.delivery_app_subtotal ?? null,
+          p_delivery_commission_rate_pct: input.delivery_commission_rate_pct ?? null,
+          p_delivery_commission_amount: input.delivery_commission_amount ?? null,
+          p_delivery_commission_vat_rate_pct: input.delivery_commission_vat_rate_pct ?? null,
+          p_delivery_commission_vat_amount: input.delivery_commission_vat_amount ?? null,
+          p_delivery_platform_fee_amount: input.delivery_platform_fee_amount ?? null,
+          p_delivery_net_payout_amount: input.delivery_net_payout_amount ?? null,
+          p_delivery_pricing_source_url: input.delivery_pricing_source_url ?? null,
+          p_delivery_pricing_note: input.delivery_pricing_note ?? null,
+          p_items: input.items,
+          p_request_id: idempotencyKey ?? null,
+          p_order_no: sharedOrderNo
+        }),
+        POS_TIMEOUT_POLICY.orderCreateMs,
+        "pos_order_tx"
+      );
+      data = rpcResult.data;
+      error = rpcResult.error;
+      if (!error || !isUniqueViolationError(error)) break;
+    }
   } catch (rpcTimeoutError) {
     if (rpcTimeoutError instanceof PosTimeoutError) {
       appendPosDeadLetter({

@@ -103,8 +103,8 @@ function buildBillingLock(config: RuntimeNoticeConfig | null): NoticePayload {
     popup: {
       title_th: config?.title_th || "ระบบถูกระงับการใช้งานชั่วคราว",
       title_en: config?.title_en || "Service temporarily suspended",
-      message_th: config?.message_th || "คุณมีค่าบริการ SSTiPOS ที่ครบกำหนดชำระแล้ว กรุณาชำระเพื่อปลดล็อกระบบขาย",
-      message_en: config?.message_en || "Your SSTiPOS subscription payment is overdue. Please complete payment to unlock sales.",
+      message_th: config?.message_th || "คุณมีค่าบริการ CpIPOS ที่ครบกำหนดชำระแล้ว กรุณาชำระเพื่อปลดล็อกระบบขาย",
+      message_en: config?.message_en || "Your CpIPOS subscription payment is overdue. Please complete payment to unlock sales.",
       action_label_th: actionUrl ? config?.action_label_th || "ชำระค่าบริการ" : null,
       action_label_en: actionUrl ? config?.action_label_en || "Pay now" : null,
       action_url: actionUrl,

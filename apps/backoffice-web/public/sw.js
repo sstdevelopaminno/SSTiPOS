@@ -1,5 +1,11 @@
-const CACHE_NAME = "sstipos-shell-v3";
-const ASSETS_TO_CACHE = ["/", "/manifest.webmanifest", "/brand/sst-ipos-logo-new.png", "/icons/sstipos-icon-192.png", "/icons/sstipos-icon-512.png"];
+const CACHE_NAME = "cpipos-shell-v1";
+const ASSETS_TO_CACHE = ["/", "/manifest.webmanifest", "/brand/cpipos-logo.png", "/icons/cpipos-icon-192.png", "/icons/cpipos-icon-512.png", "/icons/cpipos-browser-icon.png"];
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
 
 function shouldBypassCache(url) {
   return (
