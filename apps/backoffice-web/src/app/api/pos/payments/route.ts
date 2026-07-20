@@ -127,8 +127,15 @@ export async function POST(req: Request) {
       response.headers.set("x-pos-payments-ms", String(Date.now() - startedAt));
       return response;
     }
-
     const paymentMethod = body.payment_lines[0]?.method ?? "cash";
+    const paymentTotal = Number(body.payment_lines.reduce((sum, line) => sum + Number(line.amount ?? 0), 0).toFixed(2));
+    const cashReceivedAmount = Number(body.cash_received ?? paymentTotal);
+    if (paymentMethod === "cash" && (!Number.isFinite(cashReceivedAmount) || cashReceivedAmount + 0.009 < paymentTotal)) {
+      const response = fail("cash_received_insufficient", "Cash received must be greater than or equal to the payment amount.", 422);
+      response.headers.set("x-pos-payments-ms", String(Date.now() - startedAt));
+      return response;
+    }
+
     let transferVerification: TransferVerificationRow | null = null;
     let overrideApproval: ApprovalRow | null = null;
     let usedTransferOverride = false;
@@ -239,8 +246,8 @@ export async function POST(req: Request) {
       return response;
     }
 
-    const paidTotal = Number(body.payment_lines.reduce((sum, line) => sum + Number(line.amount ?? 0), 0).toFixed(2));
-    const receivedAmount = Number(body.cash_received ?? paidTotal);
+    const paidTotal = paymentTotal;
+    const receivedAmount = cashReceivedAmount;
     const changeAmount = Number(body.change_amount ?? Math.max(0, receivedAmount - paidTotal));
 
     const { error: orderSnapshotUpdateError } = await supabase

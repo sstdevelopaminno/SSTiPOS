@@ -167,6 +167,10 @@ const POS_FORCE_DIRECT_CREATE_NON_DELIVERY =
   process.env.POS_FORCE_DIRECT_CREATE_NON_DELIVERY === undefined ||
   process.env.POS_FORCE_DIRECT_CREATE_NON_DELIVERY === "1" ||
   process.env.POS_FORCE_DIRECT_CREATE_NON_DELIVERY?.toLowerCase() === "true";
+const POS_FORCE_DIRECT_PAYMENT_COMPLETE =
+  process.env.POS_FORCE_DIRECT_PAYMENT_COMPLETE === undefined ||
+  process.env.POS_FORCE_DIRECT_PAYMENT_COMPLETE === "1" ||
+  process.env.POS_FORCE_DIRECT_PAYMENT_COMPLETE?.toLowerCase() === "true";
 
 function isMissingTableErrorMessage(message: string) {
   const normalized = message.toLowerCase();
@@ -379,6 +383,67 @@ async function deductIngredientStockForOrderFallback(args: {
   return { ok: true as const };
 }
 
+export async function deductIngredientStockForPaidOrderFallback(args: {
+  auth: AuthContext;
+  orderId: string;
+}) {
+  const { auth, orderId } = args;
+  if (!auth.tenantId || !auth.branchId) {
+    return { ok: false as const, code: "missing_scope", status: 401, message: "Missing tenant/branch scope." };
+  }
+
+  const supabase = getSupabaseServiceClient();
+  const { count: existingMovementCount, error: movementCountError } = await supabase
+    .from("stock_movements")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", auth.tenantId)
+    .eq("branch_id", auth.branchId)
+    .eq("movement_type", "sale_deduction")
+    .eq("ref_table", "orders")
+    .eq("ref_id", orderId);
+  if (movementCountError) {
+    return { ok: false as const, code: "stock_movement_query_failed", status: 500, message: movementCountError.message };
+  }
+  if ((existingMovementCount ?? 0) > 0) {
+    return { ok: true as const };
+  }
+
+  const [{ data: orderRow, error: orderError }, { data: itemRows, error: itemError }] = await Promise.all([
+    supabase
+      .from("orders")
+      .select("id,order_type")
+      .eq("tenant_id", auth.tenantId)
+      .eq("branch_id", auth.branchId)
+      .eq("id", orderId)
+      .maybeSingle<{ id: string; order_type: OrderType }>(),
+    supabase
+      .from("order_items")
+      .select("product_id,quantity")
+      .eq("tenant_id", auth.tenantId)
+      .eq("branch_id", auth.branchId)
+      .eq("order_id", orderId)
+  ]);
+  if (orderError) {
+    return { ok: false as const, code: "order_query_failed", status: 500, message: orderError.message };
+  }
+  if (!orderRow) {
+    return { ok: false as const, code: "order_not_found", status: 404, message: "Order is not payable in this branch." };
+  }
+  if (itemError) {
+    return { ok: false as const, code: "order_items_query_failed", status: 500, message: itemError.message };
+  }
+
+  return deductIngredientStockForOrderFallback({
+    auth,
+    orderId,
+    orderType: orderRow.order_type,
+    items: (itemRows ?? []).map((item) => ({
+      product_id: String(item.product_id),
+      quantity: Number(item.quantity)
+    }))
+  });
+}
+
 async function executeCreatePosOrderDirectFallback(args: {
   auth: AuthContext;
   input: {
@@ -416,7 +481,7 @@ async function executeCreatePosOrderDirectFallback(args: {
   orderNo?: string;
   softBypassInsufficientStock?: boolean;
 }) {
-  const { auth, input, idempotencyKey, orderNo: providedOrderNo, softBypassInsufficientStock = false } = args;
+  const { auth, input, idempotencyKey, orderNo: providedOrderNo } = args;
   if (!auth.tenantId || !auth.branchId) {
     return { ok: false as const, code: "missing_scope", status: 401, message: "Missing tenant/branch scope." };
   }
@@ -670,53 +735,7 @@ async function executeCreatePosOrderDirectFallback(args: {
     return { ok: false as const, code: "order_items_insert_failed", status: 500, message: orderItemsInsertError.message };
   }
 
-  const stockDeductionResult = await deductIngredientStockForOrderFallback({
-    auth,
-    orderId,
-    orderType: input.order_type,
-    items: normalizedItemsWithPrice.map((item) => ({ product_id: item.product_id, quantity: item.quantity }))
-  });
-  let stockBypassed = false;
-  if (!stockDeductionResult.ok) {
-    if (softBypassInsufficientStock && stockDeductionResult.code === "insufficient_stock") {
-      stockBypassed = true;
-      appendPosDeadLetter({
-        auth,
-        channel: "order",
-        targetTable: "orders",
-        targetId: orderId,
-        reason: "insufficient_stock_bypassed",
-        metadata: {
-          detail: stockDeductionResult.message,
-          order_type: input.order_type,
-          request_id: idempotencyKey ?? null
-        }
-      });
-      void appendAuditLog({
-        tenantId: auth.tenantId,
-        branchId: auth.branchId,
-        actorUserId: auth.userId,
-        actorRole: auth.branchRole ?? auth.platformRole,
-        action: "pos_order_stock_bypassed",
-        targetTable: "orders",
-        targetId: orderId,
-        metadata: {
-          reason: stockDeductionResult.message,
-          order_type: input.order_type,
-          channel: input.channel
-        }
-      });
-    } else {
-    await supabase.from("order_items").delete().eq("tenant_id", auth.tenantId).eq("branch_id", auth.branchId).eq("order_id", orderId);
-    await supabase.from("orders").delete().eq("tenant_id", auth.tenantId).eq("branch_id", auth.branchId).eq("id", orderId);
-    return {
-      ok: false as const,
-      code: stockDeductionResult.code,
-      status: stockDeductionResult.status,
-      message: stockDeductionResult.message
-    };
-    }
-  }
+  const stockBypassed = false;
 
   if (input.order_type === "dine_in" && input.table_id) {
     await attachOrderToTableSession({
@@ -867,6 +886,17 @@ async function executeCompletePosPaymentDirectFallback(args: {
 
   if (paymentsInsertError) {
     return { ok: false as const, code: "payment_insert_failed", status: 500, message: paymentsInsertError.message };
+  }
+
+  const stockDeductionResult = await deductIngredientStockForPaidOrderFallback({ auth, orderId: input.order_id });
+  if (!stockDeductionResult.ok) {
+    await supabase.from("payments").delete().eq("tenant_id", auth.tenantId).eq("branch_id", auth.branchId).eq("order_id", input.order_id);
+    return {
+      ok: false as const,
+      code: stockDeductionResult.code,
+      status: stockDeductionResult.status,
+      message: stockDeductionResult.message
+    };
   }
 
   const { error: orderUpdateError } = await supabase
@@ -1134,6 +1164,9 @@ export async function executeCompletePosPaymentTransaction(args: {
   invokeRpc?: RpcInvoker;
 }) {
   const { auth, input, requestGroupId, invokeRpc = defaultRpcInvoker } = args;
+  if (POS_FORCE_DIRECT_PAYMENT_COMPLETE) {
+    return executeCompletePosPaymentDirectFallback({ auth, input, requestGroupId });
+  }
   let data: PosPaymentTxRow[] | null = null;
   let error: { message: string } | null = null;
   try {

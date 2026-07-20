@@ -5901,6 +5901,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     const hasEnoughAmount = hasReceivedAmount && received + 0.009 >= cashReviewOrder.total_amount;
     if (!hasReceivedAmount || !hasEnoughAmount) {
       setCashError(text.cashInsufficient);
+      window.alert(text.cashInsufficient);
       return;
     }
     const nextReceiptSession: ReceiptSession = {

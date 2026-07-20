@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
+import type { BranchRole } from "@pos/shared-types";
 import { appendAuditLog } from "@/lib/audit-log";
 import { FeatureGateError, requireTenantFeature } from "@/lib/feature-gate";
 import {
@@ -15,6 +16,7 @@ import {
   normalizePaymentMethod,
   round2
 } from "@/lib/services/pos-sales-mvp-service";
+import { deductIngredientStockForPaidOrderFallback } from "@/lib/services/pos-sales-service";
 import { loadReceiptStoreProfile } from "@/lib/services/store-profile-service";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
@@ -84,9 +86,11 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
     if (!Number.isFinite(amount) || amount <= 0) {
       return NextResponse.json({ data: null, error: { code: "invalid_payment_amount", message: "Payment amount must be greater than zero." } }, { status: 422 });
     }
-    if (Math.abs(amount - dueTotal) > 0.01) {
+    const isCashOverOrExact = method === "cash" && amount + 0.009 >= dueTotal;
+    const isExactNonCash = method !== "cash" && Math.abs(amount - dueTotal) <= 0.01;
+    if (!isCashOverOrExact && !isExactNonCash) {
       return NextResponse.json(
-        { data: null, error: { code: "payment_total_mismatch", message: "Payment amount must equal remaining order due." } },
+        { data: null, error: { code: "payment_total_mismatch", message: "Cash received must be greater than or equal to the remaining order due." } },
         { status: 409 }
       );
     }
@@ -100,7 +104,7 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
       p_payment_lines: [
         {
           method,
-          amount,
+          amount: dueTotal,
           reference_no: String(body?.reference_no ?? "").trim() || null
         }
       ],
@@ -125,7 +129,24 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
     }
 
     const paymentResult = Array.isArray(paymentResultRows) ? paymentResultRows[0] : null;
-    const paidAmount = round2(Number(paymentResult?.total_paid ?? amount));
+    const paidAmount = round2(Number(paymentResult?.total_paid ?? dueTotal));
+
+    const stockDeductionResult = await deductIngredientStockForPaidOrderFallback({
+      auth: {
+        userId: scope.session.user_id,
+        platformRole: "tenant_user",
+        tenantId: scope.session.tenant_id,
+        branchId: scope.session.branch_id,
+        branchRole: scope.session.role as BranchRole
+      },
+      orderId: orderRow.id
+    });
+    if (!stockDeductionResult.ok) {
+      return NextResponse.json(
+        { data: null, error: { code: stockDeductionResult.code, message: stockDeductionResult.message } },
+        { status: stockDeductionResult.status }
+      );
+    }
 
     await supabase
       .from("payments")
