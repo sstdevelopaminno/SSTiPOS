@@ -5,12 +5,14 @@
 - [CI Workflow](../.github/workflows/ci.yml)
 
 ## Deployment
+- [Active Documentation Index](./ACTIVE-DOCS-INDEX.md)
 - [Vercel Deployment Runbook](./vercel-deployment-runbook.md)
 - [Production Environment Checklist](./production-env-checklist.md)
 
 ## Database and Security
 - [Supabase Migration Runbook](./supabase-migration-runbook.md)
 - [RLS Verification Checklist](./rls-verification-checklist.md)
+- Static schema drift preflight: `corepack pnpm schema:drift`
 
 ## Operations
 - [Monitoring and Alerting Runbook](./monitoring-alerting-runbook.md)

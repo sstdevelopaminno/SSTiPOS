@@ -17,6 +17,19 @@ Required evidence:
 - Resolution summary:
 - Retest result:
 
+## A1) Engineering Baseline
+
+Required evidence:
+- Git branch/commit:
+- Node/npm/pnpm versions:
+- `typecheck` result:
+- `test` result:
+- `lint` result:
+- `schema:drift` result:
+- `build` result:
+- Known local cache or permission issues:
+- Evidence link:
+
 ## B) Secret Rotation Evidence
 
 Required evidence:

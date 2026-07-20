@@ -22,6 +22,7 @@
 ## Database
 - [Done] Migrations committed in `supabase/migrations`.
 - [Done] RLS policies present for core tables.
+- [Done] Static schema drift preflight available (`corepack pnpm schema:drift`).
 - [Not done] Formal staged migration rehearsal record for each release.
 - [Must do before go-live] Production backup snapshot before migration.
 

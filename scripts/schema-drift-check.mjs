@@ -1,0 +1,89 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
+const migrationDir = path.resolve("supabase/migrations");
+const seedPath = path.resolve("supabase/seed.sql");
+
+const requiredMigrations = [
+  "202605170001_init_core.sql",
+  "202605170002_rls_policies.sql",
+  "202605180001_stock_engine_hardening.sql",
+  "202605250005_pos_auth_sessions.sql",
+  "202605250007_pos_sales_mvp_scope.sql",
+  "202605250009_subscription_feature_gate_enforcement.sql",
+  "202606020001_pos_login_performance_indexes.sql",
+  "202606020002_shift_open_idempotency.sql",
+  "202606030001_pos_user_profile_settings.sql",
+  "202606040001_pos_settings_store_payment.sql",
+  "202607120001_allow_overdue_shift_auto_close.sql",
+  "202607180002_shared_recipe_stock_deduction.sql",
+  "202607180007_stock_realtime_publication.sql"
+];
+
+const requiredSqlMarkers = [
+  "create table if not exists pos_sessions",
+  "create table if not exists orders",
+  "create table if not exists payments",
+  "create table if not exists shifts",
+  "create table if not exists branch_devices",
+  "create table if not exists user_branch_roles",
+  "create table if not exists pos_user_profiles",
+  "create or replace function app.enforce_shift_close_rules",
+  "create or replace function app.consume_ingredient"
+];
+
+const requiredSeedMarkers = [
+  "NDL-TH-001",
+  "SOLO-TH-001",
+  "insert into products",
+  "insert into dine_in_tables",
+  "insert into user_branch_roles"
+];
+
+function normalizeSql(value) {
+  return value.toLowerCase().replace(/\s+/g, " ");
+}
+
+async function readMigrationBundle(files) {
+  const chunks = await Promise.all(
+    files.map(async (file) => {
+      const content = await fs.readFile(path.join(migrationDir, file), "utf8");
+      return `\n-- ${file}\n${content}`;
+    })
+  );
+  return normalizeSql(chunks.join("\n"));
+}
+
+async function main() {
+  const entries = await fs.readdir(migrationDir);
+  const missingMigrations = requiredMigrations.filter((file) => !entries.includes(file));
+  const migrationBundle = await readMigrationBundle(entries.filter((file) => file.endsWith(".sql")).sort());
+  const seed = await fs.readFile(seedPath, "utf8");
+  const normalizedSeed = normalizeSql(seed);
+
+  const missingSqlMarkers = requiredSqlMarkers.filter((marker) => !migrationBundle.includes(marker));
+  const missingSeedMarkers = requiredSeedMarkers.filter((marker) => !normalizedSeed.includes(marker.toLowerCase()));
+  const failures = [
+    ...missingMigrations.map((file) => `missing migration: ${file}`),
+    ...missingSqlMarkers.map((marker) => `missing SQL marker: ${marker}`),
+    ...missingSeedMarkers.map((marker) => `missing seed marker: ${marker}`)
+  ];
+
+  if (failures.length > 0) {
+    console.error("Schema drift preflight failed.");
+    for (const failure of failures) console.error(`- ${failure}`);
+    process.exit(1);
+  }
+
+  console.log("Schema drift preflight passed.");
+  console.log(`- migrations scanned: ${entries.filter((file) => file.endsWith(".sql")).length}`);
+  console.log(`- required migrations: ${requiredMigrations.length}`);
+  console.log(`- required SQL markers: ${requiredSqlMarkers.length}`);
+  console.log(`- required seed markers: ${requiredSeedMarkers.length}`);
+}
+
+main().catch((error) => {
+  console.error("Schema drift preflight crashed.");
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});

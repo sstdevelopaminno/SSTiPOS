@@ -1,0 +1,65 @@
+# Active Documentation Index
+
+Last reviewed: 2026-07-20
+
+Use this page as the first stop before new development. It separates active implementation guidance from historical QR-era material.
+
+## Current Runtime
+
+- App: `apps/backoffice-web`
+- Login flow: `/login/store -> /login/branches|employee -> /login/devices -> /preview/pos`
+- Database: Supabase migrations in `supabase/migrations`
+- Verification baseline: run `typecheck`, `test`, `lint`, and `build` before closing implementation work.
+
+## Read First
+
+- [Repository README](../README.md)
+- [Authoritative Context Handoff](../context.md)
+- [Project Audit Handoff](./PROJECT-AUDIT-HANDOFF-2026-06-02.md)
+- [System Stability Audit](./system-stability-audit-2026-06-04.md)
+- [Definition of Done](./definition-of-done.md)
+
+## Active Feature Areas
+
+- [POS UI System](./POS-UI-SYSTEM.md)
+- [POS Sales Flow](./POS-SALES-FLOW.md)
+- [POS Shift Close Reliability](./POS-SHIFT-CLOSE-RELIABILITY-2026-07-10.md)
+- [POS Login Device Splash](./POS-LOGIN-DEVICE-SPLASH-2026-07-11.md)
+- [Stock Engine Architecture](./STOCK-ENGINE-ARCHITECTURE.md)
+- [Table Management Floor Plan](./TABLE-MANAGEMENT-FLOOR-PLAN.md)
+- [INET NOPS QR Operations Manual](./INET-NOPS-QR-OPERATIONS-MANUAL.md)
+
+## Operations And Go-live
+
+- [Production Deployment and Operations Index](./PRODUCTION-DEPLOYMENT-OPERATIONS-INDEX.md)
+- [Production Readiness Checklist](./production-readiness-checklist.md)
+- [Production Environment Checklist](./production-env-checklist.md)
+- [Go-live Evidence Checklist](./go-live-evidence-checklist.md)
+- [Supabase Migration Runbook](./supabase-migration-runbook.md)
+- [RLS Verification Checklist](./rls-verification-checklist.md)
+- [Monitoring and Alerting Runbook](./monitoring-alerting-runbook.md)
+- [Incident Runbook](./incident-runbook.md)
+
+## Archived Or Historical
+
+Do not use archived QR login docs as current implementation guidance. The active flow is store code, branch, employee, device, then POS.
+
+- [QR Login Decommission Record](./ARCHIVE-QR-DECOMMISSION-2026-05-31.md)
+- `docs/AI-HANDOFF-QRSCAN-REGISTER-2026-05-28.md`
+- `docs/AI-HANDOFF-I18N-QRSCAN-2026-05-28.md`
+- Older audit docs that mention `/scan`, `/qr-scan`, `/login/qr-*`, or `/api/auth/qr/*`
+
+## Preflight Commands
+
+When PATH is missing Node/Git, use the installed Windows paths:
+
+```powershell
+$env:Path="C:\Program Files\nodejs;C:\Program Files\Git\cmd;$env:Path"
+corepack pnpm --filter backoffice-web typecheck
+corepack pnpm --filter backoffice-web exec vitest run --cache false
+corepack pnpm --filter backoffice-web exec eslint src scripts tests next.config.ts eslint.config.mjs --cache --cache-location ..\..\.tmp-eslintcache --no-error-on-unmatched-pattern
+corepack pnpm schema:drift
+corepack pnpm --filter backoffice-web build
+```
+
+If build or lint fails with `EPERM` against `.next`, `.eslintcache`, or `node_modules/.vite`, clear the locked cache from an elevated/local user shell or use a clean checkout before treating it as a code failure.

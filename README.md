@@ -184,6 +184,7 @@ Solo register demo (no branch-selection UI, one cashier device):
 - `POST /api/pos/perf` is non-blocking by design; telemetry write failures should not block POS preview rendering.
 
 ## Key docs
+- `docs/ACTIVE-DOCS-INDEX.md` (start here for active vs archived documentation)
 - `docs/POS-SHIFT-CLOSE-RELIABILITY-2026-07-10.md` (shift continue/close timeout recovery + sidebar logo update)
 - `docs/PROJECT-AUDIT-HANDOFF-2026-06-02.md` (latest project audit + development handoff)
 - `docs/database-schema-plan.md`
@@ -200,6 +201,19 @@ Solo register demo (no branch-selection UI, one cashier device):
 - `docs/ARCHIVE-QR-DECOMMISSION-2026-05-31.md` (legacy QR reference archive)
 
 Note: docs marked as archived are historical reference only. Use the current `/login/store -> branch/employee -> devices -> /preview/pos` flow for new development.
+
+## Development preflight
+
+If PowerShell cannot find Node, pnpm, or Git, the tools may still be installed at the standard Windows paths:
+
+```powershell
+$env:Path="C:\Program Files\nodejs;C:\Program Files\Git\cmd;$env:Path"
+corepack pnpm --filter backoffice-web typecheck
+corepack pnpm --filter backoffice-web exec vitest run --cache false
+corepack pnpm --filter backoffice-web exec eslint src scripts tests next.config.ts eslint.config.mjs --cache --cache-location ..\..\.tmp-eslintcache --no-error-on-unmatched-pattern
+corepack pnpm schema:drift
+corepack pnpm --filter backoffice-web build
+```
 
 ## API contract handoff for Android
 - `GET /api/contracts`
