@@ -215,6 +215,15 @@ corepack pnpm schema:drift
 corepack pnpm --filter backoffice-web build
 ```
 
+During active development, package feature locks can be bypassed with:
+
+```env
+NEXT_PUBLIC_POS_DEV_UNLOCK_ALL_FEATURES=true
+POS_DEV_UNLOCK_ALL_FEATURES=true
+```
+
+Set both values to `false` before production package-gate verification.
+
 ## API contract handoff for Android
 - `GET /api/contracts`
 - Shared TS contracts in `packages/shared-types`

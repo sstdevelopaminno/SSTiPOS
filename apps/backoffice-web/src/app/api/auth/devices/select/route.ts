@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
+import { isFeatureUnlockEnabled } from "@/lib/feature-unlock";
 import { getRequestMeta, writeAuditLog, writeLoginAttempt } from "@/lib/server/audit-log";
 import { AuthTimeoutError, withAuthTimeout } from "@/lib/server/auth-timeout";
 import { hasBranchFeatureSafe } from "@/lib/server/feature-gate-safe";
@@ -118,6 +119,7 @@ async function readBranchFeatureOverride(
 }
 
 async function hasAnyPosSalesFeature(supabase: SupabaseServiceClient, tenantId: string, branchId: string) {
+  if (isFeatureUnlockEnabled()) return true;
   for (const featureKey of POS_SALES_FEATURE_KEYS) {
     const directOverrideEnabled = await readBranchFeatureOverride(supabase, tenantId, branchId, featureKey);
     if (directOverrideEnabled === true) return true;

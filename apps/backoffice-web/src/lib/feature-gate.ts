@@ -1,5 +1,6 @@
 import "server-only";
 
+import { isFeatureUnlockEnabled } from "@/lib/feature-unlock";
 import { getSupabaseServiceClient } from "@/lib/supabase-admin";
 
 export type QuotaResourceType = "branches" | "devices" | "users";
@@ -147,6 +148,7 @@ async function getLatestContract(tenantId: string): Promise<ContractRow | null> 
 export async function hasBranchFeature(tenantId: string, branchId: string | null, featureKey: string): Promise<boolean> {
   const featureCode = String(featureKey).trim();
   if (!tenantId || !featureCode) return false;
+  if (isFeatureUnlockEnabled()) return true;
   const normalizedBranchId = branchId || "tenant";
   const cacheKey = `${tenantId}:${normalizedBranchId}:${featureCode}`;
   const cached = readFeatureDecisionCache(cacheKey);
@@ -215,6 +217,7 @@ export async function hasTenantFeature(tenantId: string, featureKey: string): Pr
 export async function isFeatureKeyConfigured(featureKey: string): Promise<boolean> {
   const normalized = String(featureKey ?? "").trim();
   if (!normalized) return false;
+  if (isFeatureUnlockEnabled()) return true;
 
   const supabase = getSupabaseServiceClient();
   const [{ count: catalogCount, error: catalogError }, { count: planCount, error: planError }, { count: overrideCount, error: overrideError }] = await Promise.all([
@@ -289,6 +292,7 @@ export async function getTenantLimits(tenantId: string): Promise<TenantLimits> {
 
 export async function enforceQuota(tenantId: string, resourceType: QuotaResourceType, branchId?: string | null): Promise<TenantLimits> {
   const limits = await getTenantLimits(tenantId);
+  if (isFeatureUnlockEnabled()) return limits;
 
   if (limits.contractStatus && limits.contractStatus !== "active" && limits.contractStatus !== "trial") {
     throw new FeatureGateError("contract_suspended", "Tenant contract is not active for provisioning actions.", 403);

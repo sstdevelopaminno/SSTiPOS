@@ -1,5 +1,6 @@
 import "server-only";
 
+import { isFeatureUnlockEnabled } from "@/lib/feature-unlock";
 import { FeatureGateError, hasBranchFeature } from "@/lib/server/feature-gate";
 
 function isMissingFeatureSchemaError(error: unknown) {
@@ -14,6 +15,7 @@ function isMissingFeatureSchemaError(error: unknown) {
 }
 
 export async function hasBranchFeatureSafe(tenantId: string, branchId: string, featureKey: string): Promise<boolean> {
+  if (isFeatureUnlockEnabled()) return true;
   try {
     return await hasBranchFeature(tenantId, branchId, featureKey);
   } catch (error) {

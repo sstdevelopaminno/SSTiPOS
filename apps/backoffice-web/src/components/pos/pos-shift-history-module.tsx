@@ -342,7 +342,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
             popupDescOpen: "Enter opening cash before opening this shift.",
             popupDescClose: "Enter closing cash before closing this shift.",
             popupDescActive: "Review current active shift status.",
-            popupDescReceipt: "Bluetooth printer must report success before branch-switch is allowed.",
+            popupDescReceipt: "Shift is closed. You can print via Bluetooth or go to branch selection now.",
             confirm: "Confirm",
             cancel: "Cancel",
             close: "Close",
@@ -350,7 +350,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
             finishAndExit: "Finish and go to branch selection",
             printing: "Printing...",
             printReceipt: "Print via Bluetooth",
-            printRequiredHint: "Bluetooth print must be successful before leaving this page.",
+            printRequiredHint: "Bluetooth printing is optional. The shift is already closed.",
             printSuccessHint: "Bluetooth print succeeded. You can continue to branch selection.",
             printPendingHint: "Checking live printer status...",
             printFailedHint: "No successful Bluetooth print yet. Please retry printing.",
@@ -679,7 +679,9 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
         ? text.printPendingHint
         : receiptPrintStatus === "failed"
           ? text.printFailedHint
-          : text.printRequiredHint;
+          : lang === "th"
+            ? "พิมพ์ Bluetooth เป็นทางเลือก ระบบปิดกะแล้ว"
+            : text.printRequiredHint;
 
   return (
     <section className="min-h-0 w-full overflow-auto pb-6 pr-2">
@@ -875,7 +877,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
               modalVisible ? "opacity-100" : "opacity-0"
             }`}
             onClick={() => {
-              if (!busy && modalKind !== "receipt") closeModal();
+              if (!busy) closeModal();
             }}
           />
           <section
@@ -904,7 +906,9 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                   ? text.popupDescClose
                   : modalKind === "active"
                     ? text.popupDescActive
-                    : text.popupDescReceipt}
+                    : lang === "th"
+                      ? "ปิดกะสำเร็จแล้ว สามารถพิมพ์ Bluetooth หรือไปหน้าเลือกสาขาได้ทันที"
+                      : text.popupDescReceipt}
             </p>
 
             {busy === "open" ? (
@@ -1033,6 +1037,14 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                   )}
                   <button
                     type="button"
+                    onClick={() => closeModal()}
+                    disabled={Boolean(busy)}
+                    className="h-10 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-60"
+                  >
+                    {text.close}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => void printCloseReceipt()}
                     disabled={busy === "logout" || busy === "print"}
                     className="h-10 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-60"
@@ -1042,7 +1054,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                   <button
                     type="button"
                     onClick={() => void finishAndLogoutToBranchSelection()}
-                    disabled={busy === "logout" || busy === "print" || !receiptPrinted}
+                    disabled={busy === "logout" || busy === "print"}
                     className="h-10 rounded-xl bg-slate-900 px-4 text-sm font-bold text-white disabled:opacity-60"
                   >
                     {busy === "logout" ? "..." : text.finishAndExit}

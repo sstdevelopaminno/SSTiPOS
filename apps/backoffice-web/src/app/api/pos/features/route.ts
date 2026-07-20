@@ -1,4 +1,5 @@
 import { allPosMenuFeatureCodes } from "@/lib/pos-feature-map";
+import { isFeatureUnlockEnabled } from "@/lib/feature-unlock";
 import { fail, ok } from "@/lib/http";
 import { requirePosSession, PosGuardError } from "@/lib/pos-session-guard";
 import { hasBranchFeatureSafe } from "@/lib/server/feature-gate-safe";
@@ -6,6 +7,13 @@ import { hasBranchFeatureSafe } from "@/lib/server/feature-gate-safe";
 export async function GET() {
   try {
     const scope = await requirePosSession();
+    if (isFeatureUnlockEnabled()) {
+      return ok({
+        tenant_id: scope.session.tenant_id,
+        branch_id: scope.session.branch_id,
+        features: Object.fromEntries(allPosMenuFeatureCodes().map((feature) => [feature, true]))
+      });
+    }
     const entries = await Promise.all(
       allPosMenuFeatureCodes().map(async (feature) => [
         feature,
