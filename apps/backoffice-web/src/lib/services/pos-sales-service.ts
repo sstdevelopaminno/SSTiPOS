@@ -182,7 +182,7 @@ function shouldSoftBypassInsufficientStock(orderType: OrderType) {
 }
 
 function shouldPreferDirectCreatePath(orderType: OrderType) {
-  return POS_FORCE_DIRECT_CREATE_NON_DELIVERY && orderType !== "delivery_manual";
+  return POS_FORCE_DIRECT_CREATE_NON_DELIVERY;
 }
 
 async function resolveAllowNegativeStock(auth: AuthContext) {
@@ -248,19 +248,9 @@ async function deductIngredientStockForOrderFallback(args: {
     }
   }
 
-  const recipeDeductionProducts = new Set<string>();
-  if (productRows && productRows.length > 0) {
-    for (const row of productRows) {
-      const mode = String((row as { stock_deduction_mode?: string | null }).stock_deduction_mode ?? "unit_only");
-      if (mode === "recipe_deduction") {
-        recipeDeductionProducts.add(String((row as { id: string }).id));
-      }
-    }
-  }
+  const knownProductIds = new Set((productRows ?? []).map((row) => String((row as { id: string }).id)));
   const hasStockModeInfo = Boolean(productRows && productRows.length > 0);
-  const recipeTargetProductIds = hasStockModeInfo
-    ? productIds.filter((id) => recipeDeductionProducts.has(id))
-    : productIds;
+  const recipeTargetProductIds = hasStockModeInfo ? productIds.filter((id) => knownProductIds.has(id)) : productIds;
   if (recipeTargetProductIds.length === 0) {
     return { ok: true as const };
   }
