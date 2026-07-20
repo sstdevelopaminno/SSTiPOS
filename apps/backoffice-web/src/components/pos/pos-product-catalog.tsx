@@ -11,17 +11,21 @@ type ProductCatalogItem = {
   category: string;
   price: number;
   is_active: boolean;
+  stock_on_hand_units?: number | null;
+  is_out_of_stock?: boolean;
 };
 
 type Props = {
   products: ProductCatalogItem[];
   isDeliveryMode: boolean;
   storefrontPriceLabel: string;
+  stockRemainingLabel?: string;
+  outOfStockLabel?: string;
   getProductPrice: (product: ProductCatalogItem) => number;
   onAddProduct: (product: ProductCatalogItem) => void;
 };
 
-function PosProductCatalogInner({ products, isDeliveryMode, storefrontPriceLabel, getProductPrice, onAddProduct }: Props) {
+function PosProductCatalogInner({ products, isDeliveryMode, storefrontPriceLabel, stockRemainingLabel = "Stock", outOfStockLabel = "Out of stock", getProductPrice, onAddProduct }: Props) {
   return (
     <PosProductGrid>
       {products.map((product) => (
@@ -32,6 +36,14 @@ function PosProductCatalogInner({ products, isDeliveryMode, storefrontPriceLabel
           price={getProductPrice(product)}
           secondaryPrice={isDeliveryMode ? Number(product.price) : null}
           secondaryLabel={isDeliveryMode ? storefrontPriceLabel : undefined}
+          badge={
+            product.is_out_of_stock
+              ? outOfStockLabel
+              : product.stock_on_hand_units !== null && product.stock_on_hand_units !== undefined
+                ? `${stockRemainingLabel}: ${product.stock_on_hand_units}`
+                : undefined
+          }
+          disabled={product.is_out_of_stock === true}
           onAdd={() => onAddProduct(product)}
         />
       ))}

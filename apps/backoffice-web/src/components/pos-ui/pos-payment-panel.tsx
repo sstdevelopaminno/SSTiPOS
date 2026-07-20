@@ -8,6 +8,7 @@ type PaymentText = {
   managerOverride: string;
   cancelBill: string;
   holdBill: string;
+  member?: string;
   promotion: string;
   billNo: string;
   status: string;
@@ -26,6 +27,7 @@ type Props = {
   onManagerOverride?: () => void;
   onCancelBill?: () => void;
   onHoldBill?: () => void;
+  onMember?: () => void;
   onTableQrOrder?: () => void;
   onPromotion?: () => void;
   showHoldBill?: boolean;
@@ -75,6 +77,7 @@ export function PosPaymentPanel({
   onManagerOverride,
   onCancelBill,
   onHoldBill,
+  onMember,
   onTableQrOrder,
   onPromotion,
   showHoldBill = true,
@@ -112,6 +115,15 @@ export function PosPaymentPanel({
           onClick: onTableQrOrder,
           disabled: actionsDisabled,
           label: tableQrOrderLabel
+        }
+      : null,
+    onMember
+      ? {
+          key: "member",
+          className: "posui-btn posui-btn--member",
+          onClick: onMember,
+          disabled: actionsDisabled,
+          label: text.member ?? "Member"
         }
       : null,
     {

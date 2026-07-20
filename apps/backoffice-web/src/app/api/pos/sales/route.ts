@@ -143,6 +143,15 @@ type PosProductQueryRow = {
   has_recipe_deduction?: boolean;
 };
 
+type RecipeStockRow = {
+  product_id: string;
+  quantity_per_item: number | null;
+  ingredients:
+    | { quantity_on_hand: number | null }
+    | Array<{ quantity_on_hand: number | null }>
+    | null;
+};
+
 type ResolvedOrderPricingResult =
   | {
       ok: true;
@@ -740,6 +749,8 @@ export async function GET(request: Request) {
       { data: deliveryConfigs, error: deliveryConfigsError },
       { data: deliveryPrices, error: deliveryPricesError },
       { data: recipeProductRows, error: recipeProductRowsError },
+      { data: recipeStockRows, error: recipeStockRowsError },
+      { data: inventorySettings, error: inventorySettingsError },
       { data: paymentAccounts, error: paymentAccountsError },
       { data: paymentProviderSettings, error: paymentProviderSettingsError },
       taxSettings,
@@ -822,6 +833,17 @@ export async function GET(request: Request) {
         .eq("tenant_id", auth.tenantId!)
         .eq("branch_id", auth.branchId!),
       supabase
+        .from("recipes")
+        .select("product_id,quantity_per_item,ingredients(quantity_on_hand)")
+        .eq("tenant_id", auth.tenantId!)
+        .eq("branch_id", auth.branchId!),
+      supabase
+        .from("branch_inventory_settings")
+        .select("allow_negative_stock")
+        .eq("tenant_id", auth.tenantId!)
+        .eq("branch_id", auth.branchId!)
+        .maybeSingle<{ allow_negative_stock: boolean }>(),
+      supabase
         .from("tenant_payment_accounts")
         .select("id,branch_id,bank_name,account_name,account_number,promptpay_phone,promptpay_payload,qr_image_url,qr_mode,applies_to_all_branches,is_active")
         .eq("tenant_id", auth.tenantId!)
@@ -851,6 +873,24 @@ export async function GET(request: Request) {
     const recipeProductIdSet = new Set(
       ((recipeProductRowsError ? [] : recipeProductRows) ?? []).map((row) => String(row.product_id ?? "").trim()).filter(Boolean)
     );
+    const allowNegativeStock = inventorySettingsError ? false : Boolean(inventorySettings?.allow_negative_stock ?? false);
+    const sellableStockByProduct = new Map<string, number | null>();
+    if (!recipeStockRowsError) {
+      const capsByProduct = new Map<string, number[]>();
+      for (const row of (recipeStockRows ?? []) as RecipeStockRow[]) {
+        const requiredQty = Number(row.quantity_per_item ?? 0);
+        if (!Number.isFinite(requiredQty) || requiredQty <= 0) continue;
+        const ingredientRecord = Array.isArray(row.ingredients) ? row.ingredients[0] : row.ingredients;
+        const onHand = Number(ingredientRecord?.quantity_on_hand ?? 0);
+        const productId = String(row.product_id);
+        const caps = capsByProduct.get(productId) ?? [];
+        caps.push(Math.floor(onHand / requiredQty));
+        capsByProduct.set(productId, caps);
+      }
+      for (const [productId, caps] of capsByProduct.entries()) {
+        sellableStockByProduct.set(productId, caps.length > 0 ? Math.min(...caps) : null);
+      }
+    }
 
     const normalizedProducts = ((productData ?? []) as unknown as PosProductQueryRow[]).map((row) => {
       const preferredCode = String(row.code ?? "").trim();
@@ -864,7 +904,12 @@ export async function GET(request: Request) {
         is_active: Boolean(row.is_active),
         stock_deduction_mode: row.stock_deduction_mode === "recipe_deduction" ? "recipe_deduction" : "unit_only",
         has_recipe_deduction:
-          row.stock_deduction_mode === "recipe_deduction" || recipeProductIdSet.has(String(row.id))
+          row.stock_deduction_mode === "recipe_deduction" || recipeProductIdSet.has(String(row.id)),
+        stock_on_hand_units: sellableStockByProduct.has(String(row.id)) ? sellableStockByProduct.get(String(row.id)) : null,
+        is_out_of_stock:
+          !allowNegativeStock &&
+          sellableStockByProduct.has(String(row.id)) &&
+          Number(sellableStockByProduct.get(String(row.id)) ?? 0) <= 0
       };
     });
 
@@ -907,6 +952,9 @@ export async function GET(request: Request) {
       shift: shiftError ? null : shiftData ?? null,
       categories,
       products: normalizedProducts,
+      inventory_settings: {
+        allow_negative_stock: allowNegativeStock
+      },
       operator_name: scope.user.full_name ?? auth.userId,
       branch_name: scope.branch?.name ?? auth.branchId,
       store_profile: storeProfile,

@@ -10,7 +10,7 @@ import {
   featureForPosRoute
 } from "@/lib/pos-feature-map";
 
-type IconName = "sales" | "list" | "stock" | "summary" | "receipt" | "tables" | "users" | "display" | "shift" | "logout";
+type IconName = "sales" | "list" | "stock" | "summary" | "receipt" | "tables" | "members" | "users" | "display" | "shift" | "logout";
 type PosRole = "owner" | "manager" | "staff" | "accountant";
 
 function LockIcon() {
@@ -101,6 +101,16 @@ function MenuIcon({ name }: { name: IconName }) {
       </svg>
     );
   }
+  if (name === "members") {
+    return (
+      <svg {...common}>
+        <circle cx="9" cy="8" r="3" />
+        <path d="M3.5 20c.7-3.2 2.9-5 5.5-5s4.8 1.8 5.5 5" />
+        <circle cx="17" cy="10" r="2.2" />
+        <path d="M14.5 17.5c.7-1.4 1.9-2.2 3.5-2.2 1.3 0 2.4.5 3.1 1.5" />
+      </svg>
+    );
+  }
   if (name === "shift") {
     return (
       <svg {...common}>
@@ -135,6 +145,7 @@ const MENU_DEFS: Array<{
     | "pos_menu_sales_summary"
     | "pos_menu_receipts"
     | "pos_menu_tables"
+    | "pos_menu_members"
     | "pos_menu_shift";
   href: string;
   icon: IconName;
@@ -147,6 +158,7 @@ const MENU_DEFS: Array<{
   { key: "pos_menu_sales_summary", href: "/preview/pos/sales-summary", icon: "summary", roles: ["owner", "manager", "accountant"], feature: featureForPosRoute("/preview/pos/sales-summary") },
   { key: "pos_menu_receipts", href: "/preview/pos/receipts", icon: "receipt", roles: ["owner", "manager", "accountant"], feature: featureForPosRoute("/preview/pos/receipts") },
   { key: "pos_menu_tables", href: "/preview/pos/tables", icon: "tables", roles: ["owner", "manager"], feature: featureForPosRoute("/preview/pos/tables") },
+  { key: "pos_menu_members", href: "/preview/pos/members", icon: "members", roles: ["owner", "manager", "staff"], feature: featureForPosRoute("/preview/pos/members") },
   { key: "pos_menu_shift", href: "/preview/pos/shift", icon: "shift", roles: ["owner", "manager", "staff"], feature: featureForPosRoute("/preview/pos/shift") }
 ];
 

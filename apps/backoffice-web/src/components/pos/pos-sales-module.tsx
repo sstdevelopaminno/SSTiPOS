@@ -42,6 +42,8 @@ type ProductRow = {
   is_active: boolean;
   stock_deduction_mode?: "unit_only" | "recipe_deduction";
   has_recipe_deduction?: boolean;
+  stock_on_hand_units?: number | null;
+  is_out_of_stock?: boolean;
 };
 
 type DeliveryChannelConfigRow = {
@@ -147,6 +149,7 @@ type PosSalesSnapshot = {
   payment_providers?: PaymentProvidersSnapshot | null;
   tax_settings?: TaxSettings | null;
   notification_settings?: TableQrNotificationSettings | null;
+  inventory_settings?: { allow_negative_stock?: boolean } | null;
   device_policy?: PosSalesDevicePolicy | null;
   delivery_configs?: DeliveryChannelConfigRow[];
   delivery_prices_by_product?: Record<string, Record<string, number>>;
@@ -882,6 +885,10 @@ const uiText = {
     cashRemaining: "ยอดคงเหลือ",
     cashChange: "เงินทอน",
     cashConfirm: "ยืนยันชำระ",
+    productOutOfStock: "สินค้าหมด",
+    productStockRemaining: "คงเหลือ",
+    member: "สมาชิก",
+    memberComingSoon: "เปิดหน้าสมาชิก",
     cashQuickBlocksLabel: "บล็อกเงินด่วน",
     cashKeypadTitle: "แป้นตัวเลข",
     cashKeyClear: "ล้าง",
@@ -1214,6 +1221,10 @@ const uiText = {
     cashRemaining: "Remaining",
     cashChange: "Change",
     cashConfirm: "Confirm payment",
+    productOutOfStock: "Out of stock",
+    productStockRemaining: "Stock",
+    member: "Member",
+    memberComingSoon: "Open members",
     cashQuickBlocksLabel: "Quick cash blocks",
     cashKeypadTitle: "Keypad",
     cashKeyClear: "Clear",
@@ -1744,6 +1755,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [error, setError] = useState<string | null>(null);
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [allowNegativeStock, setAllowNegativeStock] = useState(false);
   const [shift, setShift] = useState<ShiftRow>(null);
   const [sellerName, setSellerName] = useState(lang === "th" ? "ไม่ทราบชื่อผู้ขาย" : "Unknown Seller");
   const [branchName, setBranchName] = useState(lang === "th" ? "ไม่ทราบสาขา" : "Unknown Branch");
@@ -2891,6 +2903,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       setPaymentAccount(savedSales.payment_account ?? null);
       setPaymentProviders(savedSales.payment_providers ?? {});
       setTaxSettings(savedSales.tax_settings ?? DEFAULT_TAX_SETTINGS);
+      setAllowNegativeStock(Boolean(savedSales.inventory_settings?.allow_negative_stock ?? false));
       setTableQrNotificationSettings(savedSales.notification_settings ?? DEFAULT_TABLE_QR_NOTIFICATION_SETTINGS);
       setDevicePolicy(savedSales.device_policy ?? null);
       if (savedSales.payment_account?.promptpay_phone) {
@@ -3460,6 +3473,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         const nextPaymentAccount = salesResponse.body.data?.payment_account ?? null;
         const nextPaymentProviders = salesResponse.body.data?.payment_providers ?? {};
         const nextTaxSettings = salesResponse.body.data?.tax_settings ?? DEFAULT_TAX_SETTINGS;
+        const nextAllowNegativeStock = Boolean(salesResponse.body.data?.inventory_settings?.allow_negative_stock ?? false);
         const nextNotificationSettings = salesResponse.body.data?.notification_settings ?? DEFAULT_TABLE_QR_NOTIFICATION_SETTINGS;
         const nextDevicePolicy = salesResponse.body.data?.device_policy ?? null;
         const nextDeliveryConfigs = Array.isArray(salesResponse.body.data?.delivery_configs)
@@ -3498,6 +3512,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
 
         setProducts(nextProducts);
         setCategories(nextCategories);
+        setAllowNegativeStock(nextAllowNegativeStock);
         setShift(nextShift);
         setSellerName(nextOperatorName);
         setBranchName(nextBranchName);
@@ -3530,6 +3545,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
               payment_account: nextPaymentAccount,
               payment_providers: nextPaymentProviders,
               tax_settings: nextTaxSettings,
+              inventory_settings: { allow_negative_stock: nextAllowNegativeStock },
               notification_settings: nextNotificationSettings,
               device_policy: nextDevicePolicy,
               delivery_configs: nextDeliveryConfigs,
@@ -4385,7 +4401,14 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
 
   function sendPendingDeliveryBill(heldBill: HeldBill) { queueDeliveryPendingAction(heldBill, "send", async (entry) => { await sendPendingDeliveryBillNow(entry); }); }
 
-  const addToCart = useCallback((product: ProductRow) => {
+  function addToCart(product: ProductRow) {
+    const stockUnits = product.stock_on_hand_units;
+    const cartQty = cartRef.current.find((row) => row.product_id === product.id)?.quantity ?? 0;
+    if (!allowNegativeStock && stockUnits !== null && stockUnits !== undefined && cartQty + 1 > Number(stockUnits)) {
+      pushSubmitMessage(`${text.productOutOfStock}: ${product.name}`);
+      window.alert(`${text.productOutOfStock}: ${product.name}`);
+      return;
+    }
     const unitPrice = getProductPriceForCurrentMode(product);
     setCart((current) => {
       const index = current.findIndex((row) => row.product_id === product.id);
@@ -4397,13 +4420,23 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       }
       return [...current, { product_id: product.id, name: product.name, quantity: 1, price: unitPrice }];
     });
-  }, [getProductPriceForCurrentMode]);
+  }
 
   function removeFromCart(productId: string) {
     setCart((current) => current.filter((row) => row.product_id !== productId));
   }
 
   function adjustQty(productId: string, delta: number) {
+    if (delta > 0) {
+      const product = productById.get(productId);
+      const stockUnits = product?.stock_on_hand_units;
+      const currentQty = cartRef.current.find((row) => row.product_id === productId)?.quantity ?? 0;
+      if (!allowNegativeStock && stockUnits !== null && stockUnits !== undefined && currentQty + delta > Number(stockUnits)) {
+        pushSubmitMessage(`${text.productOutOfStock}: ${product?.name ?? productId}`);
+        window.alert(`${text.productOutOfStock}: ${product?.name ?? productId}`);
+        return;
+      }
+    }
     setCart((current) =>
       current
         .map((row) =>
@@ -6778,6 +6811,10 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           onRetry={showEmergencyRetry ? handleEmergencyRetry : undefined}
           onCancelBill={requestCancelBill}
           onHoldBill={holdBill}
+          onMember={() => {
+            pushSubmitMessage(text.memberComingSoon);
+            window.location.href = "/preview/pos/members";
+          }}
           onTableQrOrder={() => setTableQrModalOpen(true)}
           onPromotion={openDiscountPopup}
           showHoldBill={quickMode === "home"}
@@ -6832,6 +6869,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
             managerOverride: text.managerOverride,
             cancelBill: text.cancelBill,
             holdBill: text.holdBill,
+            member: text.member,
             promotion: text.promotion,
             billNo: text.billNo,
             status: text.status,
@@ -6989,6 +7027,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
               products={visibleProducts}
               isDeliveryMode={orderType === "delivery_manual"}
               storefrontPriceLabel={text.storefrontPriceLabel}
+              stockRemainingLabel={text.productStockRemaining}
+              outOfStockLabel={text.productOutOfStock}
               getProductPrice={getProductPriceForCurrentMode}
               onAddProduct={addToCart}
             />
