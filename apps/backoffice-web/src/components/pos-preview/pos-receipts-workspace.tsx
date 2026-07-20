@@ -20,6 +20,8 @@ type ReceiptRecord = {
   channel: string;
   tableLabel: string;
   customerName: string;
+  memberName: string | null;
+  memberPhone: string | null;
   externalOrderCode: string | null;
   subtotal: number;
   discountAmount: number;
@@ -115,6 +117,11 @@ function orderTypeLabel(type: string, lang: Language) {
   if (type === "dine_in") return lang === "th" ? "ทานที่ร้าน" : "Dine-in";
   if (type === "delivery_manual") return lang === "th" ? "เดลิเวอรี่" : "Delivery";
   return lang === "th" ? "กลับบ้าน" : "Takeaway";
+}
+
+function memberLabel(record: Pick<ReceiptRecord, "memberName" | "memberPhone">) {
+  if (record.memberName && record.memberPhone) return `${record.memberName} / ${record.memberPhone}`;
+  return record.memberName ?? record.memberPhone ?? "-";
 }
 
 function buildQuery(params: {
@@ -408,6 +415,9 @@ export function PosReceiptsWorkspace({ lang }: { lang: Language }) {
                       <Td>{formatDateTime(record.createdAt, lang)}</Td>
                       <Td>
                         <strong className="block text-slate-800">{record.customerName}</strong>
+                        {memberLabel(record) !== "-" ? (
+                          <span className="block text-xs font-semibold text-blue-700">{memberLabel(record)}</span>
+                        ) : null}
                         <span className="text-xs text-slate-500">{record.tableLabel}</span>
                       </Td>
                       <Td>{paymentLabel(record.paymentMethods, lang)}</Td>
@@ -481,6 +491,7 @@ export function PosReceiptsWorkspace({ lang }: { lang: Language }) {
               </div>
               <dl className="grid gap-2 text-sm">
                 <DetailRow label={copy.customer} value={`${selected.customerName} / ${selected.tableLabel}`} />
+                <DetailRow label={lang === "th" ? "สมาชิก" : "Member"} value={memberLabel(selected)} />
                 <DetailRow label={copy.payment} value={paymentLabel(selected.paymentMethods, lang)} />
                 <DetailRow label={copy.total} value={formatMoney(selected.totalAmount, lang)} />
                 <DetailRow label={lang === "th" ? "แคชเชียร์" : "Cashier"} value={selected.cashierName} />

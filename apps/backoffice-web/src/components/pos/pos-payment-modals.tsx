@@ -25,6 +25,8 @@ type CheckoutReviewOrder = {
   order_id: string;
   order_no: string;
   external_order_code?: string | null;
+  member_name?: string | null;
+  member_phone?: string | null;
   table_id?: string | null;
   created_at: string;
   items: CartItem[];
@@ -254,6 +256,14 @@ export function PosPaymentModals({
     const cartSubtotal = session.items.reduce((sum, item) => sum + item.quantity * item.price, 0);
     const fallbackDiscount = Math.max(0, cartSubtotal - Number(session.total_amount ?? 0));
     return Number(fallbackDiscount.toFixed(2));
+  }
+
+  function getReceiptMemberLabel(session: ReceiptSession): string | null {
+    const memberName = session.member_name?.trim();
+    const memberPhone = session.member_phone?.trim();
+    if (!memberName && !memberPhone) return null;
+    if (memberName && memberPhone) return `${memberName} / ${memberPhone}`;
+    return memberName ?? memberPhone ?? null;
   }
 
   function resolveTaxLines(order: Pick<CheckoutReviewOrder, "tax_lines" | "tax_total"> | null | undefined): TaxLineSnapshot[] {
@@ -618,6 +628,9 @@ export function PosPaymentModals({
                 <p><span>{text.billNo}</span><span>:</span><strong>{receiptSession.order_no}</strong></p>
                 {receiptSession.external_order_code ? (
                   <p><span>{text.externalCode}</span><span>:</span><strong>{receiptSession.external_order_code}</strong></p>
+                ) : null}
+                {getReceiptMemberLabel(receiptSession) ? (
+                  <p><span>{lang === "th" ? "สมาชิก" : "Member"}</span><span>:</span><strong>{getReceiptMemberLabel(receiptSession)}</strong></p>
                 ) : null}
                 <p><span>{text.date}</span><span>:</span><strong>{formatReceiptDateTime(receiptSession.created_at, lang)}</strong></p>
               </div>

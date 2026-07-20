@@ -52,6 +52,12 @@ function resolveDateWindow(searchParams: URLSearchParams) {
   return { gte: start.toISOString(), lt: end.toISOString(), label: date };
 }
 
+function readMetadataString(metadata: unknown, key: string): string | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const value = (metadata as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 export async function GET(req: Request) {
   const startedAt = Date.now();
   const withTiming = (response: Response) => {
@@ -74,7 +80,7 @@ export async function GET(req: Request) {
     let query = supabase
       .from("orders")
       .select(
-        "id,order_no,order_type,channel,table_id,customer_name,external_order_code,subtotal,discount_amount,gp_amount,total_amount,grand_total,paid_total,status,created_at,created_by,payment_completed_at,payment_completed_by,cash_received,change_amount,notes",
+        "id,order_no,order_type,channel,table_id,customer_name,external_order_code,subtotal,discount_amount,gp_amount,total_amount,grand_total,paid_total,status,created_at,created_by,payment_completed_at,payment_completed_by,cash_received,change_amount,notes,metadata",
         { count: "exact" }
       )
       .eq("tenant_id", auth.tenantId!)
@@ -118,6 +124,7 @@ export async function GET(req: Request) {
       cash_received: number | null;
       change_amount: number | null;
       notes: string | null;
+      metadata: unknown;
     }>;
 
     const orderIds = rows.map((row) => row.id);
@@ -240,6 +247,8 @@ export async function GET(req: Request) {
       const items = itemsByOrder.get(row.id) ?? [];
       const paidTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
       const total = Number(row.grand_total ?? row.total_amount ?? 0);
+      const memberName = readMetadataString(row.metadata, "member_name");
+      const memberPhone = readMetadataString(row.metadata, "member_phone");
       return {
         id: row.id,
         orderNo: row.order_no,
@@ -247,6 +256,8 @@ export async function GET(req: Request) {
         channel: row.channel,
         tableLabel: row.table_id ? tableMap.get(row.table_id) ?? "-" : "-",
         customerName: row.customer_name ?? "-",
+        memberName,
+        memberPhone,
         externalOrderCode: row.external_order_code ?? null,
         subtotal: Number(row.subtotal ?? 0),
         discountAmount: Number(row.discount_amount ?? 0),

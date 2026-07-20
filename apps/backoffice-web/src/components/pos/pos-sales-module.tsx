@@ -250,6 +250,8 @@ type CheckoutReviewOrder = {
   order_type?: OrderType;
   channel?: string | null;
   external_order_code?: string | null;
+  member_name?: string | null;
+  member_phone?: string | null;
   table_id?: string | null;
   created_at: string;
   items: CartItem[];
@@ -2070,6 +2072,14 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     return getBillPaymentMethodLabel(session.payment_method);
   }
 
+  function getReceiptMemberLabel(session: ReceiptSession): string | null {
+    const memberName = session.member_name?.trim();
+    const memberPhone = session.member_phone?.trim();
+    if (!memberName && !memberPhone) return null;
+    if (memberName && memberPhone) return `${memberName} / ${memberPhone}`;
+    return memberName ?? memberPhone ?? null;
+  }
+
   function parseServerDurationMs(response: Response, headerName: string): number | null {
     const rawValue = response.headers.get(headerName);
     if (!rawValue) return null;
@@ -2100,6 +2110,45 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     selectedTableRef.current = selectedTable;
     cartRef.current = cart;
   }, [selectedTable, cart]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let disposed = false;
+
+    const checkActiveShift = async () => {
+      try {
+        const response = await fetch("/api/pos/session/current", { cache: "no-store" });
+        const body = (await response.json().catch(() => null)) as {
+          data?: { has_active_shift?: boolean; shift?: ShiftRow | null } | null;
+        } | null;
+        if (disposed) return;
+        const activeShift = body?.data?.has_active_shift && body.data.shift?.status === "open" ? body.data.shift : null;
+        if (activeShift) {
+          setShift(activeShift);
+          return;
+        }
+        setShift(null);
+        if (window.location.pathname.includes("/preview/pos") && !window.location.pathname.includes("/preview/pos/shift")) {
+          setSubmitMessage(text.openShiftRequired);
+          window.location.href = "/preview/pos/shift";
+        }
+      } catch {
+        // Guarded APIs still block sales if the shift was closed while this screen is open.
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void checkActiveShift();
+    }, 15000);
+    window.addEventListener("focus", checkActiveShift);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", checkActiveShift);
+    };
+  }, [text.openShiftRequired]);
 
   useEffect(() => {
     dineInDraftByTableIdRef.current = dineInDraftByTableId;
@@ -6423,6 +6472,10 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     const externalOrderCodeMeta = session.external_order_code?.trim()
       ? `<div class="meta-line"><span>${escapeHtml(text.externalCode)}</span><span>${escapeHtml(session.external_order_code)}</span></div>`
       : "";
+    const receiptMemberLabel = getReceiptMemberLabel(session);
+    const receiptMemberMeta = receiptMemberLabel
+      ? `<div class="meta-line"><span>${escapeHtml(text.member)}</span><span>${escapeHtml(receiptMemberLabel)}</span></div>`
+      : "";
     const storeAddressLine = receiptStoreAddress ? `<div class="muted">${escapeHtml(receiptStoreAddress)}</div>` : "";
     const storePhoneLine = receiptStorePhone ? `<div class="muted">${escapeHtml(receiptStorePhone)}</div>` : "";
     const paymentMethodLine = `<div class="summary-line is-heading"><span>${escapeHtml(text.paymentMethod)}</span><strong>${escapeHtml(getReceiptPaymentMethodLabel(session))}</strong></div>`;
@@ -6506,6 +6559,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     <div class="meta-line"><span>${escapeHtml(text.modeLabel)}</span><span>${escapeHtml(getQuickModeLabel())}</span></div>
     <div class="meta-line"><span>${escapeHtml(text.billNo)}</span><span>${escapeHtml(session.order_no)}</span></div>
     ${externalOrderCodeMeta}
+    ${receiptMemberMeta}
     <div class="meta-line"><span>${escapeHtml(text.date)}</span><span>${escapeHtml(formatReceiptDateTime(session.created_at, lang))}</span></div>
     <div class="hr"></div>
     <table>
@@ -6811,10 +6865,14 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           onRetry={showEmergencyRetry ? handleEmergencyRetry : undefined}
           onCancelBill={requestCancelBill}
           onHoldBill={holdBill}
-          onMember={() => {
-            pushSubmitMessage(text.memberComingSoon);
-            window.location.href = "/preview/pos/members";
-          }}
+          onMember={
+            orderType === "delivery_manual"
+              ? undefined
+              : () => {
+                  pushSubmitMessage(text.memberComingSoon);
+                  window.location.href = "/preview/pos/members";
+                }
+          }
           onTableQrOrder={() => setTableQrModalOpen(true)}
           onPromotion={openDiscountPopup}
           showHoldBill={quickMode === "home"}
@@ -7653,6 +7711,12 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
                 <div>
                   <dt>{text.externalCode}</dt>
                   <dd>{receiptSession.external_order_code}</dd>
+                </div>
+              ) : null}
+              {getReceiptMemberLabel(receiptSession) ? (
+                <div>
+                  <dt>{text.member}</dt>
+                  <dd>{getReceiptMemberLabel(receiptSession)}</dd>
                 </div>
               ) : null}
               <div>

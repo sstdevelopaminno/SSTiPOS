@@ -14,6 +14,8 @@ export type CheckoutActiveOrder = {
   order_type?: OrderType;
   channel?: string | null;
   external_order_code?: string | null;
+  member_name?: string | null;
+  member_phone?: string | null;
   total_amount?: number;
   table_id?: string | null;
   created_at?: string;
@@ -30,6 +32,8 @@ export type CheckoutReviewOrder = {
   order_type?: OrderType;
   channel?: string | null;
   external_order_code?: string | null;
+  member_name?: string | null;
+  member_phone?: string | null;
   table_id?: string | null;
   created_at: string;
   items: CheckoutCartItem[];
@@ -147,6 +151,8 @@ export function buildReviewOrder(args: {
     order_type: order.order_type ?? fallbackOrderType,
     channel: order.channel ?? null,
     external_order_code: order.external_order_code ?? null,
+    member_name: order.member_name ?? null,
+    member_phone: order.member_phone ?? null,
     table_id: order.table_id ?? fallbackTableId ?? null,
     created_at: order.created_at ?? createdAt ?? new Date().toISOString(),
     items,
