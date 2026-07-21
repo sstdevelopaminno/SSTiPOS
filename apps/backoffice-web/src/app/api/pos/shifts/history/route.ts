@@ -58,6 +58,19 @@ function getBangkokDayEndUtc(dateLike: string) {
   return new Date(Date.UTC(year, month, day, 23, 59, 59, 999) - BANGKOK_UTC_OFFSET_MS);
 }
 
+function getBangkokDateBoundaryUtc(dateText: string, edge: "start" | "end") {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateText);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const hour = edge === "start" ? 0 : 23;
+  const minute = edge === "start" ? 0 : 59;
+  const second = edge === "start" ? 0 : 59;
+  const ms = edge === "start" ? 0 : 999;
+  return new Date(Date.UTC(year, month, day, hour, minute, second, ms) - BANGKOK_UTC_OFFSET_MS);
+}
+
 function resolveShiftSummaryEndAt(shift: ShiftRow) {
   const bangkokDayEnd = getBangkokDayEndUtc(shift.opened_at);
   if (!bangkokDayEnd) return shift.closed_at ? new Date(shift.closed_at) : null;
@@ -93,13 +106,17 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const daysRaw = Number(searchParams.get("days") ?? 30);
     const days = Number.isFinite(daysRaw) ? Math.max(1, Math.min(90, Math.trunc(daysRaw))) : 30;
+    const startDateRaw = String(searchParams.get("start_date") ?? "").trim();
+    const endDateRaw = String(searchParams.get("end_date") ?? "").trim();
+    const startDate = startDateRaw ? getBangkokDateBoundaryUtc(startDateRaw, "start") : null;
+    const endDate = endDateRaw ? getBangkokDateBoundaryUtc(endDateRaw, "end") : null;
     const view = String(searchParams.get("view") ?? "auto").trim().toLowerCase();
     const selfOnly = canViewBranchWide ? view === "self" : true;
     const branchFilterRaw = String(searchParams.get("branch_id") ?? "all").trim();
     const branchFilter = canViewBranchWide ? branchFilterRaw : scope.session.branch_id;
     const useAllBranches = canViewBranchWide && (!branchFilter || branchFilter === "all");
 
-    const startedAfter = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const startedAfter = (startDate ?? new Date(Date.now() - days * 24 * 60 * 60 * 1000)).toISOString();
     const supabase = getSupabaseServiceClient();
 
     const branchOptionsResult = canViewBranchWide
@@ -137,6 +154,9 @@ export async function GET(request: Request) {
       .gte("opened_at", startedAfter)
       .order("opened_at", { ascending: false })
       .limit(300);
+    if (endDate) {
+      shiftsQuery = shiftsQuery.lte("opened_at", endDate.toISOString());
+    }
 
     if (!canViewBranchWide || !useAllBranches) {
       const targetBranchId = canViewBranchWide ? branchFilter : scope.session.branch_id;
@@ -187,6 +207,7 @@ export async function GET(request: Request) {
       shifts.map((shift) => [shift.id, resolveShiftSummaryEndAt(shift) ?? undefined])
     );
     const branchIds = Array.from(new Set(shifts.map((shift) => shift.branch_id).filter((id) => Boolean(id))));
+    const userIds = Array.from(new Set(shifts.flatMap((shift) => [shift.opened_by, shift.closed_by]).filter((id): id is string => Boolean(id))));
 
     const branchResult = branchIds.length
       ? await supabase
@@ -203,6 +224,18 @@ export async function GET(request: Request) {
       ((branchResult.data ?? []) as Array<{ id: string; code: string | null; name: string | null }>).map((row) => [
         row.id,
         { code: row.code, name: row.name }
+      ])
+    );
+    const usersResult = userIds.length
+      ? await supabase.from("users_profiles").select("id,full_name").in("id", userIds)
+      : { data: [], error: null };
+    if (usersResult.error) {
+      return fail("shift_users_query_failed", usersResult.error.message, 500);
+    }
+    const userMap = new Map(
+      ((usersResult.data ?? []) as Array<{ id: string; full_name: string | null }>).map((row) => [
+        row.id,
+        row.full_name ?? row.id
       ])
     );
 
@@ -311,6 +344,8 @@ export async function GET(request: Request) {
         ...shift,
         branch_code: branchMap.get(shift.branch_id)?.code ?? null,
         branch_name: branchMap.get(shift.branch_id)?.name ?? null,
+        opened_by_name: userMap.get(shift.opened_by) ?? shift.opened_by,
+        closed_by_name: shift.closed_by ? userMap.get(shift.closed_by) ?? shift.closed_by : null,
         summary_cutoff_at: (shiftEndAtMap.get(shift.id) ?? null)?.toISOString() ?? null,
         metrics: totals
       };

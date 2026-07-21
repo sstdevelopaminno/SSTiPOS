@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolveShiftCycle, slotLabel, slotWindowLabel } from "@/lib/pos-shift-schedule";
 
 type Lang = "th" | "en";
-type ModalKind = "open" | "close" | "active" | "receipt" | null;
+type ModalKind = "open" | "close" | "active" | "receipt" | "details" | null;
 type BusyState = "open" | "close" | "print" | "logout" | null;
 
 const BRANCH_FILTER_STORAGE_KEY = "pos_shift_history_branch_filter_v1";
@@ -48,6 +48,8 @@ type ShiftHistoryResponse = {
       opened_by: string;
       branch_code: string | null;
       branch_name: string | null;
+      opened_by_name: string | null;
+      closed_by_name: string | null;
       opened_at: string;
       closed_at: string | null;
       opening_cash: number;
@@ -66,6 +68,7 @@ type ShiftHistoryResponse = {
   } | null;
   error?: { code?: string; message?: string } | null;
 };
+type ShiftHistoryItem = NonNullable<ShiftHistoryResponse["data"]>["shifts"][number];
 
 type CloseShiftResponse = {
   data?: {
@@ -219,6 +222,9 @@ h1,p{margin:0;}
 
 export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
   const [days, setDays] = useState(30);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [page, setPage] = useState(1);
   const [branchFilter, setBranchFilter] = useState<string>(() => {
     if (typeof window === "undefined") return "all";
     const stored = window.sessionStorage.getItem(BRANCH_FILTER_STORAGE_KEY);
@@ -238,6 +244,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
   const [receiptPrintStatus, setReceiptPrintStatus] = useState<"idle" | "printing" | "printed" | "failed">("idle");
   const [receiptPrintError, setReceiptPrintError] = useState<string | null>(null);
   const [modalKind, setModalKind] = useState<ModalKind>(null);
+  const [selectedShift, setSelectedShift] = useState<ShiftHistoryItem | null>(null);
   const [modalMounted, setModalMounted] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const closeTimerRef = useRef<number | null>(null);
@@ -393,6 +400,18 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
   const cashBalancedLabel = lang === "th" ? "ผ่าน" : "Balanced";
   const cashShortLabel = lang === "th" ? "ติดลบ" : "Short";
   const cashOverLabel = lang === "th" ? "เกิน" : "Over";
+  const dateFromLabel = lang === "th" ? "ตั้งแต่วันที่" : "From date";
+  const dateToLabel = lang === "th" ? "ถึงวันที่" : "To date";
+  const openedByLabel = lang === "th" ? "ผู้เปิดกะ" : "Opened by";
+  const closedByLabel = lang === "th" ? "ผู้ปิดกะ" : "Closed by";
+  const detailsLabel = lang === "th" ? "อ่าน" : "View";
+  const detailsTitle = lang === "th" ? "รายละเอียดกะ" : "Shift details";
+  const previousLabel = lang === "th" ? "ก่อนหน้า" : "Previous";
+  const nextLabel = lang === "th" ? "ถัดไป" : "Next";
+  const pageLabel = lang === "th" ? "หน้า" : "Page";
+  const rowsPerPage = 12;
+  const pagedShifts = payload?.shifts.slice((page - 1) * rowsPerPage, page * rowsPerPage) ?? [];
+  const totalPages = Math.max(1, Math.ceil((payload?.shifts.length ?? 0) / rowsPerPage));
 
   const openModal = useCallback((kind: Exclude<ModalKind, null>) => {
     if (closeTimerRef.current) {
@@ -424,9 +443,12 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
     try {
       const [sessionRes, historyRes] = await Promise.all([
         fetch("/api/pos/session/current", { cache: "no-store" }),
-        fetch(`/api/pos/shifts/history?days=${days}&view=all&branch_id=${encodeURIComponent(branchFilter)}`, {
+        fetch(
+          `/api/pos/shifts/history?days=${days}&view=all&branch_id=${encodeURIComponent(branchFilter)}&start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`,
+          {
           cache: "no-store"
-        })
+          }
+        )
       ]);
       const sessionBody = (await sessionRes.json().catch(() => null)) as SessionCurrentResponse | null;
       const historyBody = (await historyRes.json().catch(() => null)) as ShiftHistoryResponse | null;
@@ -455,7 +477,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
     } finally {
       setLoading(false);
     }
-  }, [branchFilter, days]);
+  }, [branchFilter, days, endDate, startDate]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -493,6 +515,10 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [branchFilter, days, endDate, startDate]);
 
   async function openShiftNow() {
     if (busy) return;
@@ -764,6 +790,24 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                   <option value={60}>60</option>
                 </select>
               </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{dateFromLabel}</span>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(event) => setStartDate(event.target.value)}
+                  className="h-10 rounded-xl border border-slate-300 px-3"
+                />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{dateToLabel}</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(event) => setEndDate(event.target.value)}
+                  className="h-10 rounded-xl border border-slate-300 px-3"
+                />
+              </label>
 
               {payload?.filters.can_view_branch_wide ? (
                 <label className="grid gap-1">
@@ -839,6 +883,8 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                   <tr className="text-left text-xs uppercase tracking-[0.1em] text-slate-500">
                     <th className="px-3 py-3">{text.shiftName}</th>
                     {payload.filters.can_view_branch_wide ? <th className="px-3 py-3">{text.branchFilter}</th> : null}
+                    <th className="px-3 py-3">{openedByLabel}</th>
+                    <th className="px-3 py-3">{closedByLabel}</th>
                     <th className="px-3 py-3">{text.openedAt}</th>
                     <th className="px-3 py-3">{text.closedAt}</th>
                     <th className="px-3 py-3">{text.status}</th>
@@ -850,10 +896,11 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                     <th className="px-3 py-3 text-right">{cashFloatLabel}</th>
                     <th className="px-3 py-3 text-right">{text.expected}</th>
                     <th className="px-3 py-3 text-right">{text.actual}</th>
+                    <th className="px-3 py-3 text-center">{detailsLabel}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {payload.shifts.map((shift) => {
+                  {pagedShifts.map((shift) => {
                     const cycle = resolveShiftCycle(shift.opened_at);
                     const cashVariance =
                       shift.actual_cash === null ? null : Number((shift.actual_cash - shift.metrics.cash_total).toFixed(2));
@@ -864,13 +911,19 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                           ? "text-emerald-700"
                           : cashVariance < 0
                             ? "text-rose-700"
-                            : "text-amber-700";
+                            : "text-orange-600";
                     return (
                       <tr key={shift.id} className="border-t border-slate-200">
                         <td className="px-3 py-3 font-semibold text-slate-700">{cycle ? slotLabel(cycle.slot, lang) : "-"}</td>
                         {payload.filters.can_view_branch_wide ? (
                           <td className="px-3 py-3 text-slate-600">{shift.branch_name ?? shift.branch_code ?? "-"}</td>
                         ) : null}
+                        <td className="max-w-[120px] truncate px-3 py-3 text-slate-600" title={shift.opened_by_name ?? "-"}>
+                          {shift.opened_by_name ?? "-"}
+                        </td>
+                        <td className="max-w-[120px] truncate px-3 py-3 text-slate-600" title={shift.closed_by_name ?? "-"}>
+                          {shift.closed_by_name ?? "-"}
+                        </td>
                         <td className="px-3 py-3 text-slate-600">{formatDateTime(shift.opened_at, lang)}</td>
                         <td className="px-3 py-3 text-slate-600">{shift.closed_at ? formatDateTime(shift.closed_at, lang) : "-"}</td>
                         <td className="px-3 py-3">
@@ -892,11 +945,46 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                           {cashVariance === null ? "-" : formatSignedMoney(cashVariance, lang)}
                         </td>
                         <td className="px-3 py-3 text-right">{shift.actual_cash === null ? "-" : formatMoney(shift.actual_cash, lang)}</td>
+                        <td className="px-3 py-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedShift(shift);
+                              openModal("details");
+                            }}
+                            className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                          >
+                            {detailsLabel}
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+            </div>
+          ) : null}
+          {!loading && payload && payload.shifts.length > rowsPerPage ? (
+            <div className="mt-3 flex flex-wrap items-center justify-end gap-2 text-sm text-slate-600">
+              <span className="font-semibold">
+                {pageLabel} {page} / {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={page <= 1}
+                className="h-9 rounded-xl border border-slate-300 bg-white px-3 font-semibold disabled:opacity-50"
+              >
+                {previousLabel}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                disabled={page >= totalPages}
+                className="h-9 rounded-xl border border-slate-300 bg-white px-3 font-semibold disabled:opacity-50"
+              >
+                {nextLabel}
+              </button>
             </div>
           ) : null}
         </section>
@@ -927,6 +1015,8 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                   ? text.popupTitleClose
                   : modalKind === "active"
                     ? text.popupTitleActive
+                    : modalKind === "details"
+                      ? detailsTitle
                     : text.popupTitleReceipt}
             </h3>
             <p className="mt-1 text-sm text-slate-600">
@@ -938,6 +1028,8 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                   ? text.popupDescClose
                   : modalKind === "active"
                     ? text.popupDescActive
+                    : modalKind === "details"
+                      ? detailsTitle
                     : lang === "th"
                       ? "ปิดกะสำเร็จแล้ว สามารถพิมพ์ Bluetooth หรือไปหน้าเลือกสาขาได้ทันที"
                       : text.popupDescReceipt}
@@ -1015,7 +1107,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                         ? "text-emerald-700"
                         : closingCashVariance < 0
                           ? "text-rose-700"
-                          : "text-amber-700"
+                          : "text-orange-600"
                     }
                   >
                     {!hasClosingCashInput
@@ -1025,6 +1117,73 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                       : `${closingCashVariance < 0 ? cashShortLabel : cashOverLabel} ${formatMoney(Math.abs(closingCashVariance), lang)}`}
                   </strong>
                 </p>
+              </div>
+            ) : null}
+
+            {modalKind === "details" && selectedShift ? (
+              <div className="mt-4 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                {(() => {
+                  const cycle = resolveShiftCycle(selectedShift.opened_at);
+                  const cashVariance =
+                    selectedShift.actual_cash === null
+                      ? null
+                      : Number((selectedShift.actual_cash - selectedShift.metrics.cash_total).toFixed(2));
+                  const cashVarianceClass =
+                    cashVariance === null
+                      ? "text-slate-500"
+                      : Math.abs(cashVariance) < 0.01
+                        ? "text-emerald-700"
+                        : cashVariance < 0
+                          ? "text-rose-700"
+                          : "text-orange-600";
+                  return (
+                    <>
+                      <p className="flex justify-between gap-3">
+                        <span>{text.shiftName}</span>
+                        <strong>{cycle ? slotLabel(cycle.slot, lang) : "-"}</strong>
+                      </p>
+                      <p className="flex justify-between gap-3">
+                        <span>{openedByLabel}</span>
+                        <strong className="text-right">{selectedShift.opened_by_name ?? "-"}</strong>
+                      </p>
+                      <p className="flex justify-between gap-3">
+                        <span>{closedByLabel}</span>
+                        <strong className="text-right">{selectedShift.closed_by_name ?? "-"}</strong>
+                      </p>
+                      <p className="flex justify-between gap-3">
+                        <span>{text.openedAt}</span>
+                        <strong className="text-right">{formatDateTime(selectedShift.opened_at, lang)}</strong>
+                      </p>
+                      <p className="flex justify-between gap-3">
+                        <span>{text.closedAt}</span>
+                        <strong className="text-right">{selectedShift.closed_at ? formatDateTime(selectedShift.closed_at, lang) : "-"}</strong>
+                      </p>
+                      <hr className="border-slate-200" />
+                      <p className="flex justify-between gap-3">
+                        <span>{text.sales}</span>
+                        <strong>{formatMoney(selectedShift.metrics.sales_total, lang)}</strong>
+                      </p>
+                      <p className="flex justify-between gap-3">
+                        <span>{text.cash}</span>
+                        <strong>{formatMoney(selectedShift.metrics.cash_total, lang)}</strong>
+                      </p>
+                      <p className="flex justify-between gap-3">
+                        <span>{text.transfer}</span>
+                        <strong>{formatMoney(selectedShift.metrics.transfer_total, lang)}</strong>
+                      </p>
+                      <p className="flex justify-between gap-3">
+                        <span>{text.expected}</span>
+                        <strong className={cashVarianceClass}>
+                          {cashVariance === null ? "-" : formatSignedMoney(cashVariance, lang)}
+                        </strong>
+                      </p>
+                      <p className="flex justify-between gap-3">
+                        <span>{text.actual}</span>
+                        <strong>{selectedShift.actual_cash === null ? "-" : formatMoney(selectedShift.actual_cash, lang)}</strong>
+                      </p>
+                    </>
+                  );
+                })()}
               </div>
             ) : null}
 
