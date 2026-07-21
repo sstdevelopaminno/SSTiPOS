@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PreEntryShell } from "@/components/pre-entry/pre-entry-shell";
@@ -128,8 +128,11 @@ function LoginDevicesPageContent() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [popup, setPopup] = useState<PopupState>({ type: "none" });
+  const loadStartedRef = useRef(false);
 
   useEffect(() => {
+    if (loadStartedRef.current) return;
+    loadStartedRef.current = true;
     let mounted = true;
     void (async () => {
       try {
