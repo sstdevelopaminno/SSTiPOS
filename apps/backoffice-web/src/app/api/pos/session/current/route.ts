@@ -40,6 +40,93 @@ function isMissingShiftDeviceCodeColumnError(error: { code?: string; message?: s
   return message.includes("could not find the 'device_code' column");
 }
 
+function toNumber(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isMissingColumnError(error: { code?: string | null; message?: string | null } | null | undefined, column: string) {
+  if (!error) return false;
+  const code = String(error.code ?? "");
+  const message = String(error.message ?? "").toLowerCase();
+  return code === "42703" || message.includes(`column "${column}"`) || message.includes(`.${column}`) || message.includes("does not exist");
+}
+
+async function loadShiftMetrics(args: {
+  supabase: ReturnType<typeof getSupabaseServiceClient>;
+  tenantId: string;
+  shiftId: string | null;
+}) {
+  if (!args.shiftId) {
+    return { order_count: 0, cancelled_order_count: 0, sales_total: 0, cash_total: 0, transfer_total: 0 };
+  }
+
+  const ordersQuery = await args.supabase
+    .from("orders")
+    .select("id,status,total_amount,grand_total")
+    .eq("tenant_id", args.tenantId)
+    .eq("shift_id", args.shiftId);
+
+  const orders = (ordersQuery.data ?? []) as Array<{
+    id: string;
+    status: string;
+    total_amount: number | null;
+    grand_total: number | null;
+  }>;
+
+  const metrics = {
+    order_count: 0,
+    cancelled_order_count: 0,
+    sales_total: 0,
+    cash_total: 0,
+    transfer_total: 0
+  };
+
+  if (!ordersQuery.error) {
+    for (const order of orders) {
+      metrics.order_count += 1;
+      if (order.status === "cancelled") {
+        metrics.cancelled_order_count += 1;
+      } else {
+        metrics.sales_total += toNumber(order.grand_total ?? order.total_amount);
+      }
+    }
+  }
+
+  let paymentRows: Array<{ order_id: string | null; method: string; amount: number | null }> = [];
+  const paymentByShift = await args.supabase
+    .from("payments")
+    .select("order_id,method,amount,shift_id")
+    .eq("tenant_id", args.tenantId)
+    .eq("shift_id", args.shiftId);
+
+  if (paymentByShift.error && isMissingColumnError(paymentByShift.error, "shift_id")) {
+    const orderIds = orders.map((order) => order.id);
+    if (orderIds.length > 0) {
+      const fallbackPayments = await args.supabase
+        .from("payments")
+        .select("order_id,method,amount")
+        .eq("tenant_id", args.tenantId)
+        .in("order_id", orderIds);
+      if (!fallbackPayments.error) {
+        paymentRows = (fallbackPayments.data ?? []) as Array<{ order_id: string | null; method: string; amount: number | null }>;
+      }
+    }
+  } else if (!paymentByShift.error) {
+    paymentRows = (paymentByShift.data ?? []) as Array<{ order_id: string | null; method: string; amount: number | null }>;
+  }
+
+  for (const payment of paymentRows) {
+    if (payment.method === "cash") {
+      metrics.cash_total += toNumber(payment.amount);
+    } else if (payment.method === "bank_transfer") {
+      metrics.transfer_total += toNumber(payment.amount);
+    }
+  }
+
+  return metrics;
+}
+
 export async function GET() {
   const startedAt = Date.now();
   try {
@@ -129,7 +216,14 @@ export async function GET() {
       };
     }
 
-    const devicePolicy = await devicePolicyPromise;
+    const [devicePolicy, shiftMetrics] = await Promise.all([
+      devicePolicyPromise,
+      loadShiftMetrics({
+        supabase,
+        tenantId: scope.session.tenant_id,
+        shiftId: shiftSummary?.status === "open" ? shiftSummary.id : null
+      })
+    ]);
     const response = NextResponse.json({
       data: {
         session: {
@@ -161,7 +255,7 @@ export async function GET() {
           block_sales: devicePolicy.block_sales,
           reason_code: devicePolicy.reason_code
         },
-        shift: shiftSummary,
+        shift: shiftSummary ? { ...shiftSummary, metrics: shiftMetrics } : null,
         has_active_shift: shiftSummary?.status === "open"
       },
       error: null

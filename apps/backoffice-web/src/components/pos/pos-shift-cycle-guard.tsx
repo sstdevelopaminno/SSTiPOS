@@ -13,7 +13,19 @@ type Lang = "th" | "en";
 
 type SessionResponse = {
   data?: {
-    shift: { id: string; status: string; opened_at: string; closed_at: string | null } | null;
+    shift: {
+      id: string;
+      status: string;
+      opened_at: string;
+      closed_at: string | null;
+      metrics?: {
+        order_count: number;
+        cancelled_order_count: number;
+        sales_total: number;
+        cash_total: number;
+        transfer_total: number;
+      } | null;
+    } | null;
     has_active_shift: boolean;
     role?: string | null;
   } | null;
@@ -41,6 +53,13 @@ function formatDateTime(value: string, lang: Lang) {
   });
 }
 
+function formatMoney(value: number, lang: Lang) {
+  return new Intl.NumberFormat(lang === "th" ? "th-TH" : "en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
+}
+
 async function fetchJsonWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 12000) {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -64,7 +83,18 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<ShiftGuardPhase>("on_time");
-  const [shift, setShift] = useState<{ id: string; opened_at: string; status: string } | null>(null);
+  const [shift, setShift] = useState<{
+    id: string;
+    opened_at: string;
+    status: string;
+    metrics: {
+      order_count: number;
+      cancelled_order_count: number;
+      sales_total: number;
+      cash_total: number;
+      transfer_total: number;
+    };
+  } | null>(null);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closingCash, setClosingCash] = useState("");
   const [managerPin, setManagerPin] = useState("");
@@ -98,7 +128,13 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
             invalidClosingCash: "กรุณากรอกเงินสดปลายกะให้ถูกต้อง",
             unknownError: "ดำเนินการไม่สำเร็จ",
             opened: "เริ่มกะ",
-            windowEnded: "ครบเวลา"
+            windowEnded: "ครบเวลา",
+            cashSales: "ยอดขายเงินสด",
+            transferSales: "ยอดโอน",
+            cashStatus: "สถานะเงินสด",
+            balanced: "ผ่าน",
+            short: "ติดลบ",
+            over: "เกิน"
           }
         : {
             title: "Shift Close Reminder",
@@ -124,7 +160,13 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
             invalidClosingCash: "Please enter a valid closing cash amount.",
             unknownError: "Unable to complete request.",
             opened: "Opened",
-            windowEnded: "Window ended"
+            windowEnded: "Window ended",
+            cashSales: "Cash sales",
+            transferSales: "Transfer sales",
+            cashStatus: "Cash status",
+            balanced: "Balanced",
+            short: "Short",
+            over: "Over"
           },
     [lang]
   );
@@ -142,7 +184,14 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
     setShift({
       id: activeShift.id,
       opened_at: activeShift.opened_at,
-      status: activeShift.status
+      status: activeShift.status,
+      metrics: activeShift.metrics ?? {
+        order_count: 0,
+        cancelled_order_count: 0,
+        sales_total: 0,
+        cash_total: 0,
+        transfer_total: 0
+      }
     });
     const nextCycle = resolveShiftCycle(activeShift.opened_at);
     setPhase(nextCycle ? resolveShiftGuardPhase(nextCycle) : "on_time");
@@ -339,6 +388,20 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
 
   const forceClose = (phase === "urgent" || phase === "auto_close") && !needsManagerApproval;
   const progressText = busy === "continue" ? copy.continuingProgress : busy ? copy.closingProgress : null;
+  const closingCashAmount = Number(closingCash.trim() || "0");
+  const closingCashIsValid = Number.isFinite(closingCashAmount) && closingCashAmount >= 0;
+  const expectedCash = shift.metrics.cash_total;
+  const cashVariance = closingCashIsValid ? Number((closingCashAmount - expectedCash).toFixed(2)) : 0;
+  const cashStatusClass =
+    !closingCashIsValid || Math.abs(cashVariance) < 0.01
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : cashVariance < 0
+        ? "border-rose-200 bg-rose-50 text-rose-700"
+        : "border-amber-200 bg-amber-50 text-amber-700";
+  const cashStatusText =
+    !closingCashIsValid || Math.abs(cashVariance) < 0.01
+      ? copy.balanced
+      : `${cashVariance < 0 ? copy.short : copy.over} ${formatMoney(Math.abs(cashVariance), lang)}`;
 
   return (
     <>
@@ -470,6 +533,20 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
               placeholder="0.00"
             />
           </label>
+          <div className="mt-3 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-semibold text-slate-600">{copy.cashSales}</span>
+              <strong className="text-slate-950">{formatMoney(expectedCash, lang)}</strong>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-semibold text-slate-600">{copy.transferSales}</span>
+              <strong className="text-slate-950">{formatMoney(shift.metrics.transfer_total, lang)}</strong>
+            </div>
+            <div className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 ${cashStatusClass}`}>
+              <span className="font-bold">{copy.cashStatus}</span>
+              <strong>{cashStatusText}</strong>
+            </div>
+          </div>
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             <button
               type="button"
