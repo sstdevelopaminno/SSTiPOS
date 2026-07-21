@@ -125,6 +125,11 @@ function formatMoney(value: number, lang: Lang) {
   }).format(value);
 }
 
+function formatSignedMoney(value: number, lang: Lang) {
+  if (Math.abs(value) < 0.01) return formatMoney(0, lang);
+  return `${value > 0 ? "+" : "-"}${formatMoney(Math.abs(value), lang)}`;
+}
+
 function formatDateTime(value: string, lang: Lang) {
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return value;
@@ -262,7 +267,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
             shiftName: "ชื่อกะ",
             status: "สถานะ",
             opening: "เงินตั้งต้น",
-            expected: "เงินคาดหวัง",
+            expected: "ผลต่างเงินสด",
             actual: "เงินนับจริง",
             open: "เปิด",
             closed: "ปิด",
@@ -325,7 +330,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
             shiftName: "Shift",
             status: "Status",
             opening: "Opening",
-            expected: "Expected",
+            expected: "Cash variance",
             actual: "Actual",
             open: "Open",
             closed: "Closed",
@@ -850,6 +855,16 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                 <tbody>
                   {payload.shifts.map((shift) => {
                     const cycle = resolveShiftCycle(shift.opened_at);
+                    const cashVariance =
+                      shift.actual_cash === null ? null : Number((shift.actual_cash - shift.metrics.cash_total).toFixed(2));
+                    const cashVarianceClass =
+                      cashVariance === null
+                        ? "text-slate-400"
+                        : Math.abs(cashVariance) < 0.01
+                          ? "text-emerald-700"
+                          : cashVariance < 0
+                            ? "text-rose-700"
+                            : "text-amber-700";
                     return (
                       <tr key={shift.id} className="border-t border-slate-200">
                         <td className="px-3 py-3 font-semibold text-slate-700">{cycle ? slotLabel(cycle.slot, lang) : "-"}</td>
@@ -873,7 +888,9 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                         <td className="px-3 py-3 text-right">{formatMoney(shift.metrics.cash_total, lang)}</td>
                         <td className="px-3 py-3 text-right">{formatMoney(shift.metrics.transfer_total, lang)}</td>
                         <td className="px-3 py-3 text-right">{formatMoney(shift.opening_cash, lang)}</td>
-                        <td className="px-3 py-3 text-right">{shift.expected_cash === null ? "-" : formatMoney(shift.expected_cash, lang)}</td>
+                        <td className={`px-3 py-3 text-right font-bold ${cashVarianceClass}`}>
+                          {cashVariance === null ? "-" : formatSignedMoney(cashVariance, lang)}
+                        </td>
                         <td className="px-3 py-3 text-right">{shift.actual_cash === null ? "-" : formatMoney(shift.actual_cash, lang)}</td>
                       </tr>
                     );
