@@ -56,7 +56,9 @@ function getCopy(lang: AppLanguage) {
       popupCheckingUser: "Verifying employee identity...",
       popupEnteringPos: "Entering POS mode...",
       popupFailedTitle: "Action failed",
-      popupClose: "Close"
+      popupClose: "Close",
+      showCode: "Show employee code",
+      hideCode: "Hide employee code"
     };
   }
 
@@ -81,8 +83,26 @@ function getCopy(lang: AppLanguage) {
     popupCheckingUser: "กำลังยืนยันตัวตนพนักงาน...",
     popupEnteringPos: "กำลังเข้าโหมด POS...",
     popupFailedTitle: "ดำเนินการไม่สำเร็จ",
-    popupClose: "ปิด"
+    popupClose: "ปิด",
+    showCode: "แสดงรหัสพนักงาน",
+    hideCode: "ซ่อนรหัสพนักงาน"
   };
+}
+
+function EyeIcon({ open }: { open: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
+      {!open ? <path d="M4 4l16 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /> : null}
+    </svg>
+  );
 }
 
 function normalizeEmployeeCodeInput(value: string) {
@@ -143,6 +163,7 @@ function LoginEmployeePageContent() {
   const [verifyingCode, setVerifyingCode] = useState(false);
   const [error, setError] = useState("");
   const [popup, setPopup] = useState<PopupState>({ type: "none" });
+  const [showEmployeeCode, setShowEmployeeCode] = useState(false);
   const employeeCodeInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -264,11 +285,11 @@ function LoginEmployeePageContent() {
         <>
           <form className="ipos-form" onSubmit={handleVerifyByCode}>
             <label htmlFor="employeeCode">{copy.verifyLabel}</label>
-            <div className="ipos-input-wrap ipos-input-wrap-compact" onClick={() => employeeCodeInputRef.current?.focus()}>
+            <div className="ipos-input-wrap ipos-input-wrap-compact ipos-input-wrap-with-toggle" onClick={() => employeeCodeInputRef.current?.focus()}>
               <input
                 ref={employeeCodeInputRef}
                 id="employeeCode"
-                type="text"
+                type={showEmployeeCode ? "text" : "password"}
                 value={employeeCode}
                 onChange={(event) => {
                   setEmployeeCode(normalizeEmployeeCodeInput(event.target.value));
@@ -280,6 +301,18 @@ function LoginEmployeePageContent() {
                 autoComplete="off"
                 autoFocus
               />
+              <button
+                type="button"
+                className="login-code-visibility-btn"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setShowEmployeeCode((current) => !current);
+                }}
+                aria-label={showEmployeeCode ? copy.hideCode : copy.showCode}
+                title={showEmployeeCode ? copy.hideCode : copy.showCode}
+              >
+                <EyeIcon open={showEmployeeCode} />
+              </button>
             </div>
             <button type="submit" className="ipos-primary-btn ipos-btn-compact" disabled={verifyingCode}>
               {verifyingCode ? copy.verifyingButton : copy.verifyButton}

@@ -6863,7 +6863,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           taxLines={taxBreakdown.lines}
           onCheckout={handleCheckout}
           onRetry={showEmergencyRetry ? handleEmergencyRetry : undefined}
-          onCancelBill={requestCancelBill}
+          onCancelBill={canCancelActiveOrder ? requestCancelBill : undefined}
           onHoldBill={holdBill}
           onMember={
             orderType === "delivery_manual"
@@ -6899,15 +6899,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           billNo={showSidebarOrderSummary ? activeBillNo : "-"}
           actionsDisabled={isBusy}
           cancelBillDisabled={!canCancelFromSidebar}
-          cancelLabel={
-            !canCancelActiveOrder
-              ? orderType === "delivery_manual"
-                ? text.deliveryDraftClearAction
-                : lang === "th"
-                  ? "ล้างรายการ"
-                  : "Clear items"
-              : undefined
-          }
+          cancelLabel={undefined}
           transferVerificationLabel={text.transferVerificationSummaryLabel}
           transferVerificationBadge={
             latestSidebarTransferVerification

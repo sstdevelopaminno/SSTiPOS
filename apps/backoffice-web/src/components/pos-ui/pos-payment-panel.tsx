@@ -133,13 +133,15 @@ export function PosPaymentPanel({
       disabled: actionsDisabled,
       label: text.promotion
     },
-    {
-      key: "cancel",
-      className: "posui-btn posui-btn--cancel-near-checkout",
-      onClick: onCancelBill,
-      disabled: actionsDisabled || cancelBillDisabled,
-      label: cancelLabel ?? text.cancelBill
-    }
+    onCancelBill
+      ? {
+          key: "cancel",
+          className: "posui-btn posui-btn--cancel-near-checkout",
+          onClick: onCancelBill,
+          disabled: actionsDisabled || cancelBillDisabled,
+          label: cancelLabel ?? text.cancelBill
+        }
+      : null
   ] as Array<SecondaryAction | null>).filter((action): action is SecondaryAction => Boolean(action));
 
   return (

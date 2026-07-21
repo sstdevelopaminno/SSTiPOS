@@ -8203,8 +8203,16 @@ a {
   padding: 0 9px;
 }
 
+.store-v2-input-box-with-toggle {
+  grid-template-columns: auto 1px minmax(0, 1fr) 36px;
+}
+
 .ipos-input-wrap-compact {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.ipos-input-wrap-with-toggle {
+  grid-template-columns: minmax(0, 1fr) 36px;
 }
 
 .ipos-input-wrap input,
@@ -8220,6 +8228,32 @@ a {
   padding: 0 12px;
   width: 100%;
   touch-action: manipulation;
+}
+
+.login-code-visibility-btn {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #4774ad;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.login-code-visibility-btn:hover {
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+}
+
+.login-code-visibility-btn:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
 }
 
 .ipos-input-wrap input::placeholder,

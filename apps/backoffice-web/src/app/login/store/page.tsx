@@ -51,7 +51,9 @@ function getCopy(lang: AppLanguage) {
       defaultError: "Cannot sign in. Please check store code.",
       timeoutError: "Request timeout. Please try again.",
       networkError: "Cannot connect to server.",
-      cancel: "Cancel"
+      cancel: "Cancel",
+      showCode: "Show store code",
+      hideCode: "Hide store code"
     };
   }
 
@@ -73,8 +75,26 @@ function getCopy(lang: AppLanguage) {
     defaultError: "ไม่สามารถเข้าสู่ระบบได้ กรุณาตรวจสอบรหัสร้านค้า",
     timeoutError: "หมดเวลาการเชื่อมต่อ กรุณาลองใหม่อีกครั้ง",
     networkError: "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้",
-    cancel: "ยกเลิก"
+    cancel: "ยกเลิก",
+    showCode: "แสดงรหัสร้านค้า",
+    hideCode: "ซ่อนรหัสร้านค้า"
   };
+}
+
+function EyeIcon({ open }: { open: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
+      {!open ? <path d="M4 4l16 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /> : null}
+    </svg>
+  );
 }
 
 function mapStoreErrorMessage(code: string | null | undefined, copy: ReturnType<typeof getCopy>) {
@@ -151,6 +171,7 @@ export default function LoginStorePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [popup, setPopup] = useState<PopupState>({ type: "none" });
+  const [showStoreCode, setShowStoreCode] = useState(false);
   const activeControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -248,7 +269,7 @@ export default function LoginStorePage() {
         <form className="store-v2-form" onSubmit={handleSubmit}>
           <label htmlFor="storeCode">{copy.storeCodeLabel}</label>
 
-          <div className="store-v2-input-box">
+          <div className="store-v2-input-box store-v2-input-box-with-toggle">
             <span className="store-v2-input-icon" aria-hidden="true">
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
                 <path d="M4 10V20H20V10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -267,7 +288,7 @@ export default function LoginStorePage() {
 
             <input
               id="storeCode"
-              type="text"
+              type={showStoreCode ? "text" : "password"}
               value={storeCode}
               onChange={(event) => {
                 setStoreCode(normalizeStoreCodeInput(event.target.value));
@@ -282,6 +303,15 @@ export default function LoginStorePage() {
               aria-describedby="storeCodeHelp"
               autoComplete="off"
             />
+            <button
+              type="button"
+              className="login-code-visibility-btn"
+              onClick={() => setShowStoreCode((current) => !current)}
+              aria-label={showStoreCode ? copy.hideCode : copy.showCode}
+              title={showStoreCode ? copy.hideCode : copy.showCode}
+            >
+              <EyeIcon open={showStoreCode} />
+            </button>
           </div>
           <div id="storeCodeHelp" className="store-v2-field-meta">
             <span>{storeCode.length}/32</span>
