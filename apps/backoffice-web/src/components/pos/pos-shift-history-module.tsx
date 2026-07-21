@@ -373,6 +373,19 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
     if (!sessionShift?.opened_at || sessionShift.status !== "open") return null;
     return resolveShiftCycle(sessionShift.opened_at);
   }, [sessionShift?.opened_at, sessionShift?.status]);
+  const activeShiftMetrics = useMemo(() => {
+    if (!sessionShift?.id) return null;
+    return payload?.shifts.find((shift) => shift.id === sessionShift.id)?.metrics ?? null;
+  }, [payload?.shifts, sessionShift?.id]);
+  const closingCashAmount = Number(closingCash.trim() || "0");
+  const closingCashIsValid = Number.isFinite(closingCashAmount) && closingCashAmount >= 0;
+  const closingCashExpected = activeShiftMetrics?.cash_total ?? 0;
+  const closingCashVariance = closingCashIsValid ? Number((closingCashAmount - closingCashExpected).toFixed(2)) : 0;
+  const cashFloatLabel = lang === "th" ? "ใส่เงินทอน" : "Cash float";
+  const cashVarianceLabel = lang === "th" ? "สถานะเงินสด" : "Cash status";
+  const cashBalancedLabel = lang === "th" ? "ผ่าน" : "Balanced";
+  const cashShortLabel = lang === "th" ? "ติดลบ" : "Short";
+  const cashOverLabel = lang === "th" ? "เกิน" : "Over";
 
   const openModal = useCallback((kind: Exclude<ModalKind, null>) => {
     if (closeTimerRef.current) {
@@ -827,7 +840,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                     <th className="px-3 py-3 text-right">{text.sales}</th>
                     <th className="px-3 py-3 text-right">{text.cash}</th>
                     <th className="px-3 py-3 text-right">{text.transfer}</th>
-                    <th className="px-3 py-3 text-right">{text.opening}</th>
+                    <th className="px-3 py-3 text-right">{cashFloatLabel}</th>
                     <th className="px-3 py-3 text-right">{text.expected}</th>
                     <th className="px-3 py-3 text-right">{text.actual}</th>
                   </tr>
@@ -945,7 +958,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
 
             {(modalKind === "open" || modalKind === "close") ? (
               <label className="mt-4 grid gap-1 text-sm font-semibold text-slate-700">
-                {modalKind === "open" ? text.openingCash : text.closingCash}
+                {modalKind === "open" ? cashFloatLabel : text.closingCash}
                 <input
                   type="number"
                   min={0}
@@ -961,6 +974,35 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                   placeholder="0.00"
                 />
               </label>
+            ) : null}
+
+            {modalKind === "close" ? (
+              <div className="mt-4 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                <p className="flex items-center justify-between gap-3">
+                  <span>{text.cash}</span>
+                  <strong>{formatMoney(closingCashExpected, lang)}</strong>
+                </p>
+                <p className="flex items-center justify-between gap-3">
+                  <span>{text.transfer}</span>
+                  <strong>{formatMoney(activeShiftMetrics?.transfer_total ?? 0, lang)}</strong>
+                </p>
+                <p className="flex items-center justify-between gap-3 border-t border-slate-200 pt-2">
+                  <span>{cashVarianceLabel}</span>
+                  <strong
+                    className={
+                      !closingCashIsValid || Math.abs(closingCashVariance) < 0.01
+                        ? "text-emerald-700"
+                        : closingCashVariance < 0
+                          ? "text-rose-700"
+                          : "text-amber-700"
+                    }
+                  >
+                    {!closingCashIsValid || Math.abs(closingCashVariance) < 0.01
+                      ? cashBalancedLabel
+                      : `${closingCashVariance < 0 ? cashShortLabel : cashOverLabel} ${formatMoney(Math.abs(closingCashVariance), lang)}`}
+                  </strong>
+                </p>
+              </div>
             ) : null}
 
             {modalKind === "receipt" && closeReceipt ? (
@@ -1001,7 +1043,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                 </p>
                 <hr className="border-slate-200" />
                 <p>
-                  {text.receiptOpeningCash}: <strong>{formatMoney(closeReceipt.receipt.opening_cash, lang)}</strong>
+                  {cashFloatLabel}: <strong>{formatMoney(closeReceipt.receipt.opening_cash, lang)}</strong>
                 </p>
                 <p>
                   {text.receiptClosingCash}: <strong>{formatMoney(closeReceipt.receipt.closing_cash, lang)}</strong>
@@ -1154,7 +1196,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                 <strong>{formatMoney(closeReceipt.receipt.closing_cash, lang)}</strong>
               </p>
               <p className="is-aux">
-                <span>{text.receiptOpeningCash}</span>
+                <span>{cashFloatLabel}</span>
                 <strong>{formatMoney(closeReceipt.receipt.opening_cash, lang)}</strong>
               </p>
               <p className="is-aux">

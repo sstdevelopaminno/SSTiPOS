@@ -140,8 +140,8 @@ export async function POST(request: Request) {
       quickClose
     });
 
-    const expectedCash = autoCloseWithoutCashCount ? null : closingCash ?? 0;
-    const actualCash = autoCloseWithoutCashCount ? null : closingCash ?? 0;
+    const initialExpectedCash = autoCloseWithoutCashCount ? null : closingCash ?? 0;
+    const initialActualCash = autoCloseWithoutCashCount ? null : closingCash ?? 0;
     const { error: closeError } = await supabase
       .from("shifts")
       .update({
@@ -149,8 +149,8 @@ export async function POST(request: Request) {
         closed_by: sessionScope.userId,
         closed_at: closedAtIso,
         closing_cash: closingCash,
-        expected_cash: expectedCash,
-        actual_cash: actualCash,
+        expected_cash: initialExpectedCash,
+        actual_cash: initialActualCash,
         close_override_approval_id: selfApprovalId,
         metadata: {
           ...(typeof shift === "object" ? { closed_via: "pos_session_gate" } : {}),
@@ -353,6 +353,24 @@ export async function POST(request: Request) {
       }
     }
 
+    const finalExpectedCash = autoCloseWithoutCashCount ? null : Number(cashTotal.toFixed(2));
+    const finalActualCash = autoCloseWithoutCashCount ? null : closingCash ?? 0;
+    const closeTotalsUpdate = await supabase
+      .from("shifts")
+      .update({
+        expected_cash: finalExpectedCash,
+        actual_cash: finalActualCash
+      })
+      .eq("id", shift.id)
+      .eq("tenant_id", sessionScope.tenantId)
+      .eq("branch_id", sessionScope.branchId);
+    if (closeTotalsUpdate.error) {
+      return NextResponse.json(
+        { data: null, error: { code: "shift_close_totals_update_failed", message: closeTotalsUpdate.error.message } },
+        { status: 500 }
+      );
+    }
+
     await appendAuditLog({
       tenantId: sessionScope.tenantId,
       branchId: sessionScope.branchId,
@@ -397,8 +415,8 @@ export async function POST(request: Request) {
           opened_at: shift.opened_at,
           opening_cash: openingCashValue,
           closing_cash: closingCash ?? 0,
-          expected_cash: expectedCash ?? openingCashValue + cashTotal,
-          actual_cash: actualCash,
+          expected_cash: finalExpectedCash ?? openingCashValue + cashTotal,
+          actual_cash: finalActualCash,
           auto_closed_without_cash_count: autoCloseWithoutCashCount
         }
       },
