@@ -4,9 +4,13 @@
 - Support package-based activation before login.
 - One `store_code` per owner/tenant, multiple branches under same code.
 - Staff login by `store_code` + `staff_code` (or seller code).
-- Optional QR verification as second factor for branch/shift assignment.
 - Enforce menu-level permissions by role.
 - Work for web app and desktop runtime (online/hybrid/offline modes).
+
+## QR Verification Status
+QR/mobile login was decommissioned from the active runtime on 2026-05-29 and remains historical/future-only.
+This document must not be read as approval to reintroduce `MOBILE_*`, `POS_QR_*`, `/scan`, `/qr-scan`, `/login/qr-*`, or `/api/auth/qr/*` implementation work.
+Any future QR verification design must be approved as a new architecture and documented before schema, environment variable, API, or UI changes are added.
 
 ## Proposed Login Flow
 1. `Store Access`
@@ -24,17 +28,12 @@
 - Resolve user profile + branch role.
 - Check user active status and branch assignment.
 
-4. `QR Verification` (optional policy per tenant/branch)
-- Scan staff QR card (device camera or scanner).
-- Verify QR token/session binding.
-- Record verification event for audit and shift traceability.
-
-5. `Shift Context`
+4. `Shift Context`
 - Enter with or without open shift (policy-based).
 - Attach user to current shift if open.
 - If no shift open: allow limited mode or prompt open-shift flow.
 
-6. `Role-based Menu Access`
+5. `Role-based Menu Access`
 - Build effective permissions from role + feature flags + package entitlements.
 - Render POS modules by permission matrix.
 
@@ -44,11 +43,9 @@
 - `staff_login_codes`
   - `user_id`, `tenant_id`, `branch_id`, `staff_code`, `pin_hash`, `is_active`
 - `branch_login_policies`
-  - `tenant_id`, `branch_id`, `require_qr_verify`, `allow_no_shift_login`, `allow_cross_branch`
-- `staff_qr_identities`
-  - `user_id`, `tenant_id`, `qr_token_hash`, `expires_at`, `is_active`
+  - `tenant_id`, `branch_id`, `allow_no_shift_login`, `allow_cross_branch`
 - `login_sessions`
-  - `tenant_id`, `branch_id`, `user_id`, `device_id`, `auth_mode`, `verified_by_qr`, `started_at`, `ended_at`
+  - `tenant_id`, `branch_id`, `user_id`, `device_id`, `auth_mode`, `started_at`, `ended_at`
 
 ## API Contract (Draft)
 - `POST /api/auth/store/resolve`
@@ -57,9 +54,6 @@
 - `POST /api/auth/staff/login`
   - input: `store_code`, `branch_id`, `staff_code`, `pin`
   - output: auth token + role + permissions
-- `POST /api/auth/staff/qr-verify`
-  - input: `session_id`, `qr_payload`
-  - output: verified status + claims update
 - `GET /api/auth/permissions`
   - output: effective menu/actions for current user
 
@@ -74,13 +68,13 @@
 ## Desktop Runtime Notes
 - Device registration table for trusted terminals.
 - Offline token cache with short expiry and signed claims.
-- On reconnect, sync login/session events and QR verification logs.
+- On reconnect, sync login/session events.
 
 ## Rollout Strategy
 1. Add schemas and APIs (no UI impact).
 2. Add compatibility layer: if no store-code policy, keep current login behavior.
 3. Pilot on 1-2 tenants.
-4. Gradually enforce store-code + branch selection + QR policy per tenant.
+4. Gradually enforce store-code + branch selection policy per tenant.
 
 ## Vercel and Domain Notes
 - Current hosting: Vercel web app.

@@ -56,6 +56,39 @@ function shiftRequiresManagerApproval(openedAt: string) {
   return Date.now() >= cycle.autoCloseAt.getTime();
 }
 
+async function createSelfShiftCloseApproval(args: {
+  tenantId: string;
+  branchId: string;
+  shiftId: string;
+  userId: string;
+  role: string;
+  quickClose: boolean;
+}) {
+  if (args.role !== "owner" && args.role !== "manager") return null;
+
+  const supabase = getSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("manager_pin_approvals")
+    .insert({
+      tenant_id: args.tenantId,
+      branch_id: args.branchId,
+      action: "shift_close_override",
+      requested_by: args.userId,
+      approved_by: args.userId,
+      target_table: "shifts",
+      target_id: args.shiftId,
+      note: args.quickClose ? "POS quick close by current manager/owner session." : "POS close by current manager/owner session."
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data?.id ?? null;
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => null)) as {
@@ -98,6 +131,14 @@ export async function POST(request: Request) {
       : closedByDifferentUser
         ? "manager_owner_close_for_staff"
         : "self_close";
+    const selfApprovalId = await createSelfShiftCloseApproval({
+      tenantId: sessionScope.tenantId,
+      branchId: sessionScope.branchId,
+      shiftId: shift.id,
+      userId: sessionScope.userId,
+      role: sessionScope.role,
+      quickClose
+    });
 
     const expectedCash = autoCloseWithoutCashCount ? null : closingCash ?? 0;
     const actualCash = autoCloseWithoutCashCount ? null : closingCash ?? 0;
@@ -110,6 +151,7 @@ export async function POST(request: Request) {
         closing_cash: closingCash,
         expected_cash: expectedCash,
         actual_cash: actualCash,
+        close_override_approval_id: selfApprovalId,
         metadata: {
           ...(typeof shift === "object" ? { closed_via: "pos_session_gate" } : {}),
           pos_session_id: scope.session.id,
@@ -119,6 +161,8 @@ export async function POST(request: Request) {
           auto_close_uses_sales_total: autoCloseWithoutCashCount,
           manager_approval_required: false,
           manager_approval_removed_reason: overdueAutoClose ? "overdue_shift_can_close_without_manager_pin" : null,
+          close_override_approval_id: selfApprovalId,
+          self_approved_by_current_session: Boolean(selfApprovalId),
           opened_by_user_id: shift.opened_by,
           closed_by_user_id: sessionScope.userId
         }
@@ -171,6 +215,8 @@ export async function POST(request: Request) {
           cash_count_required: !autoCloseWithoutCashCount,
           auto_close_uses_sales_total: autoCloseWithoutCashCount,
           manager_approval_required: false,
+          close_override_approval_id: selfApprovalId,
+          self_approved_by_current_session: Boolean(selfApprovalId),
           opened_by_user_id: shift.opened_by,
           closed_by_user_id: sessionScope.userId
         }
@@ -323,6 +369,8 @@ export async function POST(request: Request) {
         cash_count_required: !autoCloseWithoutCashCount,
         auto_close_uses_sales_total: autoCloseWithoutCashCount,
         manager_approval_required: false,
+        close_override_approval_id: selfApprovalId,
+        self_approved_by_current_session: Boolean(selfApprovalId),
         opened_by_user_id: shift.opened_by,
         closed_by_user_id: sessionScope.userId
       }

@@ -205,8 +205,8 @@ For every sensitive route:
 
 ## 6) Key Documents (Read First)
 
-- `docs/pos-multi-owner-branch-architecture.md`
-- `docs/pos-login-context-handoff.md`
+- `docs/ACTIVE-DOCS-INDEX.md`
+- `docs/POS-LOGIN-ARCHITECTURE-PHASE-NEXT.md`
 - `docs/definition-of-done.md`
 - `docs/manual-qa-checklist.md`
 - `docs/production-readiness-checklist.md`
@@ -232,26 +232,12 @@ Important env vars include:
   - `POS_STORE_LOGIN_CONTEXT_RATE_LIMIT_MAX`
   - `POS_LOGIN_RATE_LIMIT_IP_MAX`
   - `POS_LOGIN_RATE_LIMIT_DEVICE_MAX`
-  - `ACTIVATION_TOKEN_TTL_MINUTES`
-  - `MOBILE_DEVICE_CODE_COOKIE_NAME`
-  - `MOBILE_ENROLLMENT_COOKIE_NAME`
-  - `MOBILE_ENROLLMENT_SECRET`
-  - `MOBILE_ENROLLMENT_REF_TTL_SECONDS`
-  - `MOBILE_LOGIN_CONTEXT_TTL_MINUTES`
-  - `MOBILE_DEVICE_SESSION_TTL_HOURS`
-  - `MOBILE_COOKIE_SECURE`
-  - `MOBILE_COOKIE_DOMAIN`
-  - `MOBILE_ACTIVATION_CLAIM_RATE_LIMIT_MAX`
-  - `MOBILE_ACTIVATION_CLAIM_RATE_LIMIT_WINDOW_SECONDS`
-  - `MOBILE_LOGIN_START_RATE_LIMIT_MAX`
-  - `MOBILE_LOGIN_START_RATE_LIMIT_WINDOW_SECONDS`
-  - `MOBILE_LOGIN_VERIFY_RATE_LIMIT_IP_MAX`
-  - `MOBILE_LOGIN_VERIFY_RATE_LIMIT_DEVICE_MAX`
-  - `MOBILE_LOGIN_VERIFY_RATE_LIMIT_WINDOW_SECONDS`
   - `RATE_LIMIT_BACKEND`
   - `RATE_LIMIT_REDIS_PREFIX`
   - `UPSTASH_REDIS_REST_URL`
   - `UPSTASH_REDIS_REST_TOKEN`
+
+QR/mobile login environment variables were removed with the QR Scan login flow on 2026-05-29. Do not add new `MOBILE_*` or `POS_QR_*` env requirements unless a new mobile login architecture is explicitly approved and documented.
 
 ## 8) Known Gaps / Go-live Blockers
 

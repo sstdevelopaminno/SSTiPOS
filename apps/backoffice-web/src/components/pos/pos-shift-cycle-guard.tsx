@@ -61,6 +61,7 @@ async function fetchJsonWithTimeout(url: string, init: RequestInit = {}, timeout
 export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<null | "continue" | "close" | "autoclose">(null);
+  const [logoutBusy, setLogoutBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<ShiftGuardPhase>("on_time");
   const [shift, setShift] = useState<{ id: string; opened_at: string; status: string } | null>(null);
@@ -78,6 +79,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
             subtitle: "รอบกะปัจจุบันสิ้นสุดแล้ว กรุณาเลือกการดำเนินการ",
             continueLabel: "ต่อกะ",
             closeLabel: "ปิดกะ",
+            logoutLabel: "ออกจากระบบ",
             closeNowTitle: "ปิดกะตอนนี้",
             closeNowDesc: "กรอกเงินสดปลายกะเพื่อบันทึกและปิดรอบขาย",
             closingCash: "เงินสดปลายกะ",
@@ -103,6 +105,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
             subtitle: "Current shift window has ended. Please choose an action.",
             continueLabel: "Continue shift",
             closeLabel: "Close shift",
+            logoutLabel: "Sign out",
             closeNowTitle: "Close Shift",
             closeNowDesc: "Enter closing cash to save and close this shift.",
             closingCash: "Closing cash",
@@ -205,6 +208,31 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
     }
     window.location.assign(logoutBody?.data?.redirect_to ?? "/login/branches?flow=multi");
   }, [copy.unknownError]);
+
+  const logoutFully = useCallback(async () => {
+    if (logoutBusy) return;
+    setLogoutBusy(true);
+    setError(null);
+    try {
+      const { response, body } = await fetchJsonWithTimeout(
+        "/api/auth/session/logout",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "full" })
+        },
+        15000
+      );
+      const logoutBody = body as { data?: { redirect_to?: string } | null; error?: { message?: string } | null } | null;
+      if (!response.ok) {
+        throw new Error(logoutBody?.error?.message ?? copy.unknownError);
+      }
+      window.location.assign(logoutBody?.data?.redirect_to ?? "/login/store");
+    } catch (logoutError) {
+      setError(toErrorMessage(logoutError));
+      setLogoutBusy(false);
+    }
+  }, [copy.unknownError, logoutBusy, toErrorMessage]);
 
   const closeShift = useCallback(
     async (closingCashValue: number | null, approvalPin = "") => {
@@ -368,6 +396,14 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
         <p className="mt-4 text-xs text-slate-500">{copy.logoutHint}</p>
 
         <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => void logoutFully()}
+            disabled={Boolean(busy) || logoutBusy}
+            className="h-10 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {logoutBusy ? copy.closingProgress : copy.logoutLabel}
+          </button>
           {!forceClose ? (
             <button
               type="button"
@@ -438,7 +474,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
             <button
               type="button"
               onClick={() => window.print()}
-              disabled={Boolean(busy)}
+              disabled={Boolean(busy) || logoutBusy}
               className="h-10 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
               {copy.print}
@@ -446,15 +482,23 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
             <button
               type="button"
               onClick={() => setShowCloseModal(false)}
-              disabled={Boolean(busy)}
+              disabled={Boolean(busy) || logoutBusy}
               className="h-10 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
               {copy.cancel}
             </button>
             <button
               type="button"
+              onClick={() => void logoutFully()}
+              disabled={Boolean(busy) || logoutBusy}
+              className="h-10 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              {logoutBusy ? copy.closingProgress : copy.logoutLabel}
+            </button>
+            <button
+              type="button"
               onClick={() => void handleManualClose()}
-              disabled={Boolean(busy)}
+              disabled={Boolean(busy) || logoutBusy}
               className="h-10 rounded-xl bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-60"
             >
               {busy === "close" ? copy.closingProgress : copy.confirmClose}

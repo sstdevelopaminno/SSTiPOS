@@ -192,7 +192,7 @@ Solo register demo (no branch-selection UI, one cashier device):
 - `docs/api-route-design.md`
 - `docs/ui-route-structure.md`
 - `context.md` (authoritative GPT/Codex handoff context)
-- `docs/pos-multi-owner-branch-architecture.md`
+- `docs/POS-LOGIN-ARCHITECTURE-PHASE-NEXT.md`
 - `docs/POS-LOGIN-POS-BRIDGE-E2E-CHECKLIST.md`
 - `docs/definition-of-done.md`
 - `docs/manual-qa-checklist.md`

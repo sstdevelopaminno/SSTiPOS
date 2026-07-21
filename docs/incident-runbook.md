@@ -68,7 +68,7 @@
     - `SUPABASE_SERVICE_ROLE_KEY`
     - `OPENAI_API_KEY`
     - `POS_SESSION_HANDOFF_SECRET`
-    - `MOBILE_ENROLLMENT_SECRET`
+    - rate-limiter backend tokens such as `UPSTASH_REDIS_REST_TOKEN` when configured
   - Re-deploy after rotation so runtime instances use new values.
 - Verification:
   - Review Vercel activity logs for unexpected env reads, deployment actions, and token creation.
