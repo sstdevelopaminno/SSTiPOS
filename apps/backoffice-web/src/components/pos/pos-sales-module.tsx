@@ -33,6 +33,8 @@ type Lang = "th" | "en";
 type QuickMode = "home" | "dine_in" | "delivery";
 type TableViewMode = "list" | "floor";
 
+const POS_TABLE_VIEW_MODE_STORAGE_KEY = "pos_table_view_mode_v1";
+
 type ProductRow = {
   id: string;
   sku: string;
@@ -1808,7 +1810,11 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [selectedTable, setSelectedTable] = useState<DiningTableItem | null>(null);
   const [dineInSessionBillNo, setDineInSessionBillNo] = useState<string | null>(null);
   const [tableBrowserOpen, setTableBrowserOpen] = useState(false);
-  const [tableViewMode, setTableViewMode] = useState<TableViewMode>("list");
+  const [tableViewMode, setTableViewModeState] = useState<TableViewMode>(() => {
+    if (typeof window === "undefined") return "list";
+    return window.localStorage.getItem(POS_TABLE_VIEW_MODE_STORAGE_KEY) === "floor" ? "floor" : "list";
+  });
+  const tableViewModeRef = useRef<TableViewMode>(tableViewMode);
   const [tableZoneFilter, setTableZoneFilter] = useState("all");
   const [tableZoom, setTableZoom] = useState(1);
   const [tablePan, setTablePan] = useState({ x: 0, y: 0 });
@@ -1831,6 +1837,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [reviewOrder, setReviewOrder] = useState<CheckoutReviewOrder | null>(null);
   const [takeawayCreatingPreview, setTakeawayCreatingPreview] = useState<TakeawayCreatingPreview | null>(null);
   const [cashReviewOrder, setCashReviewOrder] = useState<CheckoutReviewOrder | null>(null);
+  const [cashNoticeMessage, setCashNoticeMessage] = useState<string | null>(null);
   const [transferReviewOrder, setTransferReviewOrder] = useState<CheckoutReviewOrder | null>(null);
   const [transferReference, setTransferReference] = useState("");
   const [promptPayPhone, setPromptPayPhone] = useState(DEFAULT_PROMPTPAY_PHONE);
@@ -1865,6 +1872,14 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [receiptSaved, setReceiptSaved] = useState(false);
   const [receiptError, setReceiptError] = useState<string | null>(null);
   const [cancelBillSubmitting, setCancelBillSubmitting] = useState(false);
+
+  const updateTableViewMode = useCallback((value: TableViewMode) => {
+    tableViewModeRef.current = value;
+    setTableViewModeState(value);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(POS_TABLE_VIEW_MODE_STORAGE_KEY, value);
+    }
+  }, []);
   const [branchMonitor, setBranchMonitor] = useState<BranchMonitor | null>(null);
   const [hasRenderableData, setHasRenderableData] = useState(false);
   const [selectedDeliveryApp, setSelectedDeliveryApp] = useState<DeliveryApp["id"] | null>(null);
@@ -2514,6 +2529,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     setBillPaymentMethod(null);
     setQuickMode("dine_in");
     setOrderType("dine_in");
+    setTableViewModeState(tableViewModeRef.current);
     setTableBrowserOpen(true);
     setLastCommittedCartSignature(null);
     if (lastSelectedTableId) {
@@ -5983,7 +5999,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     const hasEnoughAmount = hasReceivedAmount && received + 0.009 >= cashReviewOrder.total_amount;
     if (!hasReceivedAmount || !hasEnoughAmount) {
       setCashError(text.cashInsufficient);
-      window.alert(text.cashInsufficient);
+      setCashNoticeMessage(text.cashInsufficient);
       return;
     }
     const nextReceiptSession: ReceiptSession = {
@@ -6766,7 +6782,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         tableLoading={tableLoading}
         visibleTables={visibleTables}
         tableViewMode={tableViewMode}
-        setTableViewMode={setTableViewMode}
+        setTableViewMode={updateTableViewMode}
         tableZones={tableZones}
         tableZoneFilter={tableZoneFilter}
         setTableZoneFilter={setTableZoneFilter}
@@ -7412,6 +7428,28 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           void cancelActiveOrder(targetOrder, approvalId);
         }}
       />
+
+      {cashNoticeMessage ? (
+        <div className="fixed inset-0 z-[220] grid place-items-center bg-slate-950/55 p-4 backdrop-blur-sm">
+          <section className="w-[min(420px,92vw)] rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <div className="grid gap-2">
+              <h3 className="text-lg font-black text-slate-950">
+                {lang === "th" ? "แจ้งเตือนการชำระเงิน" : "Payment notice"}
+              </h3>
+              <p className="text-sm font-semibold text-slate-600">{cashNoticeMessage}</p>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setCashNoticeMessage(null)}
+                className="h-11 rounded-2xl bg-blue-600 px-5 text-sm font-black text-white shadow-sm hover:bg-blue-700"
+              >
+                {lang === "th" ? "ตกลง" : "OK"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       <PosManagerApprovalModal
         open={stockModalOpen}

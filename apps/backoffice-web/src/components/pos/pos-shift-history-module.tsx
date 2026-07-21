@@ -46,6 +46,7 @@ type ShiftHistoryResponse = {
     shifts: Array<{
       id: string;
       opened_by: string;
+      closed_by: string | null;
       branch_code: string | null;
       branch_name: string | null;
       opened_by_name: string | null;
@@ -218,6 +219,67 @@ h1,p{margin:0;}
   </section>
   <p class="brand">CpIPOS</p>
 </main></body></html>`;
+}
+
+function buildShiftDetailReceiptHtml(args: {
+  shift: ShiftHistoryItem;
+  lang: Lang;
+  labels: {
+    title: string;
+    shiftName: string;
+    openedBy: string;
+    closedBy: string;
+    openedAt: string;
+    closedAt: string;
+    sales: string;
+    cash: string;
+    transfer: string;
+    variance: string;
+    actual: string;
+  };
+}) {
+  const { shift, lang, labels } = args;
+  const cycle = resolveShiftCycle(shift.opened_at);
+  const dt = (value: string) => escapeHtml(formatDateTime(value, lang));
+  const money = (value: number) => escapeHtml(formatMoney(value, lang));
+  const cashVariance = shift.actual_cash === null ? null : Number((shift.actual_cash - shift.metrics.cash_total).toFixed(2));
+  const line = (left: string, right: string) =>
+    `<p style="margin:0;display:flex;justify-content:space-between;gap:6px;"><span>${escapeHtml(left)}</span><strong>${right}</strong></p>`;
+
+  return `<!doctype html>
+<html><head><meta charset="utf-8"/>
+<style>
+@page{size:58mm auto;margin:2mm;}
+html,body{width:58mm;margin:0;padding:0;color:#000;font:11px/1.35 Tahoma,'Noto Sans Thai','Segoe UI',sans-serif;}
+main{width:54mm;margin:0 auto;padding:0.8mm 0;}
+h1,p{margin:0;}
+.head{text-align:center;display:grid;gap:0.8mm}
+.divider{border-top:1px dashed #000;margin:1.3mm 0}
+.summary{display:grid;gap:0.7mm}
+.brand{padding-top:0.6mm;margin-top:0.6mm;border-top:1px solid #000;font-weight:900;text-align:center}
+</style></head>
+<body><main>
+  <header class="head">
+    <h1>${escapeHtml(labels.title)}</h1>
+  </header>
+  <div class="divider"></div>
+  <section class="summary">
+    ${line(labels.shiftName, escapeHtml(cycle ? slotLabel(cycle.slot, lang) : "-"))}
+    ${line(labels.openedBy, escapeHtml(shift.opened_by_name ?? "-"))}
+    ${line(labels.closedBy, escapeHtml(shift.closed_by_name ?? "-"))}
+    ${line(labels.openedAt, dt(shift.opened_at))}
+    ${line(labels.closedAt, shift.closed_at ? dt(shift.closed_at) : "-")}
+  </section>
+  <div class="divider"></div>
+  <section class="summary">
+    ${line(labels.sales, money(shift.metrics.sales_total))}
+    ${line(labels.cash, money(shift.metrics.cash_total))}
+    ${line(labels.transfer, money(shift.metrics.transfer_total))}
+    ${line(labels.variance, cashVariance === null ? "-" : escapeHtml(formatSignedMoney(cashVariance, lang)))}
+    ${line(labels.actual, shift.actual_cash === null ? "-" : money(shift.actual_cash))}
+  </section>
+  <p class="brand">CpIPOS</p>
+</main><script>window.print();</script></body></html>`;
 }
 
 export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
@@ -718,6 +780,35 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
     }
   }
 
+  function printSelectedShiftDetail58() {
+    if (!selectedShift) return;
+    const receiptHtml = buildShiftDetailReceiptHtml({
+      shift: selectedShift,
+      lang,
+      labels: {
+        title: detailsTitle,
+        shiftName: text.shiftName,
+        openedBy: openedByLabel,
+        closedBy: closedByLabel,
+        openedAt: text.openedAt,
+        closedAt: text.closedAt,
+        sales: text.sales,
+        cash: text.cash,
+        transfer: text.transfer,
+        variance: text.expected,
+        actual: text.actual
+      }
+    });
+    const printWindow = window.open("", "_blank", "width=320,height=640");
+    if (!printWindow) {
+      setError(lang === "th" ? "ไม่สามารถเปิดหน้าพิมพ์ได้" : "Unable to open print window.");
+      return;
+    }
+    printWindow.document.open();
+    printWindow.document.write(receiptHtml);
+    printWindow.document.close();
+  }
+
   const printStatusHint =
     receiptPrintStatus === "printed"
       ? text.printSuccessHint
@@ -883,8 +974,6 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                   <tr className="text-left text-xs uppercase tracking-[0.1em] text-slate-500">
                     <th className="px-3 py-3">{text.shiftName}</th>
                     {payload.filters.can_view_branch_wide ? <th className="px-3 py-3">{text.branchFilter}</th> : null}
-                    <th className="px-3 py-3">{openedByLabel}</th>
-                    <th className="px-3 py-3">{closedByLabel}</th>
                     <th className="px-3 py-3">{text.openedAt}</th>
                     <th className="px-3 py-3">{text.closedAt}</th>
                     <th className="px-3 py-3">{text.status}</th>
@@ -918,22 +1007,25 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                         {payload.filters.can_view_branch_wide ? (
                           <td className="px-3 py-3 text-slate-600">{shift.branch_name ?? shift.branch_code ?? "-"}</td>
                         ) : null}
-                        <td className="max-w-[120px] truncate px-3 py-3 text-slate-600" title={shift.opened_by_name ?? "-"}>
-                          {shift.opened_by_name ?? "-"}
-                        </td>
-                        <td className="max-w-[120px] truncate px-3 py-3 text-slate-600" title={shift.closed_by_name ?? "-"}>
-                          {shift.closed_by_name ?? "-"}
-                        </td>
                         <td className="px-3 py-3 text-slate-600">{formatDateTime(shift.opened_at, lang)}</td>
                         <td className="px-3 py-3 text-slate-600">{shift.closed_at ? formatDateTime(shift.closed_at, lang) : "-"}</td>
                         <td className="px-3 py-3">
+                          {(() => {
+                            const closedBySelf = Boolean(shift.closed_by && shift.closed_by === shift.opened_by);
+                            const statusClass =
+                              shift.status === "open"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : closedBySelf
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-slate-200 text-slate-700";
+                            return (
                           <span
-                            className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                              shift.status === "open" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"
-                            }`}
+                            className={`rounded-full px-2 py-0.5 text-xs font-bold ${statusClass}`}
                           >
                             {shift.status === "open" ? text.open : text.closed}
                           </span>
+                            );
+                          })()}
                         </td>
                         <td className="px-3 py-3 text-right">{shift.metrics.order_count}</td>
                         <td className="px-3 py-3 text-right">{shift.metrics.cancelled_order_count}</td>
@@ -1292,9 +1384,18 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                     disabled={Boolean(busy)}
                     className="h-10 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-60"
                   >
-                    {modalKind === "active" ? text.close : text.cancel}
+                    {modalKind === "active" || modalKind === "details" ? text.close : text.cancel}
                   </button>
-                  {modalKind !== "active" ? (
+                  {modalKind === "details" ? (
+                    <button
+                      type="button"
+                      onClick={() => printSelectedShiftDetail58()}
+                      className="h-10 rounded-xl bg-slate-900 px-4 text-sm font-bold text-white disabled:opacity-60"
+                    >
+                      {lang === "th" ? "พิมพ์ 58mm" : "Print 58mm"}
+                    </button>
+                  ) : null}
+                  {modalKind !== "active" && modalKind !== "details" ? (
                     <button
                       type="button"
                       onClick={() => void (modalKind === "open" ? openShiftNow() : closeShiftNow())}
