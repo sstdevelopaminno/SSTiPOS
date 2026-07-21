@@ -55,6 +55,7 @@ function isMissingColumnError(error: { code?: string | null; message?: string | 
 async function loadShiftMetrics(args: {
   supabase: ReturnType<typeof getSupabaseServiceClient>;
   tenantId: string;
+  branchId: string;
   shiftId: string | null;
 }) {
   if (!args.shiftId) {
@@ -65,6 +66,7 @@ async function loadShiftMetrics(args: {
     .from("orders")
     .select("id,status,total_amount,grand_total")
     .eq("tenant_id", args.tenantId)
+    .eq("branch_id", args.branchId)
     .eq("shift_id", args.shiftId);
 
   const orders = (ordersQuery.data ?? []) as Array<{
@@ -94,26 +96,26 @@ async function loadShiftMetrics(args: {
   }
 
   let paymentRows: Array<{ order_id: string | null; method: string; amount: number | null }> = [];
-  const paymentByShift = await args.supabase
-    .from("payments")
-    .select("order_id,method,amount,shift_id")
-    .eq("tenant_id", args.tenantId)
-    .eq("shift_id", args.shiftId);
-
-  if (paymentByShift.error && isMissingColumnError(paymentByShift.error, "shift_id")) {
-    const orderIds = orders.map((order) => order.id);
-    if (orderIds.length > 0) {
-      const fallbackPayments = await args.supabase
+  const orderIds = orders.map((order) => order.id);
+  if (orderIds.length > 0) {
+    const paymentsByOrder = await args.supabase
+      .from("payments")
+      .select("order_id,method,amount")
+      .eq("tenant_id", args.tenantId)
+      .eq("branch_id", args.branchId)
+      .in("order_id", orderIds);
+    if (!paymentsByOrder.error) {
+      paymentRows = (paymentsByOrder.data ?? []) as Array<{ order_id: string | null; method: string; amount: number | null }>;
+    } else if (isMissingColumnError(paymentsByOrder.error, "branch_id")) {
+      const legacyPaymentsByOrder = await args.supabase
         .from("payments")
         .select("order_id,method,amount")
         .eq("tenant_id", args.tenantId)
         .in("order_id", orderIds);
-      if (!fallbackPayments.error) {
-        paymentRows = (fallbackPayments.data ?? []) as Array<{ order_id: string | null; method: string; amount: number | null }>;
+      if (!legacyPaymentsByOrder.error) {
+        paymentRows = (legacyPaymentsByOrder.data ?? []) as Array<{ order_id: string | null; method: string; amount: number | null }>;
       }
     }
-  } else if (!paymentByShift.error) {
-    paymentRows = (paymentByShift.data ?? []) as Array<{ order_id: string | null; method: string; amount: number | null }>;
   }
 
   for (const payment of paymentRows) {
@@ -221,6 +223,7 @@ export async function GET() {
       loadShiftMetrics({
         supabase,
         tenantId: scope.session.tenant_id,
+        branchId: scope.session.branch_id,
         shiftId: shiftSummary?.status === "open" ? shiftSummary.id : null
       })
     ]);

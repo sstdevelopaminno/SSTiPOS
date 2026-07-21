@@ -132,6 +132,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
             cashSales: "ยอดขายเงินสด",
             transferSales: "ยอดโอน",
             cashStatus: "สถานะเงินสด",
+            waitingCashInput: "รอกรอกเงินสด",
             balanced: "ผ่าน",
             short: "ติดลบ",
             over: "เกิน"
@@ -164,6 +165,7 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
             cashSales: "Cash sales",
             transferSales: "Transfer sales",
             cashStatus: "Cash status",
+            waitingCashInput: "Waiting for cash input",
             balanced: "Balanced",
             short: "Short",
             over: "Over"
@@ -388,18 +390,23 @@ export function PosShiftCycleGuard({ lang }: { lang: Lang }) {
 
   const forceClose = (phase === "urgent" || phase === "auto_close") && !needsManagerApproval;
   const progressText = busy === "continue" ? copy.continuingProgress : busy ? copy.closingProgress : null;
+  const hasClosingCashInput = closingCash.trim().length > 0;
   const closingCashAmount = Number(closingCash.trim() || "0");
   const closingCashIsValid = Number.isFinite(closingCashAmount) && closingCashAmount >= 0;
   const expectedCash = shift.metrics.cash_total;
   const cashVariance = closingCashIsValid ? Number((closingCashAmount - expectedCash).toFixed(2)) : 0;
   const cashStatusClass =
-    !closingCashIsValid || Math.abs(cashVariance) < 0.01
+    !hasClosingCashInput
+      ? "border-slate-200 bg-white text-slate-600"
+      : !closingCashIsValid || Math.abs(cashVariance) < 0.01
       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
       : cashVariance < 0
         ? "border-rose-200 bg-rose-50 text-rose-700"
         : "border-amber-200 bg-amber-50 text-amber-700";
   const cashStatusText =
-    !closingCashIsValid || Math.abs(cashVariance) < 0.01
+    !hasClosingCashInput
+      ? copy.waitingCashInput
+      : !closingCashIsValid || Math.abs(cashVariance) < 0.01
       ? copy.balanced
       : `${cashVariance < 0 ? copy.short : copy.over} ${formatMoney(Math.abs(cashVariance), lang)}`;
 
