@@ -219,36 +219,27 @@ export async function GET(request: Request) {
     const orders = (ordersQuery.data ?? []) as OrderRow[];
 
     let paymentRows: PaymentRow[] = [];
-    const paymentByShift = await supabase
-      .from("payments")
-      .select("shift_id,order_id,method,amount,created_at")
-      .eq("tenant_id", scope.session.tenant_id)
-      .in("shift_id", shiftIds);
-
-    if (paymentByShift.error && isMissingColumnError(paymentByShift.error, "shift_id")) {
-      const orderIdToShift = new Map<string, string>();
-      for (const order of orders) {
-        if (order.shift_id) orderIdToShift.set(order.id, order.shift_id);
-      }
-      const fallbackPayments = await supabase
+    const orderIdToShift = new Map<string, string>();
+    for (const order of orders) {
+      if (order.shift_id) orderIdToShift.set(order.id, order.shift_id);
+    }
+    const orderIdsForPayments = Array.from(orderIdToShift.keys());
+    if (orderIdsForPayments.length > 0) {
+      const paymentsByOrder = await supabase
         .from("payments")
         .select("order_id,method,amount,created_at")
         .eq("tenant_id", scope.session.tenant_id)
-        .in("order_id", Array.from(orderIdToShift.keys()));
-      if (fallbackPayments.error) {
-        return fail("shift_payments_query_failed", fallbackPayments.error.message, 500);
+        .in("order_id", orderIdsForPayments);
+      if (paymentsByOrder.error) {
+        return fail("shift_payments_query_failed", paymentsByOrder.error.message, 500);
       }
-      paymentRows = ((fallbackPayments.data ?? []) as Array<{ order_id: string | null; method: string; amount: number | null; created_at: string | null }>).map((row) => ({
+      paymentRows = ((paymentsByOrder.data ?? []) as Array<{ order_id: string | null; method: string; amount: number | null; created_at: string | null }>).map((row) => ({
         shift_id: row.order_id ? orderIdToShift.get(row.order_id) ?? null : null,
         order_id: row.order_id,
         method: row.method,
         amount: row.amount,
         created_at: row.created_at
       }));
-    } else if (paymentByShift.error) {
-      return fail("shift_payments_query_failed", paymentByShift.error.message, 500);
-    } else {
-      paymentRows = (paymentByShift.data ?? []) as PaymentRow[];
     }
 
     const totalsByShift = new Map<

@@ -377,12 +377,14 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
     if (!sessionShift?.id) return null;
     return payload?.shifts.find((shift) => shift.id === sessionShift.id)?.metrics ?? null;
   }, [payload?.shifts, sessionShift?.id]);
+  const hasClosingCashInput = closingCash.trim().length > 0;
   const closingCashAmount = Number(closingCash.trim() || "0");
   const closingCashIsValid = Number.isFinite(closingCashAmount) && closingCashAmount >= 0;
   const closingCashExpected = activeShiftMetrics?.cash_total ?? 0;
   const closingCashVariance = closingCashIsValid ? Number((closingCashAmount - closingCashExpected).toFixed(2)) : 0;
   const cashFloatLabel = lang === "th" ? "ใส่เงินทอน" : "Cash float";
   const cashVarianceLabel = lang === "th" ? "สถานะเงินสด" : "Cash status";
+  const cashWaitingLabel = lang === "th" ? "รอกรอกเงินสด" : "Waiting for cash input";
   const cashBalancedLabel = lang === "th" ? "ผ่าน" : "Balanced";
   const cashShortLabel = lang === "th" ? "ติดลบ" : "Short";
   const cashOverLabel = lang === "th" ? "เกิน" : "Over";
@@ -990,14 +992,18 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                   <span>{cashVarianceLabel}</span>
                   <strong
                     className={
-                      !closingCashIsValid || Math.abs(closingCashVariance) < 0.01
+                      !hasClosingCashInput
+                        ? "text-slate-600"
+                        : !closingCashIsValid || Math.abs(closingCashVariance) < 0.01
                         ? "text-emerald-700"
                         : closingCashVariance < 0
                           ? "text-rose-700"
                           : "text-amber-700"
                     }
                   >
-                    {!closingCashIsValid || Math.abs(closingCashVariance) < 0.01
+                    {!hasClosingCashInput
+                      ? cashWaitingLabel
+                      : !closingCashIsValid || Math.abs(closingCashVariance) < 0.01
                       ? cashBalancedLabel
                       : `${closingCashVariance < 0 ? cashShortLabel : cashOverLabel} ${formatMoney(Math.abs(closingCashVariance), lang)}`}
                   </strong>
