@@ -73,6 +73,15 @@ export async function POST(request: Request) {
       startedAt
     );
   }
+  if (!/^\d{1,32}$/.test(employeeCodeInput)) {
+    return withTimingHeaders(
+      NextResponse.json(
+        { data: null, error: { code: "invalid_employee_code", message: "รหัสพนักงานต้องเป็นตัวเลขเท่านั้น" } },
+        { status: 422 }
+      ),
+      startedAt
+    );
+  }
 
   const cookieStore = await cookies();
   const flow = readPreEntryFlowState(cookieStore);

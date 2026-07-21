@@ -50,6 +50,7 @@ function getCopy(lang: AppLanguage) {
       permissionDenied: "This employee does not have POS access permission.",
       featureNotEnabled: "Employee code login is not enabled for this branch.",
       missingBranchContext: "Please select branch before verifying employee.",
+      invalidEmployeeCode: "Employee code must contain numbers only.",
       verifyFailed: "Unable to verify employee code.",
       popupCheckingTitle: "Checking",
       popupLoginTitle: "Logging in",
@@ -77,6 +78,7 @@ function getCopy(lang: AppLanguage) {
     permissionDenied: "พนักงานนี้ไม่มีสิทธิ์เข้าใช้งาน POS",
     featureNotEnabled: "สาขานี้ยังไม่เปิดใช้งานล็อกอินด้วยรหัสพนักงาน",
     missingBranchContext: "กรุณาเลือกสาขาก่อนยืนยันพนักงาน",
+    invalidEmployeeCode: "รหัสพนักงานต้องเป็นตัวเลขเท่านั้น",
     verifyFailed: "ไม่สามารถยืนยันรหัสพนักงานได้",
     popupCheckingTitle: "กำลังตรวจสอบ",
     popupLoginTitle: "กำลังเข้าสู่ระบบ",
@@ -106,10 +108,7 @@ function EyeIcon({ open }: { open: boolean }) {
 }
 
 function normalizeEmployeeCodeInput(value: string) {
-  return value
-    .toUpperCase()
-    .replace(/[^A-Z0-9@._-]/g, "")
-    .slice(0, 32);
+  return value.replace(/\D/g, "").slice(0, 32);
 }
 
 function mapVerifyCodeError(code: string | null | undefined, fallback: string | null | undefined, copy: ReturnType<typeof getCopy>) {
@@ -219,6 +218,12 @@ function LoginEmployeePageContent() {
       setPopup({ type: "error", message: copy.requiredError });
       return;
     }
+    if (employeeCode.trim() !== normalizedCode) {
+      setEmployeeCode(normalizedCode);
+      setError(copy.invalidEmployeeCode);
+      setPopup({ type: "error", message: copy.invalidEmployeeCode });
+      return;
+    }
 
     setVerifyingCode(true);
     setError("");
@@ -297,7 +302,8 @@ function LoginEmployeePageContent() {
                   if (popup.type === "error") setPopup({ type: "none" });
                 }}
                 placeholder={copy.verifyPlaceholder}
-                inputMode="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 autoComplete="off"
                 autoFocus
               />

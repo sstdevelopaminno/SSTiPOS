@@ -261,6 +261,10 @@ function buildEmptyForm(defaultBranchId: string): FormState {
   };
 }
 
+function normalizeEmployeeCodeInput(value: string) {
+  return String(value ?? "").replace(/\D/g, "").slice(0, 32);
+}
+
 export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang; embedded?: boolean; onBack?: () => void }) {
   const t = copy[lang];
   const [items, setItems] = useState<PosUser[]>([]);
@@ -402,6 +406,22 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
 
   async function saveForm() {
     if (!form) return;
+    const employeeCode = normalizeEmployeeCodeInput(form.employee_code);
+    if (!employeeCode) {
+      setAlertDialog({
+        tone: "error",
+        title: t.saveErrorTitle,
+        message: lang === "en" ? "Employee code must contain numbers only." : "รหัสพนักงานต้องเป็นตัวเลขเท่านั้น",
+      });
+      return;
+    }
+    const duplicateEmployee = items.find(
+      (item) => item.user_id !== form.user_id && normalizeEmployeeCodeInput(item.employee_code) === employeeCode
+    );
+    if (duplicateEmployee) {
+      setAlertDialog({ tone: "error", title: t.saveErrorTitle, message: t.employeeCodeDuplicate });
+      return;
+    }
     const staffApprovalChanged =
       form.role === "staff" &&
       (form.can_approve_cancel_bill !== form.initial_can_approve_cancel_bill || Boolean(form.pin.trim()));
@@ -426,7 +446,7 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
             branch_id: form.branch_id,
             full_name: form.full_name.trim(),
             email: form.email.trim().toLowerCase(),
-            employee_code: form.employee_code.trim().toUpperCase(),
+            employee_code: employeeCode,
             position_title: form.position_title.trim(),
             permission_role: form.permission_role.trim(),
             role: form.role,
@@ -447,7 +467,7 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
             branch_id: form.branch_id,
             full_name: form.full_name.trim(),
             email: form.email.trim().toLowerCase(),
-            employee_code: form.employee_code.trim().toUpperCase(),
+            employee_code: employeeCode,
             position_title: form.position_title.trim(),
             permission_role: form.permission_role.trim(),
             role: form.role,
@@ -781,9 +801,11 @@ export function PosUsersModule({ lang, embedded = false, onBack }: { lang: Lang;
               </Field>
               <Field label={t.employeeCode} hint={t.employeeCodeHint}>
                 <input
-                  type="text"
+                  type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={form.employee_code}
-                  onChange={(event) => setForm({ ...form, employee_code: event.target.value.toUpperCase() })}
+                  onChange={(event) => setForm({ ...form, employee_code: normalizeEmployeeCodeInput(event.target.value) })}
                   placeholder={lang === "en" ? "Enter employee code" : "กรอกรหัสพนักงาน"}
                   autoComplete="off"
                   className="h-11 w-full rounded-md border border-blue-300 bg-blue-50/40 px-3 text-sm font-bold text-slate-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"

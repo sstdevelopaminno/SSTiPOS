@@ -124,10 +124,23 @@ function deriveDemoEmployeeCode(input: { userId: string; email: string; role: Br
 }
 
 function normalizeEmployeeCode(value: string) {
-  return String(value ?? "")
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, "");
+  return String(value ?? "").replace(/\D/g, "").slice(0, 32);
+}
+
+function isValidEmployeeCode(value: string) {
+  return /^\d{1,32}$/.test(value);
+}
+
+function isDuplicateEmployeeCodeError(error: { code?: string | null; message?: string | null } | null | undefined) {
+  if (!error) return false;
+  const message = String(error.message ?? "").toLowerCase();
+  return error.code === "23505" && (message.includes("employee_code") || message.includes("pos_user_profiles"));
+}
+
+function supabaseWriteError(error: { code?: string | null; message?: string | null }) {
+  const nextError = new Error(String(error.message ?? "Database write failed.")) as Error & { code?: string | null };
+  nextError.code = error.code ?? null;
+  return nextError;
 }
 
 function normalizePermissionRole(value: string | null | undefined, fallback: BranchRole) {
@@ -230,7 +243,7 @@ async function loadProfileSettings(tenantId: string, userIds: string[]) {
 
   if (error) {
     if (isMissingRelationError(error, "pos_user_profiles")) return settingsByUser;
-    throw new Error(error.message);
+    throw supabaseWriteError(error);
   }
 
   for (const row of (data ?? []) as UserProfileSettingsRow[]) {
@@ -481,13 +494,17 @@ export async function PATCH(request: Request) {
       if (profileForCodeError) return fail("user_profile_lookup_failed", profileForCodeError.message, 500);
       const demoEmployeeCode = deriveDemoEmployeeCode({ userId, email: profileForCode?.email ?? "", role: targetRole });
       const currentEmployeeCode = normalizeEmployeeCode(currentSettings.get(userId)?.employee_code ?? "") || demoEmployeeCode || deriveEmployeeCode(userId);
-      const employeeCode = normalizeEmployeeCode(payload.employee_code ?? "") || currentEmployeeCode;
+      const rawEmployeeCode = String(payload.employee_code ?? "").trim();
+      const employeeCode = normalizeEmployeeCode(rawEmployeeCode) || currentEmployeeCode;
       const employeeCodeChanged = employeeCode !== currentEmployeeCode;
       const positionTitle = String(payload.position_title ?? "").trim();
       const permissionRole = normalizePermissionRole(payload.permission_role, nextRole);
 
       if (!fullName || !email || !email.includes("@")) {
         return fail("invalid_profile", "Full name and valid email are required.", 422);
+      }
+      if (rawEmployeeCode && !isValidEmployeeCode(rawEmployeeCode)) {
+        return fail("invalid_employee_code", "Employee code must contain numbers only.", 422);
       }
 
       if (employeeCodeChanged) {
@@ -534,6 +551,7 @@ export async function PATCH(request: Request) {
       }
 
       try {
+      try {
         await upsertProfileSettings({
           tenantId: auth.tenantId!,
           userId,
@@ -541,6 +559,12 @@ export async function PATCH(request: Request) {
           positionTitle,
           permissionRole
         });
+      } catch (error) {
+        if (isDuplicateEmployeeCodeError(error as { code?: string | null; message?: string | null })) {
+          return fail("employee_code_duplicate", "This employee code is already assigned to another POS user.", 409);
+        }
+        return fail("pos_user_profile_update_failed", error instanceof Error ? error.message : "Unable to update POS user profile.", 500);
+      }
       } catch (error) {
         return fail("pos_user_profile_update_failed", error instanceof Error ? error.message : "Unable to update POS user profile.", 500);
       }
@@ -717,7 +741,14 @@ export async function POST(request: Request) {
     const pin = String(body.pin ?? "").trim();
     const scopeMode = body.scope_mode === "single_device" ? "single_device" : "all_devices";
     const deviceId = String(body.device_id ?? "").trim() || null;
-    const employeeCodeInput = normalizeEmployeeCode(body.employee_code ?? "");
+    const rawEmployeeCodeInput = String(body.employee_code ?? "").trim();
+    if (!rawEmployeeCodeInput) {
+      return fail("employee_code_required", "Employee code is required.", 422);
+    }
+    if (!isValidEmployeeCode(rawEmployeeCodeInput)) {
+      return fail("invalid_employee_code", "Employee code must contain numbers only.", 422);
+    }
+    const employeeCodeInput = normalizeEmployeeCode(rawEmployeeCodeInput);
     const positionTitle = String(body.position_title ?? "").trim();
     const permissionRole = normalizePermissionRole(body.permission_role, role);
     const canApproveCancelBill = role === "staff" && Boolean(body.can_approve_cancel_bill);
@@ -841,7 +872,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const employeeCode = employeeCodeInput || deriveEmployeeCode(userId);
+    const employeeCode = employeeCodeInput;
 
     try {
       const employeeCodeOwner = await findEmployeeCodeOwner({ tenantId: auth.tenantId!, employeeCode });
@@ -873,6 +904,9 @@ export async function POST(request: Request) {
       await upsertProfileSettings({ tenantId: auth.tenantId!, userId, employeeCode, positionTitle, permissionRole });
     } catch (error) {
       if (createdAuthUserId) await supabase.auth.admin.deleteUser(createdAuthUserId).catch(() => undefined);
+      if (isDuplicateEmployeeCodeError(error as { code?: string | null; message?: string | null })) {
+        return fail("employee_code_duplicate", "This employee code is already assigned to another POS user.", 409);
+      }
       return fail("pos_user_profile_create_failed", error instanceof Error ? error.message : "Unable to create POS user profile.", 500);
     }
 
