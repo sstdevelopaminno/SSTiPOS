@@ -206,6 +206,7 @@ export function StockProductsTable({
   const [productCategoryFilter, setProductCategoryFilter] = useState("all");
   const [ingredientSearchText, setIngredientSearchText] = useState("");
   const [ingredientUnitFilter, setIngredientUnitFilter] = useState("all");
+  const [filterPopupOpen, setFilterPopupOpen] = useState(false);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [selectedIngredientIds, setSelectedIngredientIds] = useState<string[]>([]);
   const [bulkDeletePopupMode, setBulkDeletePopupMode] = useState<"products" | "ingredients" | null>(null);
@@ -283,6 +284,9 @@ export function StockProductsTable({
 
   const totalItems = modeFilter === "ingredients" ? filteredIngredients.length : filteredProducts.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const activeFilterCount =
+    (modeFilter === "ingredients" ? Number(ingredientSearchText.trim().length > 0) + Number(ingredientUnitFilter !== "all") : Number(productSearchText.trim().length > 0) + Number(productCategoryFilter !== "all")) +
+    Number(modeFilter !== "all");
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -861,6 +865,13 @@ export function StockProductsTable({
             branchOptions={branchOptions}
             canViewAllBranches={canManageCatalog && branchOptions.length > 1}
           />
+          <button
+            type="button"
+            onClick={() => setFilterPopupOpen(true)}
+            className="inline-flex min-h-8 items-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            {th ? `ค้นหา/กรอง${activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}` : `Search/Filter${activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}`}
+          </button>
           <div className={canManageCatalog ? "" : "pointer-events-none opacity-60"}>
             <CategoryManagePopupButton th={th} categories={categoryList} branchId={branchId} />
           </div>
@@ -901,107 +912,135 @@ export function StockProductsTable({
         </button>
       </div>
 
-      <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-        {modeFilter === "ingredients" ? (
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="grid min-w-[220px] flex-1 gap-1 text-[11px] font-semibold text-slate-600">
-              <span>{th ? "ค้นหาวัตถุดิบ" : "Search Ingredients"}</span>
-              <input
-                value={ingredientSearchText}
-                onChange={(event) => {
-                  setIngredientSearchText(event.target.value);
+      {filterPopupOpen ? (
+        <div className="fixed inset-0 z-[165] grid place-items-center bg-slate-900/35 p-4" onClick={() => setFilterPopupOpen(false)}>
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h4 className="text-base font-extrabold text-slate-900">{th ? "ค้นหาและกรองรายการ" : "Search and Filter"}</h4>
+                <p className="text-xs text-slate-500">{th ? "ตัวกรองจะมีผลกับรายการในตารางทันที" : "Filters apply to the table immediately."}</p>
+              </div>
+              <button type="button" onClick={() => setFilterPopupOpen(false)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                {th ? "ปิด" : "Close"}
+              </button>
+            </div>
+
+            {modeFilter === "ingredients" ? (
+              <div className="grid gap-3 sm:grid-cols-[1fr_180px]">
+                <label className="grid gap-1 text-xs font-semibold text-slate-600">
+                  <span>{th ? "ค้นหาวัตถุดิบ" : "Search Ingredients"}</span>
+                  <input
+                    value={ingredientSearchText}
+                    onChange={(event) => {
+                      setIngredientSearchText(event.target.value);
+                      setCurrentPage(1);
+                    }}
+                    placeholder={th ? "พิมพ์ชื่อวัตถุดิบหรือหน่วย..." : "Type ingredient name or unit..."}
+                    className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                  />
+                </label>
+                <label className="grid gap-1 text-xs font-semibold text-slate-600">
+                  <span>{th ? "กรองหน่วย" : "Unit Filter"}</span>
+                  <select
+                    value={ingredientUnitFilter}
+                    onChange={(event) => {
+                      setIngredientUnitFilter(event.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                  >
+                    <option value="all">{th ? "ทุกหน่วย" : "All units"}</option>
+                    {INGREDIENT_BASE_UNIT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {th ? option.thLabel : option.enLabel}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-[1fr_220px]">
+                <label className="grid gap-1 text-xs font-semibold text-slate-600">
+                  <span>{th ? "ค้นหาสินค้า" : "Search Products"}</span>
+                  <input
+                    value={productSearchText}
+                    onChange={(event) => {
+                      setProductSearchText(event.target.value);
+                      setCurrentPage(1);
+                    }}
+                    placeholder={th ? "พิมพ์ชื่อสินค้า SKU หรือหมวดหมู่..." : "Type product name, SKU, or category..."}
+                    className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                  />
+                </label>
+                <label className="grid gap-1 text-xs font-semibold text-slate-600">
+                  <span>{th ? "กรองหมวดหมู่" : "Category Filter"}</span>
+                  <select
+                    value={productCategoryFilter}
+                    onChange={(event) => {
+                      setProductCategoryFilter(event.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                  >
+                    <option value="all">{th ? "ทุกหมวดหมู่" : "All categories"}</option>
+                    {productCategoryOptions.map((categoryName) => (
+                      <option key={categoryName} value={categoryName}>
+                        {categoryName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-wrap justify-between gap-2 border-t border-slate-100 pt-3">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => openBulkDeletePopup("selected")}
+                  disabled={modeFilter === "ingredients" ? selectedFilteredIngredientIds.length === 0 : selectedFilteredProductIds.length === 0}
+                  className="inline-flex min-h-9 items-center rounded-lg border border-amber-500 bg-amber-500 px-3 text-xs font-bold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {modeFilter === "ingredients"
+                    ? th
+                      ? `ลบที่เลือก (${selectedFilteredIngredientIds.length})`
+                      : `Delete Selected (${selectedFilteredIngredientIds.length})`
+                    : th
+                      ? `ปิดการขายที่เลือก (${selectedFilteredProductIds.length})`
+                      : `Deactivate Selected (${selectedFilteredProductIds.length})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openBulkDeletePopup("all")}
+                  disabled={modeFilter === "ingredients" ? filteredIngredients.length === 0 : filteredProducts.length === 0}
+                  className="inline-flex min-h-9 items-center rounded-lg border border-amber-200 bg-white px-3 text-xs font-bold text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {modeFilter === "ingredients"
+                    ? th
+                      ? `ลบทั้งหมด (${filteredIngredients.length})`
+                      : `Delete All (${filteredIngredients.length})`
+                    : th
+                      ? `ปิดการขายทั้งหมด (${filteredProducts.length})`
+                      : `Deactivate All (${filteredProducts.length})`}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setProductSearchText("");
+                  setProductCategoryFilter("all");
+                  setIngredientSearchText("");
+                  setIngredientUnitFilter("all");
                   setCurrentPage(1);
                 }}
-                placeholder={th ? "พิมพ์ชื่อวัตถุดิบหรือหน่วย..." : "Type ingredient name or unit..."}
-                className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
-              />
-            </label>
-            <label className="grid min-w-[170px] gap-1 text-[11px] font-semibold text-slate-600">
-              <span>{th ? "กรองหน่วย" : "Unit Filter"}</span>
-              <select
-                value={ingredientUnitFilter}
-                onChange={(event) => {
-                  setIngredientUnitFilter(event.target.value);
-                  setCurrentPage(1);
-                }}
-                className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                className="inline-flex min-h-9 items-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50"
               >
-                <option value="all">{th ? "ทุกหน่วย" : "All units"}</option>
-                {INGREDIENT_BASE_UNIT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {th ? option.thLabel : option.enLabel}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={() => openBulkDeletePopup("selected")}
-              disabled={selectedFilteredIngredientIds.length === 0}
-              className="inline-flex min-h-9 items-center rounded-lg border border-red-500 bg-red-500 px-3 text-xs font-bold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {th ? `ลบที่เลือก (${selectedFilteredIngredientIds.length})` : `Delete Selected (${selectedFilteredIngredientIds.length})`}
-            </button>
-            <button
-              type="button"
-              onClick={() => openBulkDeletePopup("all")}
-              disabled={filteredIngredients.length === 0}
-              className="inline-flex min-h-9 items-center rounded-lg border border-red-200 bg-white px-3 text-xs font-bold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {th ? `ลบทั้งหมด (${filteredIngredients.length})` : `Delete All (${filteredIngredients.length})`}
-            </button>
+                {th ? "ล้างตัวกรอง" : "Clear Filters"}
+              </button>
+            </div>
           </div>
-        ) : (
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="grid min-w-[220px] flex-1 gap-1 text-[11px] font-semibold text-slate-600">
-              <span>{th ? "ค้นหาสินค้า" : "Search Products"}</span>
-              <input
-                value={productSearchText}
-                onChange={(event) => {
-                  setProductSearchText(event.target.value);
-                  setCurrentPage(1);
-                }}
-                placeholder={th ? "พิมพ์ชื่อสินค้า SKU หรือหมวดหมู่..." : "Type product name, SKU, or category..."}
-                className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
-              />
-            </label>
-            <label className="grid min-w-[170px] gap-1 text-[11px] font-semibold text-slate-600">
-              <span>{th ? "กรองหมวดหมู่" : "Category Filter"}</span>
-              <select
-                value={productCategoryFilter}
-                onChange={(event) => {
-                  setProductCategoryFilter(event.target.value);
-                  setCurrentPage(1);
-                }}
-                className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
-              >
-                <option value="all">{th ? "ทุกหมวดหมู่" : "All categories"}</option>
-                {productCategoryOptions.map((categoryName) => (
-                  <option key={categoryName} value={categoryName}>
-                    {categoryName}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={() => openBulkDeletePopup("selected")}
-              disabled={selectedFilteredProductIds.length === 0}
-              className="inline-flex min-h-9 items-center rounded-lg border border-amber-500 bg-amber-500 px-3 text-xs font-bold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {th ? `ปิดการขายที่เลือก (${selectedFilteredProductIds.length})` : `Deactivate Selected (${selectedFilteredProductIds.length})`}
-            </button>
-            <button
-              type="button"
-              onClick={() => openBulkDeletePopup("all")}
-              disabled={filteredProducts.length === 0}
-              className="inline-flex min-h-9 items-center rounded-lg border border-amber-200 bg-white px-3 text-xs font-bold text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {th ? `ปิดการขายทั้งหมด (${filteredProducts.length})` : `Deactivate All (${filteredProducts.length})`}
-            </button>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : null}
 
       {noticeOpen ? (
         <div className="fixed inset-0 z-[170] grid place-items-center bg-slate-900/35 p-4" onClick={closeNoticePopup}>
