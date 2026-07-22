@@ -855,7 +855,7 @@ export function StockProductsTable({
   }
 
   return (
-    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-3 lg:p-4">
+    <div className="min-w-0">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-base font-extrabold text-slate-900 lg:text-lg">{th ? "รายการสินค้า" : "Product List"}</h3>
         <div className="flex flex-wrap gap-2">

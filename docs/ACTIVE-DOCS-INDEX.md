@@ -24,6 +24,7 @@ Use this page as the first stop before new development. It separates active impl
 - [POS UI System](./POS-UI-SYSTEM.md)
 - [POS Sales Flow](./POS-SALES-FLOW.md)
 - [POS Catalog And Stock Checkpoint](./POS-CATALOG-STOCK-CHECKPOINT-2026-07-22.md)
+- [POS Catalog Trash And Modifier Checkpoint](./POS-CATALOG-TRASH-MODIFIER-CHECKPOINT-2026-07-22.md)
 - [POS Menu Modifiers And Ingredient Options](./POS-MENU-MODIFIERS-INGREDIENTS-PLAN-2026-07-22.md)
 - [POS Shift Close Reliability](./POS-SHIFT-CLOSE-RELIABILITY-2026-07-10.md)
 - [POS Login Device Splash](./POS-LOGIN-DEVICE-SPLASH-2026-07-11.md)
