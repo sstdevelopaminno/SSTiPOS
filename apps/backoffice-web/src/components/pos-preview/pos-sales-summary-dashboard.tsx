@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useState, useTransition, type ReactNode } from "react";
 import type { Language } from "@/lib/i18n";
@@ -11,26 +11,25 @@ type Props = {
 
 type ApiBody = {
   data?: PosSalesSummaryPayload | null;
-  error?: { code: string; message: string } | null;
 };
 
 type MoreDialogTab = "payments" | "products" | "cashiers";
 
 const statusOptions = [
-  { value: "all", label: "เธ—เธธเธเธชเธ–เธฒเธเธฐ" },
-  { value: "completed", label: "เธชเธณเน€เธฃเนเธ" },
-  { value: "cancelled", label: "เธขเธเน€เธฅเธดเธ" },
-  { value: "draft", label: "เธฃเนเธฒเธ" },
-  { value: "queued", label: "เธฃเธญเธ—เธณ" },
-  { value: "preparing", label: "เธเธณเธฅเธฑเธเธ—เธณ" }
+  { value: "all", label: "ทุกสถานะ" },
+  { value: "completed", label: "สำเร็จ" },
+  { value: "cancelled", label: "ยกเลิก" },
+  { value: "draft", label: "ร่าง" },
+  { value: "queued", label: "รอทำ" },
+  { value: "preparing", label: "กำลังทำ" }
 ];
 
 const paymentOptions = [
-  { value: "all", label: "เธ—เธธเธเธเนเธญเธเธ—เธฒเธ" },
-  { value: "cash", label: "เน€เธเธดเธเธชเธ”" },
-  { value: "bank_transfer", label: "เนเธญเธ / QR" },
-  { value: "card", label: "เธเธฑเธ•เธฃเน€เธเธฃเธ”เธดเธ• / เน€เธ”เธเธดเธ•" },
-  { value: "other", label: "เธญเธทเนเธ เน" }
+  { value: "all", label: "ทุกช่องทาง" },
+  { value: "cash", label: "เงินสด" },
+  { value: "bank_transfer", label: "โอน / QR" },
+  { value: "card", label: "บัตรเครดิต / เดบิต" },
+  { value: "other", label: "อื่น ๆ" }
 ];
 
 const inputClass =
@@ -63,6 +62,14 @@ function csvEscape(value: string | number | null): string {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
+function paymentLabel(label: string, method?: string): string {
+  if (method === "cash") return "เงินสด";
+  if (method === "bank_transfer") return "โอน / QR";
+  if (method === "card") return "บัตรเครดิต / เดบิต";
+  if (label.includes("เธ") || label.includes("เน")) return method === "other" ? "อื่น ๆ" : "ยังไม่ชำระ";
+  return label || "-";
+}
+
 export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
   const [payload, setPayload] = useState(initialPayload);
   const [dateFrom, setDateFrom] = useState(initialPayload.filters.dateFrom);
@@ -80,18 +87,23 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
   const [isPending, startTransition] = useTransition();
 
   const maxPaymentAmount = useMemo(() => Math.max(1, ...payload.paymentMethods.map((row) => row.amount)), [payload.paymentMethods]);
+  const kpis = [
+    { label: "ยอดขายรวม", value: money(payload.summary.grossSales, lang), tone: "text-slate-900" },
+    { label: "ยอดขายสุทธิ", value: money(payload.summary.netSales, lang), tone: "text-blue-700" },
+    { label: "จำนวนบิล", value: number(payload.summary.receiptCount, lang), tone: "text-slate-900" },
+    { label: "เงินสด", value: money(payload.summary.cashTotal, lang), tone: "text-green-700" },
+    { label: "โอน / QR", value: money(payload.summary.qrTransferTotal, lang), tone: "text-blue-700" },
+    { label: "บัตรเครดิต / เดบิต", value: money(payload.summary.cardTotal, lang), tone: "text-violet-700" },
+    { label: "ส่วนลด", value: money(payload.summary.discountTotal, lang), tone: "text-amber-700" },
+    {
+      label: "ยกเลิก / คืนเงิน",
+      value: `${money(payload.summary.cancelledTotal + payload.summary.refundTotal, lang)} (${payload.summary.cancelledCount})`,
+      tone: "text-red-700"
+    }
+  ];
 
   function buildParams() {
-    const params = new URLSearchParams({
-      dateFrom,
-      dateTo,
-      branchId,
-      shiftId,
-      cashierId,
-      paymentMethod,
-      status
-    });
-    return params;
+    return new URLSearchParams({ dateFrom, dateTo, branchId, shiftId, cashierId, paymentMethod, status });
   }
 
   function refresh() {
@@ -101,7 +113,7 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
         const response = await fetch(`/api/pos/sales-summary?${buildParams().toString()}`, { cache: "no-store" });
         const body = (await response.json()) as ApiBody;
         if (!response.ok || !body.data) {
-          setError("เนเธกเนเธชเธฒเธกเธฒเธฃเธ–เนเธซเธฅเธ”เธเนเธญเธกเธนเธฅเธชเธฃเธธเธเธขเธญเธ”เธเธฒเธขเนเธ”เน เธเธฃเธธเธ“เธฒเธฅเธญเธเนเธซเธกเนเธญเธตเธเธเธฃเธฑเนเธ");
+          setError("ไม่สามารถโหลดข้อมูลสรุปยอดขายได้ กรุณาลองใหม่อีกครั้ง");
           return;
         }
         setPayload(body.data);
@@ -111,31 +123,15 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
         setPaymentMethod(body.data.filters.paymentMethod);
         setStatus(body.data.filters.status);
       } catch {
-        setError("เนเธกเนเธชเธฒเธกเธฒเธฃเธ–เนเธซเธฅเธ”เธเนเธญเธกเธนเธฅเธชเธฃเธธเธเธขเธญเธ”เธเธฒเธขเนเธ”เน เธเธฃเธธเธ“เธฒเธฅเธญเธเนเธซเธกเนเธญเธตเธเธเธฃเธฑเนเธ");
+        setError("ไม่สามารถโหลดข้อมูลสรุปยอดขายได้ กรุณาลองใหม่อีกครั้ง");
       }
     });
-  }
-
-  function applyFilters() {
-    refresh();
-    setFilterDialogOpen(false);
   }
 
   function exportCsv() {
     const header = ["receipt_no", "created_at", "branch", "cashier", "payment", "gross", "discount", "tax", "net", "status"];
     const lines = payload.salesRows.map((row) =>
-      [
-        row.receiptNo,
-        row.createdAt,
-        row.branchName,
-        row.cashierName,
-        row.paymentLabel,
-        row.grossTotal,
-        row.discount,
-        row.tax,
-        row.netTotal,
-        row.status
-      ]
+      [row.receiptNo, row.createdAt, row.branchName, row.cashierName, paymentLabel(row.paymentLabel, row.paymentMethod), row.grossTotal, row.discount, row.tax, row.netTotal, row.status]
         .map(csvEscape)
         .join(",")
     );
@@ -148,154 +144,25 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
     URL.revokeObjectURL(url);
   }
 
-  const kpis = [
-    { label: "เธขเธญเธ”เธเธฒเธขเธฃเธงเธก", value: money(payload.summary.grossSales, lang), tone: "text-slate-900" },
-    { label: "เธขเธญเธ”เธเธฒเธขเธชเธธเธ—เธเธด", value: money(payload.summary.netSales, lang), tone: "text-blue-700" },
-    { label: "เธเธณเธเธงเธเธเธดเธฅ", value: number(payload.summary.receiptCount, lang), tone: "text-slate-900" },
-    { label: "เน€เธเธดเธเธชเธ”", value: money(payload.summary.cashTotal, lang), tone: "text-green-700" },
-    { label: "เนเธญเธ / QR", value: money(payload.summary.qrTransferTotal, lang), tone: "text-blue-700" },
-    { label: "เธเธฑเธ•เธฃเน€เธเธฃเธ”เธดเธ• / เน€เธ”เธเธดเธ•", value: money(payload.summary.cardTotal, lang), tone: "text-violet-700" },
-    { label: "เธชเนเธงเธเธฅเธ”", value: money(payload.summary.discountTotal, lang), tone: "text-amber-700" },
-    { label: "เธขเธเน€เธฅเธดเธ / เธเธทเธเน€เธเธดเธ", value: `${money(payload.summary.cancelledTotal + payload.summary.refundTotal, lang)} (${payload.summary.cancelledCount})`, tone: "text-red-700" }
-  ];
-
   return (
     <section className="min-h-[calc(100vh-48px)] bg-[#f6f7f9] p-4 lg:p-5">
       <div className="mx-auto grid max-w-[1480px] gap-4">
         <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:p-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-[260px]">
-              <h1 className="text-2xl font-black text-slate-950 lg:text-3xl">เธชเธฃเธธเธเธขเธญเธ”เธเธฒเธข</h1>
-              <p className="mt-1 max-w-3xl text-sm text-slate-600">
-                เธ”เธนเธ เธฒเธเธฃเธงเธกเธขเธญเธ”เธเธฒเธขเธ•เธฒเธกเธงเธฑเธ เธเธฐ เธเธเธฑเธเธเธฒเธ เธเนเธญเธเธ—เธฒเธเธเธณเธฃเธฐเน€เธเธดเธ เนเธฅเธฐเธชเธฒเธเธฒ
-              </p>
+              <h1 className="text-2xl font-black text-slate-950 lg:text-3xl">สรุปยอดขาย</h1>
+              <p className="mt-1 max-w-3xl text-sm text-slate-600">ดูภาพรวมยอดขายตามวัน กะ พนักงาน ช่องทางชำระเงิน และสาขา</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setFilterDialogOpen(true)}
-                className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
-              >
-                เธเธฑเธ”เธเธฃเธญเธ
+              <ActionButton onClick={() => setFilterDialogOpen(true)}>คัดกรอง</ActionButton>
+              <ActionButton onClick={() => setMoreDialogOpen(true)}>ดูเพิ่มเติม</ActionButton>
+              <ActionButton onClick={() => setSalesRowsDialogOpen(true)}>รายการขาย</ActionButton>
+              <button type="button" onClick={refresh} disabled={isPending} className="h-10 rounded-lg border border-blue-200 bg-blue-600 px-4 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70">
+                {isPending ? "กำลังโหลด" : "รีเฟรช"}
               </button>
-              <button
-                type="button"
-                onClick={() => setMoreDialogOpen(true)}
-                className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
-              >
-                เธ”เธนเน€เธเธดเนเธกเน€เธ•เธดเธก
-              </button>
-              <button
-                type="button"
-                onClick={() => setSalesRowsDialogOpen(true)}
-                className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
-              >
-                เธฃเธฒเธขเธเธฒเธฃเธเธฒเธข
-              </button>
-              <button
-                type="button"
-                onClick={refresh}
-                disabled={isPending}
-                className="h-10 rounded-lg border border-blue-200 bg-blue-600 px-4 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70"
-              >
-                {isPending ? "เธเธณเธฅเธฑเธเนเธซเธฅเธ”" : "เธฃเธตเน€เธเธฃเธ"}
-              </button>
-              <button
-                type="button"
-                onClick={exportCsv}
-                disabled={payload.salesRows.length === 0}
-                className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Export CSV
-              </button>
+              <ActionButton onClick={exportCsv} disabled={payload.salesRows.length === 0}>Export CSV</ActionButton>
             </div>
           </div>
-
-          <Dialog open={filterDialogOpen} title="เธเธฑเธ”เธเธฃเธญเธเธเนเธญเธกเธนเธฅ" onClose={() => setFilterDialogOpen(false)}>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <Field label="เธ•เธฑเนเธเนเธ•เน">
-              <input value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} type="date" className={inputClass} />
-            </Field>
-            <Field label="เธ–เธถเธ">
-              <input value={dateTo} onChange={(event) => setDateTo(event.target.value)} type="date" className={inputClass} />
-            </Field>
-            <Field label="เธชเธฒเธเธฒ">
-              <select
-                value={branchId}
-                onChange={(event) => setBranchId(event.target.value)}
-                disabled={!payload.access.canViewMultipleBranches}
-                className={inputClass}
-              >
-                {payload.access.canViewMultipleBranches ? <option value="all">เธ—เธธเธเธชเธฒเธเธฒ</option> : null}
-                {payload.branchOptions.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name} ({branch.code})
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="เธเธฐ">
-              <select value={shiftId} onChange={(event) => setShiftId(event.target.value)} className={inputClass}>
-                <option value="all">เธ—เธธเธเธเธฐ</option>
-                {payload.shiftOptions.map((shift) => (
-                  <option key={shift.id} value={shift.id}>
-                    {shift.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="เธเธเธฑเธเธเธฒเธ">
-              <select value={cashierId} onChange={(event) => setCashierId(event.target.value)} className={inputClass}>
-                <option value="all">เธ—เธธเธเธเธ</option>
-                {payload.cashierOptions.map((cashier) => (
-                  <option key={cashier.id} value={cashier.id}>
-                    {cashier.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="เธเธณเธฃเธฐเน€เธเธดเธ">
-              <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className={inputClass}>
-                {paymentOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="เธชเธ–เธฒเธเธฐ">
-              <select value={status} onChange={(event) => setStatus(event.target.value)} className={inputClass}>
-                {statusOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-          {payload.access.selfOnly ? (
-            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-              เธชเธดเธ—เธเธดเนเธเธฑเธเธเธธเธเธฑเธเธ”เธนเนเธ”เนเน€เธเธเธฒเธฐเธเนเธญเธกเธนเธฅเธเธฐ/เธเธนเนเนเธเนเธเธฒเธเธเธญเธเธ•เธฑเธงเน€เธญเธ
-            </p>
-          ) : null}
-          <div className="mt-5 flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setFilterDialogOpen(false)}
-              className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
-            >
-              เธเธดเธ”
-            </button>
-            <button
-              type="button"
-              onClick={applyFilters}
-              disabled={isPending}
-              className="h-10 rounded-lg border border-blue-200 bg-blue-600 px-4 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70"
-            >
-              {isPending ? "เธเธณเธฅเธฑเธเนเธซเธฅเธ”" : "เนเธเนเธ•เธฑเธงเธเธฃเธญเธ"}
-            </button>
-          </div>
-          </Dialog>
         </header>
 
         {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div> : null}
@@ -309,320 +176,151 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
           ))}
         </div>
 
-        <Dialog open={moreDialogOpen} title="ดูเพิ่มเติม" onClose={() => setMoreDialogOpen(false)} wide>
-          <div className="grid gap-4">
-            <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2">
-              {[
-                { id: "payments" as const, label: "ช่องทางชำระเงิน" },
-                { id: "products" as const, label: "สินค้าขายดี" },
-                { id: "cashiers" as const, label: "ประสิทธิภาพพนักงาน" }
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setMoreDialogTab(tab.id)}
-                  className={`h-10 rounded-xl px-4 text-sm font-black transition ${
-                    moreDialogTab === tab.id ? "bg-blue-600 text-white shadow-sm" : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-blue-50"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {moreDialogTab === "payments" ? (
-              <Panel title="ช่องทางชำระเงิน">
-                {payload.paymentMethods.length === 0 ? (
-                  <EmptyState />
-                ) : (
-                  <div className="grid gap-3">
-                    {payload.paymentMethods.map((method) => (
-                      <div key={method.method}>
-                        <div className="flex items-baseline justify-between gap-3">
-                          <span className="text-sm font-bold text-slate-800">{method.label}</span>
-                          <span className="text-sm font-black text-slate-950">{money(method.amount, lang)}</span>
-                        </div>
-                        <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                          <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.max(5, (method.amount / maxPaymentAmount) * 100)}%` }} />
-                        </div>
-                        <p className="mt-1 text-xs text-slate-500">{method.receiptCount} บิล</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Panel>
-            ) : null}
-
-            {moreDialogTab === "cashiers" ? (
-              <Panel title="ประสิทธิภาพพนักงาน">
-                <ScrollTable minWidth="720px">
-                  <thead>
-                    <tr>
-                      <Th>พนักงาน</Th>
-                      <Th align="right">บิล</Th>
-                      <Th align="right">ยอดรวม</Th>
-                      <Th align="right">ยอดสุทธิ</Th>
-                      <Th align="right">ยกเลิก</Th>
-                      <Th align="right">เฉลี่ย/บิล</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payload.cashiers.length === 0 ? (
-                      <EmptyRow colSpan={6} />
-                    ) : (
-                      payload.cashiers.map((cashier) => (
-                        <tr key={cashier.cashierId} className="border-t border-slate-100">
-                          <Td strong>{cashier.cashierName}</Td>
-                          <Td align="right">{number(cashier.receiptCount, lang)}</Td>
-                          <Td align="right">{money(cashier.grossSales, lang)}</Td>
-                          <Td align="right">{money(cashier.netSales, lang)}</Td>
-                          <Td align="right">{cashier.cancelledCount}</Td>
-                          <Td align="right">{money(cashier.averageReceiptValue, lang)}</Td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </ScrollTable>
-              </Panel>
-            ) : null}
-
-            {moreDialogTab === "products" ? (
-              <Panel title="สินค้าขายดี">
-                <ScrollTable minWidth="680px">
-                  <thead>
-                    <tr>
-                      <Th>สินค้า</Th>
-                      <Th>หมวดหมู่</Th>
-                      <Th align="right">จำนวน</Th>
-                      <Th align="right">ยอดรวม</Th>
-                      <Th align="right">ยอดสุทธิ</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payload.bestSellingProducts.length === 0 ? (
-                      <EmptyRow colSpan={5} />
-                    ) : (
-                      payload.bestSellingProducts.slice(0, 10).map((product, index) => (
-                        <tr key={product.productId} className="border-t border-slate-100">
-                          <Td strong>
-                            <span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                              {index + 1}
-                            </span>
-                            {product.productName}
-                          </Td>
-                          <Td>{product.category}</Td>
-                          <Td align="right">{number(product.quantitySold, lang)}</Td>
-                          <Td align="right">{money(product.grossAmount, lang)}</Td>
-                          <Td align="right">{money(product.netAmount, lang)}</Td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </ScrollTable>
-              </Panel>
-            ) : null}
-          </div>
-        </Dialog>
-
-        <div className="grid gap-4">
-          <Panel title="เธชเธฃเธธเธเธเธฐ">
-            <ScrollTable minWidth="860px">
-              <thead>
-                <tr>
-                  <Th>เน€เธเธดเธ”เธเธฐ</Th>
-                  <Th>เธเธดเธ”เธเธฐ</Th>
-                  <Th>เธชเธฒเธเธฒ</Th>
-                  <Th>เธเธเธฑเธเธเธฒเธ</Th>
-                  <Th align="right">เน€เธเธดเธเธ•เนเธ</Th>
-                  <Th align="right">เน€เธเธดเธเธชเธ”</Th>
-                  <Th align="right">เธเธฒเธ”เธซเธงเธฑเธ</Th>
-                  <Th align="right">เน€เธเธดเธเธเธฃเธดเธ</Th>
-                  <Th align="right">เธ•เนเธฒเธ</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {payload.shifts.length === 0 ? (
-                  <EmptyRow colSpan={9} />
-                ) : (
-                  payload.shifts.slice(0, 12).map((shift) => (
-                    <tr key={shift.id} className="border-t border-slate-100">
-                      <Td>{dateTime(shift.openedAt, lang)}</Td>
-                      <Td>{dateTime(shift.closedAt, lang)}</Td>
-                      <Td>{shift.branchName}</Td>
-                      <Td>{shift.cashierName}</Td>
-                      <Td align="right">{money(shift.openingCash, lang)}</Td>
-                      <Td align="right">{money(shift.cashSales, lang)}</Td>
-                      <Td align="right">{money(shift.expectedCash, lang)}</Td>
-                      <Td align="right">{shift.actualCash == null ? "-" : money(shift.actualCash, lang)}</Td>
-                      <Td align="right" tone={shift.difference == null ? "normal" : shift.difference === 0 ? "good" : "bad"}>
-                        {shift.difference == null ? "-" : money(shift.difference, lang)}
-                      </Td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </ScrollTable>
-          </Panel>
-        </div>
-
-        <Dialog open={salesRowsDialogOpen} title="เธฃเธฒเธขเธเธฒเธฃเธเธฒเธข" onClose={() => setSalesRowsDialogOpen(false)} wide>
-        <Panel title="เธฃเธฒเธขเธเธฒเธฃเธเธฒเธข">
-          <ScrollTable minWidth="1040px">
+        <Panel title="สรุปกะ">
+          <ScrollTable minWidth="860px">
             <thead>
               <tr>
-                <Th>เน€เธฅเธเธ—เธตเนเธเธดเธฅ</Th>
-                <Th>เธงเธฑเธเน€เธงเธฅเธฒ</Th>
-                <Th>เธชเธฒเธเธฒ</Th>
-                <Th>เธเธเธฑเธเธเธฒเธ</Th>
-                <Th>เธเธณเธฃเธฐเน€เธเธดเธ</Th>
-                <Th align="right">เธขเธญเธ”เธฃเธงเธก</Th>
-                <Th align="right">เธชเนเธงเธเธฅเธ”</Th>
-                <Th align="right">เธ เธฒเธฉเธต</Th>
-                <Th align="right">เธชเธธเธ—เธเธด</Th>
-                <Th>เธชเธ–เธฒเธเธฐ</Th>
+                <Th>เปิดกะ</Th>
+                <Th>ปิดกะ</Th>
+                <Th>สาขา</Th>
+                <Th>พนักงาน</Th>
+                <Th align="right">เงินต้น</Th>
+                <Th align="right">เงินสด</Th>
+                <Th align="right">คาดหวัง</Th>
+                <Th align="right">เงินจริง</Th>
+                <Th align="right">ต่าง</Th>
               </tr>
             </thead>
             <tbody>
-              {payload.salesRows.length === 0 ? (
-                <EmptyRow colSpan={10} />
+              {payload.shifts.length === 0 ? (
+                <EmptyRow colSpan={9} />
               ) : (
-                payload.salesRows.map((row) => (
-                  <tr key={row.id} className="border-t border-slate-100">
-                    <Td strong>{row.receiptNo}</Td>
-                    <Td>{dateTime(row.createdAt, lang)}</Td>
-                    <Td>{row.branchName}</Td>
-                    <Td>{row.cashierName}</Td>
-                    <Td>{row.paymentLabel}</Td>
-                    <Td align="right">{money(row.grossTotal, lang)}</Td>
-                    <Td align="right">{money(row.discount, lang)}</Td>
-                    <Td align="right">{money(row.tax, lang)}</Td>
-                    <Td align="right" strong>
-                      {money(row.netTotal, lang)}
-                    </Td>
-                    <Td>
-                      <StatusBadge status={row.status} />
-                    </Td>
+                payload.shifts.slice(0, 12).map((shift) => (
+                  <tr key={shift.id} className="border-t border-slate-100">
+                    <Td>{dateTime(shift.openedAt, lang)}</Td>
+                    <Td>{dateTime(shift.closedAt, lang)}</Td>
+                    <Td>{shift.branchName}</Td>
+                    <Td>{shift.cashierName}</Td>
+                    <Td align="right">{money(shift.openingCash, lang)}</Td>
+                    <Td align="right">{money(shift.cashSales, lang)}</Td>
+                    <Td align="right">{money(shift.expectedCash, lang)}</Td>
+                    <Td align="right">{shift.actualCash == null ? "-" : money(shift.actualCash, lang)}</Td>
+                    <Td align="right" tone={shift.difference == null ? "normal" : shift.difference === 0 ? "good" : "bad"}>{shift.difference == null ? "-" : money(shift.difference, lang)}</Td>
                   </tr>
                 ))
               )}
             </tbody>
           </ScrollTable>
         </Panel>
+
+        <Dialog open={filterDialogOpen} title="คัดกรองข้อมูล" onClose={() => setFilterDialogOpen(false)}>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <Field label="ตั้งแต่"><input value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} type="date" className={inputClass} /></Field>
+            <Field label="ถึง"><input value={dateTo} onChange={(event) => setDateTo(event.target.value)} type="date" className={inputClass} /></Field>
+            <Field label="สาขา">
+              <select value={branchId} onChange={(event) => setBranchId(event.target.value)} disabled={!payload.access.canViewMultipleBranches} className={inputClass}>
+                {payload.access.canViewMultipleBranches ? <option value="all">ทุกสาขา</option> : null}
+                {payload.branchOptions.map((branch) => <option key={branch.id} value={branch.id}>{branch.name} ({branch.code})</option>)}
+              </select>
+            </Field>
+            <Field label="กะ"><select value={shiftId} onChange={(event) => setShiftId(event.target.value)} className={inputClass}><option value="all">ทุกกะ</option>{payload.shiftOptions.map((shift) => <option key={shift.id} value={shift.id}>{shift.label}</option>)}</select></Field>
+            <Field label="พนักงาน"><select value={cashierId} onChange={(event) => setCashierId(event.target.value)} className={inputClass}><option value="all">ทุกคน</option>{payload.cashierOptions.map((cashier) => <option key={cashier.id} value={cashier.id}>{cashier.label}</option>)}</select></Field>
+            <Field label="ชำระเงิน"><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className={inputClass}>{paymentOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+            <Field label="สถานะ"><select value={status} onChange={(event) => setStatus(event.target.value)} className={inputClass}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+          </div>
+          {payload.access.selfOnly ? <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">สิทธิ์ปัจจุบันดูได้เฉพาะข้อมูลกะ/ผู้ใช้งานของตัวเอง</p> : null}
+          <DialogActions>
+            <ActionButton onClick={() => setFilterDialogOpen(false)}>ปิด</ActionButton>
+            <button type="button" onClick={() => { refresh(); setFilterDialogOpen(false); }} disabled={isPending} className="h-10 rounded-lg border border-blue-200 bg-blue-600 px-4 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70">{isPending ? "กำลังโหลด" : "ใช้ตัวกรอง"}</button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog open={moreDialogOpen} title="ดูเพิ่มเติม" onClose={() => setMoreDialogOpen(false)} wide>
+          <div className="grid gap-4">
+            <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2">
+              {[{ id: "payments" as const, label: "ช่องทางชำระเงิน" }, { id: "products" as const, label: "สินค้าขายดี" }, { id: "cashiers" as const, label: "ประสิทธิภาพพนักงาน" }].map((tab) => (
+                <button key={tab.id} type="button" onClick={() => setMoreDialogTab(tab.id)} className={`h-10 rounded-xl px-4 text-sm font-black transition ${moreDialogTab === tab.id ? "bg-blue-600 text-white shadow-sm" : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-blue-50"}`}>{tab.label}</button>
+              ))}
+            </div>
+            {moreDialogTab === "payments" ? <PaymentsPanel payload={payload} lang={lang} maxPaymentAmount={maxPaymentAmount} /> : null}
+            {moreDialogTab === "products" ? <ProductsPanel payload={payload} lang={lang} /> : null}
+            {moreDialogTab === "cashiers" ? <CashiersPanel payload={payload} lang={lang} /> : null}
+          </div>
+        </Dialog>
+
+        <Dialog open={salesRowsDialogOpen} title="รายการขาย" onClose={() => setSalesRowsDialogOpen(false)} wide>
+          <Panel title="รายการขาย">
+            <ScrollTable minWidth="1040px">
+              <thead><tr><Th>เลขที่บิล</Th><Th>วันเวลา</Th><Th>สาขา</Th><Th>พนักงาน</Th><Th>ชำระเงิน</Th><Th align="right">ยอดรวม</Th><Th align="right">ส่วนลด</Th><Th align="right">ภาษี</Th><Th align="right">สุทธิ</Th><Th>สถานะ</Th></tr></thead>
+              <tbody>{payload.salesRows.length === 0 ? <EmptyRow colSpan={10} /> : payload.salesRows.map((row) => (
+                <tr key={row.id} className="border-t border-slate-100">
+                  <Td strong>{row.receiptNo}</Td><Td>{dateTime(row.createdAt, lang)}</Td><Td>{row.branchName}</Td><Td>{row.cashierName}</Td><Td>{paymentLabel(row.paymentLabel, row.paymentMethod)}</Td><Td align="right">{money(row.grossTotal, lang)}</Td><Td align="right">{money(row.discount, lang)}</Td><Td align="right">{money(row.tax, lang)}</Td><Td align="right" strong>{money(row.netTotal, lang)}</Td><Td><StatusBadge status={row.status} /></Td>
+                </tr>
+              ))}</tbody>
+            </ScrollTable>
+          </Panel>
         </Dialog>
       </div>
     </section>
   );
 }
 
-function Dialog({
-  open,
-  title,
-  onClose,
-  children,
-  wide = false
-}: {
-  open: boolean;
-  title: string;
-  onClose: () => void;
-  children: ReactNode;
-  wide?: boolean;
-}) {
-  if (!open) return null;
+function PaymentsPanel({ payload, lang, maxPaymentAmount }: { payload: PosSalesSummaryPayload; lang: Language; maxPaymentAmount: number }) {
+  return <Panel title="ช่องทางชำระเงิน">{payload.paymentMethods.length === 0 ? <EmptyState /> : <div className="grid gap-3">{payload.paymentMethods.map((method) => <div key={method.method}><div className="flex items-baseline justify-between gap-3"><span className="text-sm font-bold text-slate-800">{paymentLabel(method.label, method.method)}</span><span className="text-sm font-black text-slate-950">{money(method.amount, lang)}</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.max(5, (method.amount / maxPaymentAmount) * 100)}%` }} /></div><p className="mt-1 text-xs text-slate-500">{method.receiptCount} บิล</p></div>)}</div>}</Panel>;
+}
 
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4" role="presentation" onMouseDown={onClose}>
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className={`max-h-[86vh] w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl ${wide ? "max-w-6xl" : "max-w-4xl"}`}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <header className="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
-          <h2 className="text-lg font-black text-slate-950">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="เธเธดเธ”"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-xl font-bold text-slate-600 transition hover:bg-slate-50"
-          >
-            ร—
-          </button>
-        </header>
-        {children}
-      </section>
-    </div>
-  );
+function ProductsPanel({ payload, lang }: { payload: PosSalesSummaryPayload; lang: Language }) {
+  return <Panel title="สินค้าขายดี"><ScrollTable minWidth="680px"><thead><tr><Th>สินค้า</Th><Th>หมวดหมู่</Th><Th align="right">จำนวน</Th><Th align="right">ยอดรวม</Th><Th align="right">ยอดสุทธิ</Th></tr></thead><tbody>{payload.bestSellingProducts.length === 0 ? <EmptyRow colSpan={5} /> : payload.bestSellingProducts.slice(0, 10).map((product, index) => <tr key={product.productId} className="border-t border-slate-100"><Td strong><span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">{index + 1}</span>{product.productName}</Td><Td>{product.category}</Td><Td align="right">{number(product.quantitySold, lang)}</Td><Td align="right">{money(product.grossAmount, lang)}</Td><Td align="right">{money(product.netAmount, lang)}</Td></tr>)}</tbody></ScrollTable></Panel>;
+}
+
+function CashiersPanel({ payload, lang }: { payload: PosSalesSummaryPayload; lang: Language }) {
+  return <Panel title="ประสิทธิภาพพนักงาน"><ScrollTable minWidth="720px"><thead><tr><Th>พนักงาน</Th><Th align="right">บิล</Th><Th align="right">ยอดรวม</Th><Th align="right">ยอดสุทธิ</Th><Th align="right">ยกเลิก</Th><Th align="right">เฉลี่ย/บิล</Th></tr></thead><tbody>{payload.cashiers.length === 0 ? <EmptyRow colSpan={6} /> : payload.cashiers.map((cashier) => <tr key={cashier.cashierId} className="border-t border-slate-100"><Td strong>{cashier.cashierName}</Td><Td align="right">{number(cashier.receiptCount, lang)}</Td><Td align="right">{money(cashier.grossSales, lang)}</Td><Td align="right">{money(cashier.netSales, lang)}</Td><Td align="right">{cashier.cancelledCount}</Td><Td align="right">{money(cashier.averageReceiptValue, lang)}</Td></tr>)}</tbody></ScrollTable></Panel>;
+}
+
+function Dialog({ open, title, onClose, children, wide = false }: { open: boolean; title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+  if (!open) return null;
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4" role="presentation" onMouseDown={onClose}><section role="dialog" aria-modal="true" aria-label={title} className={`max-h-[86vh] w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl ${wide ? "max-w-6xl" : "max-w-4xl"}`} onMouseDown={(event) => event.stopPropagation()}><header className="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 pb-3"><h2 className="text-lg font-black text-slate-950">{title}</h2><button type="button" onClick={onClose} aria-label="ปิด" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-700 transition hover:bg-slate-50">ปิด</button></header>{children}</section></div>;
+}
+
+function ActionButton({ children, onClick, disabled = false }: { children: ReactNode; onClick: () => void; disabled?: boolean }) {
+  return <button type="button" onClick={onClick} disabled={disabled} className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">{children}</button>;
+}
+
+function DialogActions({ children }: { children: ReactNode }) {
+  return <div className="mt-5 flex flex-wrap justify-end gap-2">{children}</div>;
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="grid gap-1 text-xs font-bold text-slate-600">
-      {label}
-      {children}
-    </label>
-  );
+  return <label className="grid gap-1 text-xs font-bold text-slate-600">{label}{children}</label>;
 }
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 className="text-base font-black text-slate-950">{title}</h2>
-      <div className="mt-3">{children}</div>
-    </section>
-  );
+  return <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h2 className="text-base font-black text-slate-950">{title}</h2><div className="mt-3">{children}</div></section>;
 }
 
 function ScrollTable({ minWidth, children }: { minWidth: string; children: ReactNode }) {
-  return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200">
-      <table className="w-full border-collapse bg-white text-sm" style={{ minWidth }}>
-        {children}
-      </table>
-    </div>
-  );
+  return <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full border-collapse bg-white text-sm" style={{ minWidth }}>{children}</table></div>;
 }
 
 function Th({ children, align = "left" }: { children: ReactNode; align?: "left" | "right" }) {
   return <th className={`bg-slate-50 px-3 py-2 text-xs font-black text-slate-500 ${align === "right" ? "text-right" : "text-left"}`}>{children}</th>;
 }
 
-function Td({
-  children,
-  align = "left",
-  strong = false,
-  tone = "normal"
-}: {
-  children: ReactNode;
-  align?: "left" | "right";
-  strong?: boolean;
-  tone?: "normal" | "good" | "bad";
-}) {
+function Td({ children, align = "left", strong = false, tone = "normal" }: { children: ReactNode; align?: "left" | "right"; strong?: boolean; tone?: "normal" | "good" | "bad" }) {
   const toneClass = tone === "good" ? "text-green-700" : tone === "bad" ? "text-red-700" : "text-slate-700";
   return <td className={`px-3 py-2 ${align === "right" ? "text-right" : "text-left"} ${strong ? "font-bold text-slate-950" : toneClass}`}>{children}</td>;
 }
 
 function EmptyRow({ colSpan }: { colSpan: number }) {
-  return (
-    <tr>
-      <td colSpan={colSpan} className="px-3 py-10 text-center text-sm font-semibold text-slate-500">
-        เธขเธฑเธเนเธกเนเธกเธตเธเนเธญเธกเธนเธฅเธขเธญเธ”เธเธฒเธขเนเธเธเนเธงเธเน€เธงเธฅเธฒเธเธตเน
-      </td>
-    </tr>
-  );
+  return <tr><td colSpan={colSpan} className="px-3 py-10 text-center text-sm font-semibold text-slate-500">ยังไม่มีข้อมูลยอดขายในช่วงเวลานี้</td></tr>;
 }
 
 function EmptyState() {
-  return <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">เธขเธฑเธเนเธกเนเธกเธตเธเนเธญเธกเธนเธฅเธขเธญเธ”เธเธฒเธขเนเธเธเนเธงเธเน€เธงเธฅเธฒเธเธตเน</div>;
+  return <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">ยังไม่มีข้อมูลยอดขายในช่วงเวลานี้</div>;
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const label = status === "completed" ? "เธชเธณเน€เธฃเนเธ" : status === "cancelled" ? "เธขเธเน€เธฅเธดเธ" : status === "draft" ? "เธฃเนเธฒเธ" : status;
-  const tone =
-    status === "completed"
-      ? "border-green-200 bg-green-50 text-green-700"
-      : status === "cancelled"
-        ? "border-red-200 bg-red-50 text-red-700"
-        : "border-amber-200 bg-amber-50 text-amber-700";
+  const label = status === "completed" ? "สำเร็จ" : status === "cancelled" ? "ยกเลิก" : status === "draft" ? "ร่าง" : status === "queued" ? "รอทำ" : status === "preparing" ? "กำลังทำ" : status;
+  const tone = status === "completed" ? "border-green-200 bg-green-50 text-green-700" : status === "cancelled" ? "border-red-200 bg-red-50 text-red-700" : "border-amber-200 bg-amber-50 text-amber-700";
   return <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-bold ${tone}`}>{label}</span>;
 }

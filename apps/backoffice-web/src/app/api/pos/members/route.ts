@@ -94,8 +94,8 @@ export async function GET(request: Request) {
     if (error) throw new Error(error.message);
     return ok({ members: ((data ?? []) as MemberRow[]).map(normalizeMember) });
   } catch (error) {
-    if (isMissingMemberTable(error)) return fail("members_schema_missing", "Mobile member tables are not available in Supabase.", 501);
-    return fail("members_load_failed", error instanceof Error ? error.message : "Failed to load members.", 503);
+    if (isMissingMemberTable(error)) return fail("members_schema_missing", "ยังไม่พบตารางสมาชิกใน Supabase กรุณารัน migration ล่าสุดก่อนใช้งานสมาชิก", 501);
+    return fail("members_load_failed", error instanceof Error ? error.message : "ไม่สามารถโหลดสมาชิกได้", 503);
   }
 }
 
@@ -115,10 +115,10 @@ export async function POST(request: Request) {
     const points = Math.max(0, Math.floor(Number(body.points ?? 0)));
     const stamps = Math.max(0, Math.floor(Number(body.stamps ?? 0)));
     if (!name || !/^\d{9,10}$/.test(phone)) {
-      return fail("invalid_member_input", "Member name and a 9-10 digit phone number are required.", 422);
+      return fail("invalid_member_input", "กรุณากรอกชื่อสมาชิกและเบอร์โทร 9-10 หลัก", 422);
     }
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return fail("invalid_member_email", "Member email is invalid.", 422);
+      return fail("invalid_member_email", "รูปแบบอีเมลสมาชิกไม่ถูกต้อง", 422);
     }
 
     const nowIso = new Date().toISOString();
@@ -175,8 +175,8 @@ export async function POST(request: Request) {
     if (!data) throw new Error("member_save_returned_no_data");
     return ok({ member: normalizeMember(data) });
   } catch (error) {
-    if (isMissingMemberTable(error)) return fail("members_schema_missing", "Mobile member tables are not available in Supabase.", 501);
-    return fail("member_save_failed", error instanceof Error ? error.message : "Failed to save member.", 503);
+    if (isMissingMemberTable(error)) return fail("members_schema_missing", "ยังไม่พบตารางสมาชิกใน Supabase กรุณารัน migration ล่าสุดก่อนบันทึกสมาชิก", 501);
+    return fail("member_save_failed", error instanceof Error ? error.message : "ไม่สามารถบันทึกสมาชิกได้", 503);
   }
 }
 
@@ -184,7 +184,7 @@ export async function DELETE(request: Request) {
   try {
     const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "sales:enter" });
     const id = new URL(request.url).searchParams.get("id")?.trim() ?? "";
-    if (!id) return fail("invalid_member_id", "Member id is required.", 422);
+    if (!id) return fail("invalid_member_id", "ไม่พบรหัสสมาชิกที่ต้องการลบ", 422);
     const nowIso = new Date().toISOString();
     let { error } = await getSupabaseServiceClient()
       .from("mobile_members")
@@ -204,7 +204,7 @@ export async function DELETE(request: Request) {
     if (error) throw new Error(error.message);
     return ok({ deleted: true });
   } catch (error) {
-    if (isMissingMemberTable(error)) return fail("members_schema_missing", "Mobile member tables are not available in Supabase.", 501);
-    return fail("member_delete_failed", error instanceof Error ? error.message : "Failed to delete member.", 503);
+    if (isMissingMemberTable(error)) return fail("members_schema_missing", "ยังไม่พบตารางสมาชิกใน Supabase กรุณารัน migration ล่าสุดก่อนลบสมาชิก", 501);
+    return fail("member_delete_failed", error instanceof Error ? error.message : "ไม่สามารถลบสมาชิกได้", 503);
   }
 }
