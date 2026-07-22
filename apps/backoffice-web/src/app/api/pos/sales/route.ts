@@ -152,6 +152,14 @@ type RecipeStockRow = {
     | null;
 };
 
+type RecipeProductRow = {
+  product_id: string;
+  ingredients:
+    | { name: string | null }
+    | Array<{ name: string | null }>
+    | null;
+};
+
 type ResolvedOrderPricingResult =
   | {
       ok: true;
@@ -829,7 +837,7 @@ export async function GET(request: Request) {
         .eq("is_active", true),
       supabase
         .from("recipes")
-        .select("product_id")
+        .select("product_id,ingredients(name)")
         .eq("tenant_id", auth.tenantId!)
         .eq("branch_id", auth.branchId!),
       supabase
@@ -871,7 +879,14 @@ export async function GET(request: Request) {
       Boolean(deliveryPricesError);
 
     const recipeProductIdSet = new Set(
-      ((recipeProductRowsError ? [] : recipeProductRows) ?? []).map((row) => String(row.product_id ?? "").trim()).filter(Boolean)
+      ((recipeProductRowsError ? [] : recipeProductRows) as RecipeProductRow[])
+        .filter((row) => {
+          const ingredient = Array.isArray(row.ingredients) ? row.ingredients[0] : row.ingredients;
+          const ingredientName = String(ingredient?.name ?? "").trim();
+          return Boolean(ingredientName) && !ingredientName.startsWith("STOCK:");
+        })
+        .map((row) => String(row.product_id ?? "").trim())
+        .filter(Boolean)
     );
     const allowNegativeStock = inventorySettingsError ? false : Boolean(inventorySettings?.allow_negative_stock ?? false);
     const sellableStockByProduct = new Map<string, number | null>();
@@ -903,8 +918,7 @@ export async function GET(request: Request) {
         price: Number(row.price ?? 0),
         is_active: Boolean(row.is_active),
         stock_deduction_mode: row.stock_deduction_mode === "recipe_deduction" ? "recipe_deduction" : "unit_only",
-        has_recipe_deduction:
-          row.stock_deduction_mode === "recipe_deduction" || recipeProductIdSet.has(String(row.id)),
+        has_recipe_deduction: row.stock_deduction_mode === "recipe_deduction" && recipeProductIdSet.has(String(row.id)),
         stock_on_hand_units: sellableStockByProduct.has(String(row.id)) ? sellableStockByProduct.get(String(row.id)) : null,
         is_out_of_stock:
           !allowNegativeStock &&
