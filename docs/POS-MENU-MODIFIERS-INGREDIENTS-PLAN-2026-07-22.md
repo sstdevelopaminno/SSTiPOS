@@ -206,6 +206,12 @@ This must run in the same order creation transaction or in a guarded all-or-noth
   - noodle products with noodle type choices,
   - cappuccino with milk options.
 
+2026-07-22 implementation start:
+
+- Added migration `supabase/migrations/202607220002_product_modifiers.sql`.
+- Added tables `product_modifier_groups`, `product_modifier_options`, and `product_modifier_option_ingredients` with tenant/branch indexes and RLS isolation.
+- `/api/pos/recipe-products` now returns `modifier_groups_by_product` when modifier tables exist, while still returning linked recipe ingredients for the current popup fallback.
+
 ### Phase 2: POS UI Modal And Cart
 
 - Add product modifier modal.

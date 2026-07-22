@@ -17,6 +17,13 @@ function isMissingRecipesSchemaError(error: PostgrestLikeError | null | undefine
   return text.includes("recipes");
 }
 
+function isMissingModifierSchemaError(error: PostgrestLikeError | null | undefined): boolean {
+  if (!error) return false;
+  const code = String(error.code ?? "");
+  const text = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`.toLowerCase();
+  return code === "42P01" || code === "PGRST205" || text.includes("product_modifier");
+}
+
 function normalizeProductId(value: string | null | undefined): string {
   return String(value ?? "").trim();
 }
@@ -79,9 +86,76 @@ export async function GET(req: Request) {
       });
     }
 
+    const { data: modifierGroupRows, error: modifierGroupError } = await supabase
+      .from("product_modifier_groups")
+      .select("id,product_id,name,selection_type,is_required,min_select,max_select,sort_order")
+      .eq("tenant_id", auth.tenantId!)
+      .eq("branch_id", auth.branchId!)
+      .eq("is_active", true)
+      .in("product_id", productIds)
+      .order("sort_order", { ascending: true });
+
+    const modifierGroupsByProduct: Record<
+      string,
+      Array<{
+        id: string;
+        name: string;
+        selection_type: "single" | "multiple";
+        is_required: boolean;
+        min_select: number;
+        max_select: number;
+        options: Array<{ id: string; name: string; price_delta: number; is_default: boolean }>;
+      }>
+    > = {};
+
+    if (!modifierGroupError) {
+      const groupIds = (modifierGroupRows ?? []).map((row) => String(row.id));
+      const { data: optionRows, error: optionError } = groupIds.length
+        ? await supabase
+            .from("product_modifier_options")
+            .select("id,group_id,name,price_delta,is_default,sort_order")
+            .eq("tenant_id", auth.tenantId!)
+            .eq("branch_id", auth.branchId!)
+            .eq("is_active", true)
+            .in("group_id", groupIds)
+            .order("sort_order", { ascending: true })
+        : { data: [], error: null };
+      if (optionError && !isMissingModifierSchemaError(optionError)) {
+        return fail("modifier_options_query_failed", optionError.message, 500);
+      }
+      const optionsByGroup = new Map<string, Array<{ id: string; name: string; price_delta: number; is_default: boolean }>>();
+      for (const option of optionRows ?? []) {
+        const groupId = String(option.group_id);
+        const rows = optionsByGroup.get(groupId) ?? [];
+        rows.push({
+          id: String(option.id),
+          name: String(option.name ?? ""),
+          price_delta: Number(option.price_delta ?? 0),
+          is_default: Boolean(option.is_default)
+        });
+        optionsByGroup.set(groupId, rows);
+      }
+      for (const group of modifierGroupRows ?? []) {
+        const productId = String(group.product_id);
+        modifierGroupsByProduct[productId] ??= [];
+        modifierGroupsByProduct[productId].push({
+          id: String(group.id),
+          name: String(group.name ?? ""),
+          selection_type: group.selection_type === "single" ? "single" : "multiple",
+          is_required: Boolean(group.is_required),
+          min_select: Number(group.min_select ?? 0),
+          max_select: Number(group.max_select ?? 0),
+          options: optionsByGroup.get(String(group.id)) ?? []
+        });
+      }
+    } else if (!isMissingModifierSchemaError(modifierGroupError)) {
+      return fail("modifier_groups_query_failed", modifierGroupError.message, 500);
+    }
+
     return ok({
       product_ids: recipeProductIds,
-      ingredients_by_product: ingredientsByProduct
+      ingredients_by_product: ingredientsByProduct,
+      modifier_groups_by_product: modifierGroupsByProduct
     });
   } catch (error) {
     return fail("pos_recipe_products_failed", error instanceof Error ? error.message : "Unknown error", 400);
