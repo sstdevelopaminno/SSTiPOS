@@ -52,6 +52,13 @@ type Props = {
     tone: "pass" | "fail" | "warn";
   } | null;
   paymentMethodValue?: string;
+  memberSummary?: {
+    name: string;
+    code?: string | null;
+    phone?: string | null;
+    points?: number | null;
+    stamps?: number | null;
+  } | null;
   text: PaymentText;
 };
 
@@ -96,6 +103,7 @@ export function PosPaymentPanel({
   transferVerificationLabel,
   transferVerificationBadge,
   paymentMethodValue,
+  memberSummary,
   text
 }: Props) {
   const secondaryActions = ([
@@ -161,6 +169,18 @@ export function PosPaymentPanel({
           <span>{text.status}</span>
           <strong>{text.statusValue}</strong>
         </p>
+        {memberSummary ? (
+          <div className="posui-bill-member-card">
+            <span>{text.member ?? "Member"}</span>
+            <strong>{memberSummary.name}</strong>
+            <small>
+              {[memberSummary.code ? `#${memberSummary.code}` : "", memberSummary.phone].filter(Boolean).join(" / ")}
+            </small>
+            <em>
+              {Number(memberSummary.points ?? 0)} คะแนน / {Number(memberSummary.stamps ?? 0)} แต้ม
+            </em>
+          </div>
+        ) : null}
         {transferVerificationBadge && transferVerificationLabel ? (
           <p>
             <span>{transferVerificationLabel}</span>

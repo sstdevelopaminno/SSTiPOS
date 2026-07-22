@@ -2976,6 +2976,42 @@ a {
   line-height: 1;
 }
 
+.posui-bill-member-card {
+  display: grid;
+  gap: 3px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+}
+
+.posui-bill-member-card span {
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.posui-bill-member-card strong {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.posui-bill-member-card small,
+.posui-bill-member-card em {
+  color: #475569;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.posui-bill-member-card em {
+  color: #b45309;
+}
+
 .posui-transfer-badge {
   display: inline-flex;
   align-items: center;

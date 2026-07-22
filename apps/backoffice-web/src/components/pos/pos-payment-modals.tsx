@@ -273,9 +273,15 @@ export function PosPaymentModals({
   function getReceiptMemberLabel(session: ReceiptSession): string | null {
     const memberName = session.member_name?.trim();
     const memberPhone = session.member_phone?.trim();
-    if (!memberName && !memberPhone) return null;
-    if (memberName && memberPhone) return `${memberName} / ${memberPhone}`;
-    return memberName ?? memberPhone ?? null;
+    const memberCode = session.member_code?.trim();
+    const points = Number(session.member_points);
+    const stamps = Number(session.member_stamps);
+    const pointText = Number.isFinite(points) ? `${points} ${lang === "th" ? "คะแนน" : "pts"}` : "";
+    const stampText = Number.isFinite(stamps) ? `${stamps} ${lang === "th" ? "แต้ม" : "stamps"}` : "";
+    const identity = [memberName, memberCode ? `#${memberCode}` : "", memberPhone].filter(Boolean).join(" / ");
+    const balances = [pointText, stampText].filter(Boolean).join(" / ");
+    if (!identity && !balances) return null;
+    return [identity, balances].filter(Boolean).join(" | ");
   }
 
   function resolveTaxLines(order: Pick<CheckoutReviewOrder, "tax_lines" | "tax_total"> | null | undefined): TaxLineSnapshot[] {

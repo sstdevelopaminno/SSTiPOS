@@ -4780,11 +4780,14 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
 
   function saveMemberSelection() {
     if (!selectedMember) return;
-    setSelectedMember({
+    const nextMember = {
       ...selectedMember,
       points: Math.max(0, Math.floor(Number(memberPointsInput || 0))),
       stamps: Math.max(0, Math.floor(Number(memberStampsInput || 0)))
-    });
+    };
+    setSelectedMember(nextMember);
+    setMemberPointsInput(String(nextMember.points));
+    setMemberStampsInput(String(nextMember.stamps));
     setMemberPickerOpen(false);
   }
 
@@ -5502,6 +5505,16 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         if (!createdOrder) {
           throw new Error("Order created but bill information is missing.");
         }
+        const createdOrderWithMember = selectedMember
+          ? {
+              ...createdOrder,
+              member_name: createdOrder.member_name ?? selectedMember.name,
+              member_phone: createdOrder.member_phone ?? selectedMember.phone,
+              member_code: createdOrder.member_code ?? selectedMember.member_token ?? selectedMember.id,
+              member_points: createdOrder.member_points ?? selectedMember.points,
+              member_stamps: createdOrder.member_stamps ?? selectedMember.stamps
+            }
+          : createdOrder;
         if (orderType === "dine_in" && selectedTable?.id) {
           rememberDineInDraft(selectedTable.id, cartSnapshot);
           setLastCommittedCartSignature(cartSnapshotSignature);
@@ -5509,7 +5522,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         setTakeawayCreatingPreview(null);
         setReviewOrder(
           buildReviewOrder({
-            order: createdOrder,
+            order: createdOrderWithMember,
             fallbackOrderType: orderType,
             fallbackTableId: selectedTable?.id ?? null,
             fallbackTotal: effectiveTotal,
@@ -7244,6 +7257,17 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
               : null
           }
           paymentMethodValue={getBillPaymentMethodLabel(sidebarPaymentMethod)}
+          memberSummary={
+            selectedMember
+              ? {
+                  name: selectedMember.name,
+                  code: selectedMember.member_token ?? selectedMember.id,
+                  phone: selectedMember.phone,
+                  points: selectedMember.points,
+                  stamps: selectedMember.stamps
+                }
+              : null
+          }
           text={{
             subtotal: text.subtotal,
             total: text.total,
