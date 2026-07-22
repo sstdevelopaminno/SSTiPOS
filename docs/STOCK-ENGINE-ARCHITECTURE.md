@@ -14,6 +14,15 @@
 
 ## Design
 
+### 0) Product And Ingredient Stock Modes
+
+Current POS catalog setup supports two stock styles through one deduction engine:
+
+- Ingredient recipe mode links a product to real `ingredients` rows through `recipes`.
+- Unit/product stock mode creates or updates a hidden fallback ingredient named `STOCK:<sku>:<name>` and links it through one recipe line with `quantity_per_item = 1`.
+
+The fallback bridge lets normal product stock and recipe ingredient stock both deduct through recipe/ingredient movement logic. Do not remove this bridge without replacing the full POS deduction path.
+
 ### 1) Database Transaction Functions
 The core write path is moved into SQL transaction functions (PL/pgSQL):
 
@@ -65,6 +74,17 @@ Responsibilities:
 - Call RPC transaction functions.
 - Map DB errors to API errors.
 - Persist audit logs for success/failure/replay.
+
+### 6) POS Direct Fallback Deduction Timing
+
+`apps/backoffice-web/src/lib/services/pos-sales-service.ts` has direct fallback paths for POS stability. In this runtime:
+
+- RPC create paths may deduct stock during order creation.
+- Direct create fallback can create the queued order first.
+- Payment completion calls `deductIngredientStockForPaidOrderFallback`.
+- The fallback checks existing `stock_movements` for the order before deducting, preventing double deduction.
+
+For future modifier work, keep this timing in mind: option ingredient deltas must be included in whichever path performs the final guarded deduction.
 
 ## Files Added/Changed
 - Migration:

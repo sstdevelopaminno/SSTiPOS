@@ -71,7 +71,24 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (url.pathname.startsWith("/_next/") || url.pathname.startsWith("/brand/")) {
+  if (url.pathname.startsWith("/_next/")) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const copy = response.clone();
+          void caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          return response;
+        })
+        .catch(async () => {
+          const cached = await caches.match(request);
+          if (cached) return cached;
+          throw new Error("Next asset unavailable.");
+        })
+    );
+    return;
+  }
+
+  if (url.pathname.startsWith("/brand/")) {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;

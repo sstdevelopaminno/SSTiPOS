@@ -15,6 +15,7 @@ type ShiftRow = {
   expected_cash: number | null;
   actual_cash: number | null;
   status: string;
+  metadata: Record<string, unknown> | null;
 };
 
 type OrderRow = {
@@ -149,7 +150,7 @@ export async function GET(request: Request) {
 
     let shiftsQuery = supabase
       .from("shifts")
-      .select("id,tenant_id,branch_id,opened_by,closed_by,opened_at,closed_at,opening_cash,expected_cash,actual_cash,status")
+      .select("id,tenant_id,branch_id,opened_by,closed_by,opened_at,closed_at,opening_cash,expected_cash,actual_cash,status,metadata")
       .eq("tenant_id", scope.session.tenant_id)
       .gte("opened_at", startedAfter)
       .order("opened_at", { ascending: false })

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolveShiftCycle, slotLabel, slotWindowLabel } from "@/lib/pos-shift-schedule";
 
 type Lang = "th" | "en";
-type ModalKind = "open" | "close" | "active" | "receipt" | "details" | null;
+type ModalKind = "open" | "close" | "active" | "receipt" | "details" | "summary" | null;
 type BusyState = "open" | "close" | "print" | "logout" | null;
 
 const BRANCH_FILTER_STORAGE_KEY = "pos_shift_history_branch_filter_v1";
@@ -57,6 +57,7 @@ type ShiftHistoryResponse = {
       expected_cash: number | null;
       actual_cash: number | null;
       status: string;
+      metadata: Record<string, unknown> | null;
       metrics: {
         order_count: number;
         cancelled_order_count: number;
@@ -219,6 +220,35 @@ h1,p{margin:0;}
   </section>
   <p class="brand">CpIPOS</p>
 </main></body></html>`;
+}
+
+function isOverdueAutoClosedShift(shift: ShiftHistoryItem) {
+  const metadata = shift.metadata ?? {};
+  return (
+    shift.status !== "open" &&
+    (metadata.close_reason === "system_auto_close_overdue_shift" ||
+      metadata.auto_close_uses_sales_total === true ||
+      metadata.overdue_auto_close === true)
+  );
+}
+
+function shiftStatusBadge(shift: ShiftHistoryItem, lang: Lang) {
+  if (shift.status === "open") {
+    return {
+      label: lang === "th" ? "เปิดอยู่" : "Open",
+      className: "bg-blue-100 text-blue-700 ring-1 ring-blue-200"
+    };
+  }
+  if (isOverdueAutoClosedShift(shift)) {
+    return {
+      label: lang === "th" ? "ลืมปิดกะ" : "Forgot to close",
+      className: "bg-rose-100 text-rose-700 ring-1 ring-rose-200"
+    };
+  }
+  return {
+    label: lang === "th" ? "ปิดกะแล้ว" : "Closed",
+    className: "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200"
+  };
 }
 
 function buildShiftDetailReceiptHtml(args: {
@@ -922,6 +952,13 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
             <div className="flex gap-2">
               <button
                 type="button"
+                onClick={() => openModal("summary")}
+                className="h-10 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700"
+              >
+                {lang === "th" ? "ดูยอด" : "View totals"}
+              </button>
+              <button
+                type="button"
                 onClick={() => window.print()}
                 className="h-10 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700"
               >
@@ -935,33 +972,6 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                 {text.reload}
               </button>
             </div>
-          </div>
-
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">{text.shifts}</p>
-              <p className="text-lg font-black">{payload?.summary.shift_count ?? 0}</p>
-            </article>
-            <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">{text.orders}</p>
-              <p className="text-lg font-black">{payload?.summary.order_count ?? 0}</p>
-            </article>
-            <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">{text.cancelled}</p>
-              <p className="text-lg font-black">{payload?.summary.cancelled_order_count ?? 0}</p>
-            </article>
-            <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">{text.sales}</p>
-              <p className="text-lg font-black">{formatMoney(payload?.summary.sales_total ?? 0, lang)}</p>
-            </article>
-            <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">{text.cash}</p>
-              <p className="text-lg font-black">{formatMoney(payload?.summary.cash_total ?? 0, lang)}</p>
-            </article>
-            <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">{text.transfer}</p>
-              <p className="text-lg font-black">{formatMoney(payload?.summary.transfer_total ?? 0, lang)}</p>
-            </article>
           </div>
 
           {loading ? <p className="mt-4 text-sm text-slate-500">Loading...</p> : null}
@@ -980,11 +990,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                     <th className="px-3 py-3 text-right">{text.orders}</th>
                     <th className="px-3 py-3 text-right">{text.cancelled}</th>
                     <th className="px-3 py-3 text-right">{text.sales}</th>
-                    <th className="px-3 py-3 text-right">{text.cash}</th>
-                    <th className="px-3 py-3 text-right">{text.transfer}</th>
-                    <th className="px-3 py-3 text-right">{cashFloatLabel}</th>
                     <th className="px-3 py-3 text-right">{text.expected}</th>
-                    <th className="px-3 py-3 text-right">{text.actual}</th>
                     <th className="px-3 py-3 text-center">{detailsLabel}</th>
                   </tr>
                 </thead>
@@ -1011,18 +1017,12 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                         <td className="px-3 py-3 text-slate-600">{shift.closed_at ? formatDateTime(shift.closed_at, lang) : "-"}</td>
                         <td className="px-3 py-3">
                           {(() => {
-                            const closedBySelf = Boolean(shift.closed_by && shift.closed_by === shift.opened_by);
-                            const statusClass =
-                              shift.status === "open"
-                                ? "bg-emerald-100 text-emerald-700"
-                                : closedBySelf
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : "bg-slate-200 text-slate-700";
+                            const statusBadge = shiftStatusBadge(shift, lang);
                             return (
                           <span
-                            className={`rounded-full px-2 py-0.5 text-xs font-bold ${statusClass}`}
+                            className={`rounded-full px-2 py-0.5 text-xs font-bold ${statusBadge.className}`}
                           >
-                            {shift.status === "open" ? text.open : text.closed}
+                            {statusBadge.label}
                           </span>
                             );
                           })()}
@@ -1030,13 +1030,9 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                         <td className="px-3 py-3 text-right">{shift.metrics.order_count}</td>
                         <td className="px-3 py-3 text-right">{shift.metrics.cancelled_order_count}</td>
                         <td className="px-3 py-3 text-right">{formatMoney(shift.metrics.sales_total, lang)}</td>
-                        <td className="px-3 py-3 text-right">{formatMoney(shift.metrics.cash_total, lang)}</td>
-                        <td className="px-3 py-3 text-right">{formatMoney(shift.metrics.transfer_total, lang)}</td>
-                        <td className="px-3 py-3 text-right">{formatMoney(shift.opening_cash, lang)}</td>
                         <td className={`px-3 py-3 text-right font-bold ${cashVarianceClass}`}>
                           {cashVariance === null ? "-" : formatSignedMoney(cashVariance, lang)}
                         </td>
-                        <td className="px-3 py-3 text-right">{shift.actual_cash === null ? "-" : formatMoney(shift.actual_cash, lang)}</td>
                         <td className="px-3 py-3 text-center">
                           <button
                             type="button"
@@ -1109,6 +1105,8 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                     ? text.popupTitleActive
                     : modalKind === "details"
                       ? detailsTitle
+                    : modalKind === "summary"
+                      ? lang === "th" ? "ยอดสรุป" : "Summary totals"
                     : text.popupTitleReceipt}
             </h3>
             <p className="mt-1 text-sm text-slate-600">
@@ -1122,6 +1120,8 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                     ? text.popupDescActive
                     : modalKind === "details"
                       ? detailsTitle
+                    : modalKind === "summary"
+                      ? lang === "th" ? "ดูยอดรวมตามช่วงเวลาและสาขาที่เลือก" : "Totals for the selected period and branch."
                     : lang === "th"
                       ? "ปิดกะสำเร็จแล้ว สามารถพิมพ์ Bluetooth หรือไปหน้าเลือกสาขาได้ทันที"
                       : text.popupDescReceipt}
@@ -1131,6 +1131,35 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
               <div className="mt-4 flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-3 text-sm font-semibold text-blue-800">
                 <span className="h-5 w-5 animate-spin rounded-full border-2 border-blue-200 border-t-blue-700" aria-hidden />
                 <span>{text.openingShiftDesc}</span>
+              </div>
+            ) : null}
+
+            {modalKind === "summary" ? (
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">{text.shifts}</p>
+                  <p className="text-lg font-black">{payload?.summary.shift_count ?? 0}</p>
+                </article>
+                <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">{text.orders}</p>
+                  <p className="text-lg font-black">{payload?.summary.order_count ?? 0}</p>
+                </article>
+                <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">{text.cancelled}</p>
+                  <p className="text-lg font-black">{payload?.summary.cancelled_order_count ?? 0}</p>
+                </article>
+                <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">{text.sales}</p>
+                  <p className="text-lg font-black">{formatMoney(payload?.summary.sales_total ?? 0, lang)}</p>
+                </article>
+                <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">{text.cash}</p>
+                  <p className="text-lg font-black">{formatMoney(payload?.summary.cash_total ?? 0, lang)}</p>
+                </article>
+                <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">{text.transfer}</p>
+                  <p className="text-lg font-black">{formatMoney(payload?.summary.transfer_total ?? 0, lang)}</p>
+                </article>
               </div>
             ) : null}
 
@@ -1384,7 +1413,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                     disabled={Boolean(busy)}
                     className="h-10 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-60"
                   >
-                    {modalKind === "active" || modalKind === "details" ? text.close : text.cancel}
+                    {modalKind === "active" || modalKind === "details" || modalKind === "summary" ? text.close : text.cancel}
                   </button>
                   {modalKind === "details" ? (
                     <button
@@ -1395,7 +1424,7 @@ export function PosShiftHistoryModule({ lang }: { lang: Lang }) {
                       {lang === "th" ? "พิมพ์ 58mm" : "Print 58mm"}
                     </button>
                   ) : null}
-                  {modalKind !== "active" && modalKind !== "details" ? (
+                  {modalKind !== "active" && modalKind !== "details" && modalKind !== "summary" ? (
                     <button
                       type="button"
                       onClick={() => void (modalKind === "open" ? openShiftNow() : closeShiftNow())}

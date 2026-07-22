@@ -177,52 +177,61 @@ async function loadEmployeeCodes(tenantId: string, userIds: string[]) {
 async function resolveEmployeeByProfileCode(input: {
   tenantId: string;
   branchId: string;
-  normalizedCode: string;
+  codeCandidates: Set<string>;
 }): Promise<EmployeeIdentity | null | "relation_missing"> {
   const supabase = getSupabaseServiceClient();
+  const candidates = Array.from(input.codeCandidates);
+  if (!candidates.length) return null;
+
   const { data, error } = await supabase
     .from("pos_user_profiles")
     .select("user_id,employee_code,users_profiles!inner(id,email,full_name,is_active)")
     .eq("tenant_id", input.tenantId)
-    .eq("employee_code", input.normalizedCode)
-    .maybeSingle<{
+    .in("employee_code", candidates)
+    .limit(10)
+    .returns<
+      Array<{
       user_id: string;
       employee_code: string | null;
       users_profiles:
         | { id: string; email: string; full_name: string; is_active: boolean }
         | Array<{ id: string; email: string; full_name: string; is_active: boolean }>;
-    }>();
+      }>
+    >();
 
   if (error) {
     if (isMissingRelationError(error, "pos_user_profiles")) return "relation_missing";
     throw new Error(error.message);
   }
-  if (!data) return null;
 
-  const profile = Array.isArray(data.users_profiles) ? data.users_profiles[0] : data.users_profiles;
-  if (!profile?.is_active) return null;
+  for (const row of data ?? []) {
+    const profile = Array.isArray(row.users_profiles) ? row.users_profiles[0] : row.users_profiles;
+    if (!profile?.is_active) continue;
 
-  const roleResult = await supabase
-    .from("user_branch_roles")
-    .select("role")
-    .eq("tenant_id", input.tenantId)
-    .eq("branch_id", input.branchId)
-    .eq("user_id", data.user_id)
-    .maybeSingle<{ role: BranchRole }>();
+    const roleResult = await supabase
+      .from("user_branch_roles")
+      .select("role")
+      .eq("tenant_id", input.tenantId)
+      .eq("branch_id", input.branchId)
+      .eq("user_id", row.user_id)
+      .maybeSingle<{ role: BranchRole }>();
 
-  if (roleResult.error) {
-    throw new Error(roleResult.error.message);
+    if (roleResult.error) {
+      throw new Error(roleResult.error.message);
+    }
+    if (!roleResult.data) continue;
+
+    const role = roleResult.data.role;
+    return {
+      userId: profile.id,
+      fullName: profile.full_name,
+      role,
+      employeeCode: normalizeEmpCandidate(row.employee_code ?? candidates[0]),
+      permissions: roleToPermissions(role)
+    };
   }
-  if (!roleResult.data) return null;
 
-  const role = roleResult.data.role;
-  return {
-    userId: profile.id,
-    fullName: profile.full_name,
-    role,
-    employeeCode: normalizeEmpCandidate(data.employee_code ?? input.normalizedCode),
-    permissions: roleToPermissions(role)
-  };
+  return null;
 }
 
 export async function resolveEmployeeByCode(input: {
@@ -235,14 +244,12 @@ export async function resolveEmployeeByCode(input: {
   if (!normalizedCode) return null;
   const codeCandidates = buildEmployeeCodeCandidates(normalizedCode);
 
-  if (/^\d{1,32}$/.test(normalizedCode)) {
-    const indexedMatch = await resolveEmployeeByProfileCode({
-      tenantId: input.tenantId,
-      branchId: input.branchId,
-      normalizedCode
-    });
-    if (indexedMatch !== "relation_missing") return indexedMatch;
-  }
+  const indexedMatch = await resolveEmployeeByProfileCode({
+    tenantId: input.tenantId,
+    branchId: input.branchId,
+    codeCandidates
+  });
+  if (indexedMatch !== "relation_missing" && indexedMatch) return indexedMatch;
 
   const { data, error } = await supabase
     .from("user_branch_roles")

@@ -18,6 +18,26 @@ Primary stability risks found:
 4. Employee-code login has a new `pos_user_profiles` index, but the current lookup path still scans branch users first and only then loads profile codes.
 5. Fresh typecheck/test/lint/build could not be run in this shell because Node/npm/pnpm/corepack/git are not in PATH.
 
+## 2026-07-22 Stability Fix Update
+
+Implemented after a follow-up code and documentation review for bug, slowness, and hang risks:
+
+| Area | Change | Stability impact |
+|---|---|---|
+| Admin POS monitor polling | Changed `apps/backoffice-web/src/components/pos/pos-monitor-dashboard.tsx` so the default poll interval is 30 seconds and configured values are clamped to a minimum of 15 seconds. | Prevents a missing or too-low `NEXT_PUBLIC_POS_MONITOR_POLL_MS` from repeatedly hitting the heaviest monitor endpoint every 5 seconds. |
+| POS session current shift lookup | Removed the synthetic `open` shift fallback in `apps/backoffice-web/src/app/api/pos/session/current/route.ts` when shift lookup times out. The API now returns `shift_lookup_degraded: true` and does not report `has_active_shift=true` without a confirmed shift row. | Avoids masking database slowness as a valid open shift and gives the UI/monitoring a truthful degraded signal. |
+| Employee-code login lookup | Updated `apps/backoffice-web/src/lib/server/pre-entry-auth.ts` to query `pos_user_profiles` with all normalized code candidates before falling back to branch-wide legacy matching. | Uses the existing `(tenant_id, employee_code)` index for more employee code formats and reduces login latency as branch staff count grows. |
+| POS sidebar overflow | Updated `apps/backoffice-web/src/components/pos-preview/pos-shell-sidebar.tsx` and `apps/backoffice-web/src/components/pos-preview/pos-staff-menu.tsx` so the main menu area scrolls within the sidebar and the footer stays visible. | Prevents lower menu actions such as logout/language from being clipped on short screens. |
+
+Verification attempted:
+
+- Static source review of the affected monitor, session, login, config, and stability-document files.
+- `eslint` passed for the three changed source files when run from `apps/backoffice-web`.
+- `eslint` passed for the POS sidebar overflow files.
+- `tsc -p tsconfig.json --noEmit --pretty false --incremental false` passed for `apps/backoffice-web`.
+- Focused Vitest run executed 3 integration files / 9 tests and all tests passed; the process still exited non-zero afterward because Vitest could not write `node_modules/.vite/vitest/results.json` (`EPERM`).
+- Fresh command execution in this shell remains slow; earlier broad commands timed out or took 20-30 seconds, and `git`, `npm`, and `cmd` were not available in PATH until Node was added manually for the verification commands.
+
 ## 2026-06-04 UI Stability Update
 
 Implemented after the first audit pass:
@@ -259,3 +279,16 @@ node scripts/pos-responsive-landscape-qa.mjs
 ```
 
 6. Update `README.md` or create a docs index pointing to this audit and marking archived QR-era docs as historical.
+
+## 2026-07-22 Follow-up Fixes
+
+- Disabled the external `.next-local` dev dist cache in `apps/backoffice-web/scripts/dev-safe.mjs` so local development compiles from the current source tree instead of serving stale bundles that caused repeated hydration mismatch errors.
+- Hardened `apps/backoffice-web/scripts/dev-safe.mjs` on Windows by resolving `cmd.exe`, `netstat.exe`, and `taskkill.exe` through explicit System32 paths when the shell PATH is incomplete.
+- Cleared the generated `.next` cache and removed the `.next-local` junction from `apps/backoffice-web`.
+- Restored stable visibility sizing for the password/code eye toggle in POS login fields by fixing `.login-code-visibility-btn` icon layout in `apps/backoffice-web/src/app/globals.css`.
+- Confirmed there are no remaining source references to the removed `PosShellSidebarClient`; the POS preview layout uses the direct sidebar component again.
+- Verification: restarted `npm run dev`; Next.js reached Ready on `http://localhost:3000`. First cold request to `/preview/pos/shift` took 46s after cache clearing, then the warm request returned in 711ms with no repeated lazy component runtime error in the dev log.
+- Added `docs/ai-pos-shift-sidebar-checkpoint-2026-07-22.md` as the required checkpoint for future AI work on POS shift history, sidebar, and login code visibility so the next iteration does not reintroduce stale cache, old UI columns, or the removed lazy sidebar wrapper.
+- Found a second stale UI source: the PWA service worker cached `/_next/` chunks before network fetches, allowing old client JavaScript to hydrate fresh server HTML. Development now unregisters service workers and clears Cache Storage in `PwaBootstrap`; `public/sw.js` now uses network-first behavior for `/_next/` assets.
+- Disabled login route prewarming in development in `apps/backoffice-web/src/lib/pre-entry-client-cache.ts`. This prevents employee/device login pages from triggering background compiles for the next route while the user is interacting with the current screen.
+- Follow-up verification after disabling development prewarm: cold dev compile still took `/login/employee` about 52s, `/manifest.webmanifest` 18.6s, `/api/auth/session/context` 21.5s, and `/login/devices` 6.5s. After all routes were warm, `/login/employee` returned in 221ms and `/login/devices` returned in 405ms. Treat the first slow hit after restart/cache clear as Next.js dev cold compile, not app runtime regression, unless warm requests stay slow.

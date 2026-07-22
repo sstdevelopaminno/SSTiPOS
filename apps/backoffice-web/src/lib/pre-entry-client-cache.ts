@@ -21,9 +21,6 @@ type SelectedBranchCache = {
 const BRANCH_CACHE_KEY = "ipos:login:branches";
 const SELECTED_BRANCH_CACHE_KEY = "ipos:login:selected-branch";
 const CACHE_TTL_MS = 5 * 60 * 1000;
-const warmedDevelopmentRoutes = new Set<string>();
-let developmentWarmupQueue = Promise.resolve();
-
 function readCache<T>(key: string): T | null {
   if (typeof window === "undefined") return null;
   try {
@@ -81,28 +78,7 @@ export function clearPreEntryClientCache() {
 }
 
 export function warmRoute(router: { prefetch: (href: string) => void }, href: string) {
-  router.prefetch(href);
-  if (process.env.NODE_ENV !== "development" || typeof window === "undefined") return;
-  if (warmedDevelopmentRoutes.has(href)) return;
-  warmedDevelopmentRoutes.add(href);
+  if (process.env.NODE_ENV === "development") return;
 
-  developmentWarmupQueue = developmentWarmupQueue.then(
-    () =>
-      new Promise<void>((resolve) => {
-        window.setTimeout(() => {
-          const controller = new AbortController();
-          const timeoutId = window.setTimeout(() => controller.abort(), 15000);
-          void fetch(href, {
-            cache: "no-store",
-            credentials: "same-origin",
-            signal: controller.signal
-          })
-            .catch(() => null)
-            .finally(() => {
-              window.clearTimeout(timeoutId);
-              resolve();
-            });
-        }, 200);
-      })
-  );
+  router.prefetch(href);
 }

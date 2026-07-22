@@ -118,8 +118,8 @@ function numberFmt(value: number): string {
 
 function pollMs(): number {
   const raw = Number(process.env.NEXT_PUBLIC_POS_MONITOR_POLL_MS);
-  if (Number.isFinite(raw) && raw >= 1000) return Math.floor(raw);
-  return 5000;
+  if (Number.isFinite(raw)) return Math.max(15000, Math.floor(raw));
+  return 30000;
 }
 
 export function PosMonitorDashboard({ lang }: { lang: Lang }) {

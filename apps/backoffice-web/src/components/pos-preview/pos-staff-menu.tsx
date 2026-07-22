@@ -163,8 +163,8 @@ const MENU_DEFS: Array<{
 ];
 
 function resolveMenuRole(role: PosRole | null): PosRole {
-  // Keep menu visible after refresh while session role is still hydrating from API.
-  if (!role) return "staff";
+  // Keep the full owner menu visible while the session role is still hydrating.
+  if (!role) return "owner";
   if (role === "accountant") return "manager";
   return role;
 }
@@ -182,7 +182,6 @@ export function PosStaffMenu({
   enabledFeatures: Record<string, boolean> | null;
   onLockedFeature: () => void;
 }) {
-  const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -199,10 +198,6 @@ export function PosStaffMenu({
       })).filter((item) => item.roles.includes(effectiveRole)),
     [effectiveRole, lang]
   );
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!isPending) {
@@ -238,8 +233,8 @@ export function PosStaffMenu({
   }
 
   return (
-    <nav className="mt-2 grid gap-1" aria-label={t(lang, "pos_menu_staff_aria")}>
-      {(mounted ? menuItems : []).map((item) => {
+    <nav className="grid gap-1" aria-label={t(lang, "pos_menu_staff_aria")} suppressHydrationWarning>
+      {menuItems.map((item) => {
         const isActive = pathname === item.href;
         const isNavigating = pendingHref === item.href && isPending;
         const isFeatureLoaded = enabledFeatures !== null;

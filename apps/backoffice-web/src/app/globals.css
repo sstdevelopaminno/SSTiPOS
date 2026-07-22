@@ -667,6 +667,15 @@ a {
   background-size: auto 42px;
 }
 
+.pos-shell-sidebar__menu-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.pos-shell-sidebar__menu-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 /* Tablet Landscape zone: 1024 x 768 */
 @media screen and (min-width: 980px) and (max-width: 1100px) and (min-height: 700px) and (max-height: 820px) and (orientation: landscape) {
   .pos-shell {
@@ -8234,6 +8243,7 @@ a {
   position: relative;
   z-index: 2;
   display: inline-flex;
+  flex: 0 0 36px;
   width: 36px;
   height: 36px;
   align-items: center;
@@ -8244,6 +8254,12 @@ a {
   color: #4774ad;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+.login-code-visibility-btn svg {
+  display: block;
+  width: 20px;
+  height: 20px;
 }
 
 .login-code-visibility-btn:hover {

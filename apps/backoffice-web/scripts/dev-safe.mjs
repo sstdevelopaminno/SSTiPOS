@@ -1,5 +1,9 @@
 import { execSync, spawn } from "node:child_process";
-import { setupLocalNextCache } from "./setup-local-next-cache.mjs";
+
+const WINDOWS_SYSTEM32 = `${process.env.SystemRoot ?? "C:\\Windows"}\\System32`;
+const WINDOWS_CMD = process.env.ComSpec ?? `${WINDOWS_SYSTEM32}\\cmd.exe`;
+const WINDOWS_NETSTAT = `${WINDOWS_SYSTEM32}\\netstat.exe`;
+const WINDOWS_TASKKILL = `${WINDOWS_SYSTEM32}\\taskkill.exe`;
 
 function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -14,7 +18,7 @@ function readPort() {
 
 function listListeningPidsOnWindows(port) {
   try {
-    const output = execSync("netstat -ano -p tcp", { encoding: "utf8" });
+    const output = execSync(`"${WINDOWS_NETSTAT}" -ano -p tcp`, { encoding: "utf8" });
     const pids = new Set();
     for (const line of output.split(/\r?\n/)) {
       if (!line.includes("LISTENING")) continue;
@@ -44,7 +48,7 @@ function listListeningPidsOnUnix(port) {
 function killPid(pid) {
   try {
     if (process.platform === "win32") {
-      execSync(`taskkill /T /F /PID ${pid}`, { stdio: "ignore" });
+      execSync(`"${WINDOWS_TASKKILL}" /T /F /PID ${pid}`, { stdio: "ignore" });
     } else {
       process.kill(pid, "SIGKILL");
     }
@@ -104,11 +108,10 @@ function resolveDevBundlerArgs() {
 
 const nextArgs = ["dev", "-p", String(port), ...resolveDevBundlerArgs()];
 const nextBin = process.platform === "win32" ? "node_modules\\.bin\\next.cmd" : "node_modules/.bin/next";
-const localDistDir = setupLocalNextCache();
-const childEnv = localDistDir ? { ...process.env, NEXT_DIST_DIR: localDistDir } : process.env;
+const childEnv = process.env;
 const child =
   process.platform === "win32"
-    ? spawn("cmd.exe", ["/c", nextBin, ...nextArgs], {
+    ? spawn(WINDOWS_CMD, ["/c", nextBin, ...nextArgs], {
         stdio: "inherit",
         shell: false,
         env: childEnv

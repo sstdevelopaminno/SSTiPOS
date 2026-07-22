@@ -335,7 +335,6 @@ export function AddProductPopupButton({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "create_category",
-          branch_id: branchId,
           name: value
         })
       });
@@ -422,7 +421,6 @@ export function AddProductPopupButton({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "create_product_with_stock_setup",
-          branch_id: branchId,
           name: resolvedName,
           category: resolvedCategory,
           stock_quantity: resolvedStock,
@@ -480,7 +478,6 @@ export function AddProductPopupButton({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "add_ingredient_stock",
-          branch_id: branchId,
           ingredient_id: selectedIngredientId || undefined,
           ingredient_name: ingredientName.trim(),
           purchase_quantity: qty,
@@ -538,7 +535,6 @@ export function AddProductPopupButton({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               action: "create_product_with_stock_setup",
-              branch_id: branchId,
               name: resolvedName,
               category: category || defaultCategory,
               stock_quantity: Number.isFinite(resolvedStock) ? Math.max(0, resolvedStock) : 0,
@@ -591,7 +587,6 @@ export function AddProductPopupButton({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               action: "upsert_ingredient",
-              branch_id: branchId,
               name: resolvedName,
               base_unit: normalizeIngredientBaseUnit(unit || "gram"),
               quantity_on_hand: Math.max(0, Number(qty || 0)),

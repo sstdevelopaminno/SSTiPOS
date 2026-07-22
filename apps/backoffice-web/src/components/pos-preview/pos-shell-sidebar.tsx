@@ -62,7 +62,7 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
   const [logoutBusyMode, setLogoutBusyMode] = useState<"switch_device" | "full" | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const isSettingsActive = pathname === "/preview/pos/settings";
-  const showAdvancedMenus = sessionRole === "owner";
+  const showAdvancedMenus = sessionRole === null || sessionRole === "owner";
   const settingsFeature = featureForPosRoute("/preview/pos/settings");
   const isSettingsLocked = Boolean(enabledFeatures !== null && settingsFeature && enabledFeatures[settingsFeature] === false);
 
@@ -170,11 +170,11 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
 
   return (
     <aside
-      className={`pos-shell-sidebar hidden h-full shrink-0 border-r border-slate-900/40 bg-[radial-gradient(circle_at_80%_-20%,rgba(56,189,248,0.28),transparent_45%),radial-gradient(circle_at_20%_120%,rgba(37,99,235,0.26),transparent_40%),linear-gradient(185deg,#07142c,#081c3b_45%,#071731)] p-3 text-white md:flex md:flex-col ${
+      className={`pos-shell-sidebar hidden h-full min-h-0 shrink-0 overflow-hidden border-r border-slate-900/40 bg-[radial-gradient(circle_at_80%_-20%,rgba(56,189,248,0.28),transparent_45%),radial-gradient(circle_at_20%_120%,rgba(37,99,235,0.26),transparent_40%),linear-gradient(185deg,#07142c,#081c3b_45%,#071731)] p-3 text-white md:flex md:flex-col ${
         collapsed ? "md:w-[68px] xl:w-[70px]" : "md:w-[188px] xl:w-[214px]"
       }`}
     >
-      <div className={`pos-shell-sidebar__brand ${collapsed ? "flex justify-center" : ""}`}>
+      <div className={`pos-shell-sidebar__brand shrink-0 ${collapsed ? "flex justify-center" : ""}`}>
         <div
           className={`pos-shell-sidebar__logo ${
             collapsed ? "pos-shell-sidebar__logo--collapsed" : ""
@@ -188,7 +188,7 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
         </div>
       </div>
 
-      <div className={`mt-3 flex items-center ${collapsed ? "justify-center" : "justify-between"}`}>
+      <div className={`mt-3 flex shrink-0 items-center ${collapsed ? "justify-center" : "justify-between"}`}>
         {!collapsed ? <p className="text-[12px] font-semibold text-slate-200">{t(lang, "pos_sidebar_staff_menu")}</p> : null}
         <button
           type="button"
@@ -203,52 +203,54 @@ export function PosShellSidebar({ lang, settingsLabel, languageLabel, thaiLabel,
         </button>
       </div>
 
-      <PosStaffMenu
-        lang={lang}
-        collapsed={collapsed}
-        sessionRole={sessionRole}
-        enabledFeatures={enabledFeatures}
-        onLockedFeature={() => setPackageLockOpen(true)}
-      />
+      <div className="pos-shell-sidebar__menu-scroll mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain" suppressHydrationWarning>
+        <PosStaffMenu
+          lang={lang}
+          collapsed={collapsed}
+          sessionRole={sessionRole}
+          enabledFeatures={enabledFeatures}
+          onLockedFeature={() => setPackageLockOpen(true)}
+        />
 
-      {showAdvancedMenus ? (
-        <Link
-          href="/preview/pos/settings"
-          prefetch={false}
-          onClick={handleSettingsNavigate}
-          className={`group relative mt-0.5 inline-flex min-h-[40px] w-full items-center px-2 text-[13px] font-semibold leading-tight transition ${
-            collapsed ? "justify-center" : "justify-start gap-2"
-          } ${
-            isSettingsActive
-              ? "rounded-xl border border-blue-400/40 bg-blue-500/25 text-white"
-              : isSettingsLocked
-                ? "rounded-xl text-slate-400/70"
-                : "rounded-xl text-slate-100/90 hover:bg-white/5 hover:text-white"
-          } ${pendingHref === "/preview/pos/settings" && isPending ? "opacity-80" : ""}`}
-          title={collapsed ? settingsLabel : isSettingsLocked ? (lang === "th" ? POS_MENU_LOCK_TITLE_TH : POS_MENU_LOCK_TITLE_EN) : undefined}
-          aria-busy={pendingHref === "/preview/pos/settings" && isPending}
-          aria-disabled={isSettingsLocked}
-        >
-          <span className="inline-flex w-4 justify-center" aria-hidden>
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.7 1.7 0 0 0 .33 1.82l.03.03a2 2 0 1 1-2.83 2.83l-.03-.03A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.04A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.82.33l-.03.03a2 2 0 1 1-2.83-2.83l.03-.03A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.96a2 2 0 1 1 0-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.33-1.82l-.03-.03a2 2 0 1 1 2.83-2.83l.03.03A1.7 1.7 0 0 0 9 4.6c.36 0 .7-.13 1-.38.27-.25.43-.6.4-.96V3a2 2 0 1 1 4 0v.04c-.03.37.12.72.4.96.3.25.64.38 1 .38a1.7 1.7 0 0 0 1.82-.33l.03-.03a2 2 0 1 1 2.83 2.83l-.03.03a1.7 1.7 0 0 0-.33 1.82c.1.38.35.73.72.95.29.18.62.27.95.25H21a2 2 0 1 1 0 4h-.04c-.37-.03-.72.12-.96.4-.24.3-.37.64-.36 1z" />
-            </svg>
-          </span>
-          {!collapsed ? <span className="truncate text-[13px]">{settingsLabel}</span> : null}
-        </Link>
-      ) : null}
+        {showAdvancedMenus ? (
+          <Link
+            href="/preview/pos/settings"
+            prefetch={false}
+            onClick={handleSettingsNavigate}
+            className={`group relative mt-0.5 inline-flex min-h-[40px] w-full items-center px-2 text-[13px] font-semibold leading-tight transition ${
+              collapsed ? "justify-center" : "justify-start gap-2"
+            } ${
+              isSettingsActive
+                ? "rounded-xl border border-blue-400/40 bg-blue-500/25 text-white"
+                : isSettingsLocked
+                  ? "rounded-xl text-slate-400/70"
+                  : "rounded-xl text-slate-100/90 hover:bg-white/5 hover:text-white"
+            } ${pendingHref === "/preview/pos/settings" && isPending ? "opacity-80" : ""}`}
+            title={collapsed ? settingsLabel : isSettingsLocked ? (lang === "th" ? POS_MENU_LOCK_TITLE_TH : POS_MENU_LOCK_TITLE_EN) : undefined}
+            aria-busy={pendingHref === "/preview/pos/settings" && isPending}
+            aria-disabled={isSettingsLocked}
+          >
+            <span className="inline-flex w-4 justify-center" aria-hidden>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.7 1.7 0 0 0 .33 1.82l.03.03a2 2 0 1 1-2.83 2.83l-.03-.03A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.04A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.82.33l-.03.03a2 2 0 1 1-2.83-2.83l.03-.03A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.96a2 2 0 1 1 0-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.33-1.82l-.03-.03a2 2 0 1 1 2.83-2.83l.03.03A1.7 1.7 0 0 0 9 4.6c.36 0 .7-.13 1-.38.27-.25.43-.6.4-.96V3a2 2 0 1 1 4 0v.04c-.03.37.12.72.4.96.3.25.64.38 1 .38a1.7 1.7 0 0 0 1.82-.33l.03-.03a2 2 0 1 1 2.83 2.83l-.03.03a1.7 1.7 0 0 0-.33 1.82c.1.38.35.73.72.95.29.18.62.27.95.25H21a2 2 0 1 1 0 4h-.04c-.37-.03-.72.12-.96.4-.24.3-.37.64-.36 1z" />
+              </svg>
+            </span>
+            {!collapsed ? <span className="truncate text-[13px]">{settingsLabel}</span> : null}
+          </Link>
+        ) : null}
+      </div>
 
-      <div className="mt-auto grid gap-2 pt-4">
+      <div className="grid shrink-0 gap-2 pt-2">
         <button
           type="button"
           onClick={() => {

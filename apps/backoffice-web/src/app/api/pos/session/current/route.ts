@@ -209,15 +209,6 @@ export async function GET() {
       }
     }
 
-    if (!shiftSummary && shiftId && shiftLookupFallback) {
-      shiftSummary = {
-        id: shiftId,
-        status: "open",
-        opened_at: new Date().toISOString(),
-        closed_at: null
-      };
-    }
-
     const [devicePolicy, shiftMetrics] = await Promise.all([
       devicePolicyPromise,
       loadShiftMetrics({
@@ -259,7 +250,8 @@ export async function GET() {
           reason_code: devicePolicy.reason_code
         },
         shift: shiftSummary ? { ...shiftSummary, metrics: shiftMetrics } : null,
-        has_active_shift: shiftSummary?.status === "open"
+        has_active_shift: shiftSummary?.status === "open",
+        shift_lookup_degraded: shiftLookupFallback
       },
       error: null
     });

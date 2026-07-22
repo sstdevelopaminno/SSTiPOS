@@ -296,7 +296,7 @@ async function ensureProductCategory(input: {
     },
     { onConflict: "tenant_id,branch_id,name" }
   );
-  if (error && isMissingTableError(error, "product_categories")) {
+  if (error && (isMissingTableError(error, "product_categories") || isForeignKeyReferenceError(error))) {
     return { ok: true as const, persisted: false as const };
   }
   if (error && !isMissingTableError(error, "product_categories")) {
@@ -777,7 +777,7 @@ export async function GET(req: Request) {
     if (featureError) return featureError;
     const message = error instanceof Error ? error.message : "Authentication failed.";
     if (message === "forbidden_branch_scope") {
-      return fail("forbidden_branch_scope", "Cross-branch access is not allowed.", 403);
+      return fail("forbidden_branch_scope", "ไม่สามารถแก้ไขข้อมูลข้ามสาขาได้ กรุณารีเฟรชหน้าแล้วเลือกสาขาปัจจุบันอีกครั้ง", 403);
     }
     if (message.startsWith("branch_scope_query_failed:")) {
       return fail("branch_scope_query_failed", message.slice("branch_scope_query_failed:".length), 500);
@@ -1018,6 +1018,20 @@ export async function POST(req: Request) {
         return fail("missing_recipe_lines", "Please select at least one ingredient line.", 422);
       }
 
+      const { data: existingProductRows, error: existingProductByNameError } = await supabase
+        .from("products")
+        .select("id,sku")
+        .eq("tenant_id", auth.tenantId!)
+        .eq("branch_id", scopedBranchId)
+        .eq("name", name)
+        .eq("is_active", true)
+        .order("updated_at", { ascending: false })
+        .limit(1);
+      if (existingProductByNameError) {
+        return fail("product_query_failed", existingProductByNameError.message, 500);
+      }
+
+      const existingProductByName = existingProductRows?.[0] as { id: string; sku?: string | null } | undefined;
       const baseProductInsertPayload = {
         tenant_id: auth.tenantId!,
         branch_id: scopedBranchId,
@@ -1035,24 +1049,29 @@ export async function POST(req: Request) {
         { ...baseProductInsertPayload }
       ];
 
-      let createdProductId: string | null = null;
+      const reusedExistingProduct = Boolean(existingProductByName?.id);
+      let productSku = String(existingProductByName?.sku ?? sku);
+      let createdProductId: string | null = existingProductByName?.id ? String(existingProductByName.id) : null;
       let createdProductError: PostgrestLikeError | null = null;
 
-      for (const payload of insertPayloadVariants) {
-        const attempt = await supabase.from("products").insert(payload).select("id").single();
-        if (attempt.error) {
-          createdProductError = attempt.error;
-          continue;
+      if (!createdProductId) {
+        for (const payload of insertPayloadVariants) {
+          const attempt = await supabase.from("products").insert(payload).select("id,sku").single();
+          if (attempt.error) {
+            createdProductError = attempt.error;
+            continue;
+          }
+          createdProductId = String(attempt.data?.id ?? "");
+          productSku = String((attempt.data as { sku?: string | null } | null)?.sku ?? sku);
+          createdProductError = null;
+          if (createdProductId) {
+            break;
+          }
         }
-        createdProductId = String(attempt.data?.id ?? "");
-        createdProductError = null;
-        if (createdProductId) {
-          break;
-        }
-      }
 
-      if (createdProductError) {
-        return fail("product_insert_failed", createdProductError.message ?? "Failed to insert product.", 500);
+        if (createdProductError) {
+          return fail("product_insert_failed", createdProductError.message ?? "Failed to insert product.", 500);
+        }
       }
       if (!createdProductId) {
         return fail("product_insert_failed", "Product insert returned no data.", 500);
@@ -1061,6 +1080,58 @@ export async function POST(req: Request) {
       let createdFallbackIngredientId: string | null = null;
 
       try {
+        if (reusedExistingProduct) {
+          const updatePayloadCandidates = [
+            {
+              name,
+              category,
+              price: Number(storePrice.toFixed(2)),
+              sell_unit: "ชิ้น",
+              stock_deduction_mode: "recipe_deduction",
+              is_active: true
+            },
+            {
+              name,
+              category,
+              price: Number(storePrice.toFixed(2)),
+              stock_deduction_mode: "recipe_deduction",
+              is_active: true
+            },
+            {
+              name,
+              category,
+              price: Number(storePrice.toFixed(2)),
+              sell_unit: "ชิ้น",
+              is_active: true
+            },
+            {
+              name,
+              category,
+              price: Number(storePrice.toFixed(2)),
+              is_active: true
+            }
+          ];
+
+          let updateExistingProductError: PostgrestLikeError | null = null;
+          for (const payload of updatePayloadCandidates) {
+            const result = await supabase
+              .from("products")
+              .update(payload)
+              .eq("tenant_id", auth.tenantId!)
+              .eq("branch_id", scopedBranchId)
+              .eq("id", createdProductId);
+            updateExistingProductError = result.error;
+            if (!updateExistingProductError) break;
+            const canRetry =
+              isMissingSellUnitColumnError(updateExistingProductError) ||
+              isMissingStockDeductionModeColumnError(updateExistingProductError);
+            if (!canRetry) break;
+          }
+          if (updateExistingProductError) {
+            throw new Error(updateExistingProductError.message ?? "Failed to update existing product.");
+          }
+        }
+
         const priceRows = DELIVERY_CHANNELS.map((channel) => ({
           tenant_id: auth.tenantId!,
           branch_id: scopedBranchId,
@@ -1101,6 +1172,19 @@ export async function POST(req: Request) {
             }
           }
 
+          if (reusedExistingProduct) {
+            const { error: clearRecipeError } = await supabase
+              .from("recipes")
+              .delete()
+              .eq("tenant_id", auth.tenantId!)
+              .eq("branch_id", scopedBranchId)
+              .eq("product_id", createdProductId)
+              .eq("applies_when_takeaway_only", false);
+            if (clearRecipeError) {
+              throw new Error(clearRecipeError.message);
+            }
+          }
+
           const recipeRows = normalizedRecipeLines.map((line) => ({
             tenant_id: auth.tenantId!,
             branch_id: scopedBranchId,
@@ -1121,32 +1205,80 @@ export async function POST(req: Request) {
             throw new Error(recipeUpsertError.message);
           }
         } else {
-          const fallbackIngredientName = `STOCK:${sku}:${name}`.slice(0, 120);
-          const { data: fallbackIngredient, error: fallbackIngredientError } = await supabase
-            .from("ingredients")
-            .insert({
-              tenant_id: auth.tenantId!,
-              branch_id: scopedBranchId,
-              name: fallbackIngredientName,
-              base_unit: "piece",
-              quantity_on_hand: round3(stockQuantity),
-              reorder_level: 0
-            })
-            .select("id")
-            .single();
-
-          if (fallbackIngredientError) {
-            throw new Error(fallbackIngredientError.message);
+          const fallbackIngredientName = `STOCK:${productSku}:${name}`.slice(0, 120);
+          const { data: existingFallbackRows, error: existingFallbackError } = await supabase
+            .from("recipes")
+            .select("ingredient_id,ingredients(name)")
+            .eq("tenant_id", auth.tenantId!)
+            .eq("branch_id", scopedBranchId)
+            .eq("product_id", createdProductId)
+            .eq("applies_when_takeaway_only", false);
+          if (existingFallbackError) {
+            throw new Error(existingFallbackError.message);
           }
 
-          createdFallbackIngredientId = String(fallbackIngredient.id);
+          const existingFallbackRecipe = (existingFallbackRows ?? []).find((row) => {
+            const ingredientRecord = Array.isArray(row.ingredients) ? row.ingredients[0] : row.ingredients;
+            return String(ingredientRecord?.name ?? "").startsWith(FALLBACK_INGREDIENT_PREFIX);
+          });
+          let fallbackIngredientId = existingFallbackRecipe ? String(existingFallbackRecipe.ingredient_id) : "";
+
+          if (fallbackIngredientId) {
+            const { error: fallbackIngredientUpdateError } = await supabase
+              .from("ingredients")
+              .update({
+                name: fallbackIngredientName,
+                base_unit: "piece",
+                quantity_on_hand: round3(stockQuantity),
+                reorder_level: 0
+              })
+              .eq("tenant_id", auth.tenantId!)
+              .eq("branch_id", scopedBranchId)
+              .eq("id", fallbackIngredientId);
+            if (fallbackIngredientUpdateError) {
+              throw new Error(fallbackIngredientUpdateError.message);
+            }
+          } else {
+            const { data: fallbackIngredient, error: fallbackIngredientError } = await supabase
+              .from("ingredients")
+              .insert({
+                tenant_id: auth.tenantId!,
+                branch_id: scopedBranchId,
+                name: fallbackIngredientName,
+                base_unit: "piece",
+                quantity_on_hand: round3(stockQuantity),
+                reorder_level: 0
+              })
+              .select("id")
+              .single();
+
+            if (fallbackIngredientError) {
+              throw new Error(fallbackIngredientError.message);
+            }
+
+            fallbackIngredientId = String(fallbackIngredient.id);
+            createdFallbackIngredientId = fallbackIngredientId;
+          }
+
+          if (reusedExistingProduct) {
+            const { error: clearRecipeError } = await supabase
+              .from("recipes")
+              .delete()
+              .eq("tenant_id", auth.tenantId!)
+              .eq("branch_id", scopedBranchId)
+              .eq("product_id", createdProductId)
+              .eq("applies_when_takeaway_only", false);
+            if (clearRecipeError) {
+              throw new Error(clearRecipeError.message);
+            }
+          }
 
           const { error: fallbackRecipeError } = await supabase.from("recipes").upsert(
             {
               tenant_id: auth.tenantId!,
               branch_id: scopedBranchId,
               product_id: createdProductId,
-              ingredient_id: createdFallbackIngredientId,
+              ingredient_id: fallbackIngredientId,
               quantity_per_item: 1,
               applies_when_takeaway_only: false
             },
@@ -1193,18 +1325,21 @@ export async function POST(req: Request) {
         return ok(
           {
             product: finalProduct,
+            reused_existing_product: reusedExistingProduct,
             stock_tracking: useIngredientRecipe ? "ingredient_recipe" : "unit_piece_recipe_bridge",
             recipe_lines_count: useIngredientRecipe ? normalizedRecipeLines.length : 1
           },
-          201
+          reusedExistingProduct ? 200 : 201
         );
       } catch (workflowError) {
-        await supabase
-          .from("products")
-          .delete()
-          .eq("tenant_id", auth.tenantId!)
-          .eq("branch_id", scopedBranchId)
-          .eq("id", createdProductId);
+        if (!reusedExistingProduct) {
+          await supabase
+            .from("products")
+            .delete()
+            .eq("tenant_id", auth.tenantId!)
+            .eq("branch_id", scopedBranchId)
+            .eq("id", createdProductId);
+        }
 
         if (createdFallbackIngredientId) {
           await supabase
@@ -1259,10 +1394,42 @@ export async function POST(req: Request) {
         return fail("invalid_stock_quantity", "stock_quantity must be greater than or equal to 0.", 422);
       }
 
+      let productBranchId = scopedBranchId;
+      let existingProduct: { id: string; sku: string; branch_id: string } | null = null;
+      const { data: scopedProduct, error: scopedProductError } = await supabase
+        .from("products")
+        .select("id,sku,branch_id")
+        .eq("tenant_id", auth.tenantId!)
+        .eq("branch_id", scopedBranchId)
+        .eq("id", productId)
+        .maybeSingle<{ id: string; sku: string; branch_id: string }>();
+      if (scopedProductError) {
+        return fail("product_query_failed", scopedProductError.message, 500);
+      }
+      if (scopedProduct) {
+        existingProduct = scopedProduct;
+        productBranchId = String(scopedProduct.branch_id);
+      } else {
+        const { data: tenantProduct, error: tenantProductError } = await supabase
+          .from("products")
+          .select("id,sku,branch_id")
+          .eq("tenant_id", auth.tenantId!)
+          .eq("id", productId)
+          .maybeSingle<{ id: string; sku: string; branch_id: string }>();
+        if (tenantProductError) {
+          return fail("product_query_failed", tenantProductError.message, 500);
+        }
+        if (!tenantProduct || !canManageCatalogRole(auth.branchRole)) {
+          return fail("product_not_found", "Product not found in this branch.", 404);
+        }
+        existingProduct = tenantProduct;
+        productBranchId = String(tenantProduct.branch_id);
+      }
+
       const categoryEnsured = await ensureProductCategory({
         supabase,
         tenantId: auth.tenantId!,
-        branchId: scopedBranchId,
+        branchId: productBranchId,
         name: category,
         userId: auth.userId
       });
@@ -1280,20 +1447,6 @@ export async function POST(req: Request) {
 
       if (useIngredientRecipe && normalizedRecipeLines.length === 0) {
         return fail("missing_recipe_lines", "Please select at least one ingredient line.", 422);
-      }
-
-      const { data: existingProduct, error: existingProductError } = await supabase
-        .from("products")
-        .select("id,sku")
-        .eq("tenant_id", auth.tenantId!)
-        .eq("branch_id", scopedBranchId)
-        .eq("id", productId)
-        .maybeSingle<{ id: string; sku: string }>();
-      if (existingProductError) {
-        return fail("product_query_failed", existingProductError.message, 500);
-      }
-      if (!existingProduct) {
-        return fail("product_not_found", "Product not found in this branch.", 404);
       }
 
       const updatePayloadCandidates = [
@@ -1333,7 +1486,7 @@ export async function POST(req: Request) {
           .from("products")
           .update(updatePayloadCandidates[i])
           .eq("tenant_id", auth.tenantId!)
-          .eq("branch_id", scopedBranchId)
+          .eq("branch_id", productBranchId)
           .eq("id", productId);
 
         updateProductError = result.error;
@@ -1348,7 +1501,7 @@ export async function POST(req: Request) {
 
       const priceRows = DELIVERY_CHANNELS.map((channel) => ({
         tenant_id: auth.tenantId!,
-        branch_id: scopedBranchId,
+        branch_id: productBranchId,
         product_id: productId,
         channel,
         app_price: Number(deliveryPriceByChannel[channel].toFixed(2)),
@@ -1367,7 +1520,7 @@ export async function POST(req: Request) {
         .from("recipes")
         .select("ingredient_id,ingredients(name)")
         .eq("tenant_id", auth.tenantId!)
-        .eq("branch_id", scopedBranchId)
+        .eq("branch_id", productBranchId)
         .eq("product_id", productId);
       if (existingRecipesError) {
         return fail("recipe_query_failed", existingRecipesError.message, 500);
@@ -1388,7 +1541,7 @@ export async function POST(req: Request) {
           .from("ingredients")
           .select("id,base_unit")
           .eq("tenant_id", auth.tenantId!)
-          .eq("branch_id", scopedBranchId)
+          .eq("branch_id", productBranchId)
           .in("id", ingredientIds);
         if (ingredientQueryError) {
           return fail("ingredient_query_failed", ingredientQueryError.message, 500);
@@ -1403,7 +1556,7 @@ export async function POST(req: Request) {
 
         const recipeRows = normalizedRecipeLines.map((line) => ({
           tenant_id: auth.tenantId!,
-          branch_id: scopedBranchId,
+          branch_id: productBranchId,
           product_id: productId,
           ingredient_id: line.ingredient_id,
           quantity_per_item: toRecipeQuantityByIngredientBaseUnit({
@@ -1430,7 +1583,7 @@ export async function POST(req: Request) {
           .from("recipes")
           .select("ingredient_id")
           .eq("tenant_id", auth.tenantId!)
-          .eq("branch_id", scopedBranchId)
+          .eq("branch_id", productBranchId)
           .eq("product_id", productId)
           .eq("applies_when_takeaway_only", false);
         if (deleteCandidatesError) {
@@ -1444,7 +1597,7 @@ export async function POST(req: Request) {
             .from("recipes")
             .delete()
             .eq("tenant_id", auth.tenantId!)
-            .eq("branch_id", scopedBranchId)
+            .eq("branch_id", productBranchId)
             .eq("product_id", productId)
             .eq("ingredient_id", ingredientId)
             .eq("applies_when_takeaway_only", false);
@@ -1458,7 +1611,7 @@ export async function POST(req: Request) {
             .from("ingredients")
             .delete()
             .eq("tenant_id", auth.tenantId!)
-            .eq("branch_id", scopedBranchId)
+            .eq("branch_id", productBranchId)
             .eq("id", fallbackIngredientId);
         }
       } else {
@@ -1470,7 +1623,7 @@ export async function POST(req: Request) {
             .from("ingredients")
             .insert({
               tenant_id: auth.tenantId!,
-              branch_id: scopedBranchId,
+              branch_id: productBranchId,
               name: fallbackIngredientName,
               base_unit: "piece",
               quantity_on_hand: round3(stockQuantity),
@@ -1492,7 +1645,7 @@ export async function POST(req: Request) {
               reorder_level: 0
             })
             .eq("tenant_id", auth.tenantId!)
-            .eq("branch_id", scopedBranchId)
+            .eq("branch_id", productBranchId)
             .eq("id", fallbackIngredientId);
           if (fallbackIngredientUpdateError) {
             return fail("ingredient_update_failed", fallbackIngredientUpdateError.message, 500);
@@ -1503,7 +1656,7 @@ export async function POST(req: Request) {
           .from("recipes")
           .delete()
           .eq("tenant_id", auth.tenantId!)
-          .eq("branch_id", scopedBranchId)
+          .eq("branch_id", productBranchId)
           .eq("product_id", productId)
           .eq("applies_when_takeaway_only", false);
         if (clearRecipeError) {
@@ -1513,7 +1666,7 @@ export async function POST(req: Request) {
         const { error: fallbackRecipeUpsertError } = await supabase.from("recipes").upsert(
           {
             tenant_id: auth.tenantId!,
-            branch_id: scopedBranchId,
+            branch_id: productBranchId,
             product_id: productId,
             ingredient_id: fallbackIngredientId,
             quantity_per_item: 1,
@@ -1530,16 +1683,16 @@ export async function POST(req: Request) {
         .from("products")
         .select(PRODUCT_SELECT)
         .eq("tenant_id", auth.tenantId!)
-        .eq("branch_id", scopedBranchId)
+        .eq("branch_id", productBranchId)
         .eq("id", productId)
         .single();
       if (finalProductError && isMissingStockDeductionModeColumnError(finalProductError)) {
         const retry = await supabase
-          .from("products")
-          .select("id,sku,name,category,price,is_active,updated_at")
-          .eq("tenant_id", auth.tenantId!)
-          .eq("branch_id", scopedBranchId)
-          .eq("id", productId)
+            .from("products")
+            .select("id,sku,name,category,price,is_active,updated_at")
+            .eq("tenant_id", auth.tenantId!)
+            .eq("branch_id", productBranchId)
+            .eq("id", productId)
           .single();
         finalProduct = retry.data ? { ...retry.data, stock_deduction_mode: "recipe_deduction" } : null;
         finalProductError = retry.error;
@@ -2195,7 +2348,7 @@ export async function POST(req: Request) {
     if (featureError) return featureError;
     const message = error instanceof Error ? error.message : "Authentication failed.";
     if (message === "forbidden_branch_scope") {
-      return fail("forbidden_branch_scope", "Cross-branch access is not allowed.", 403);
+      return fail("forbidden_branch_scope", "ไม่สามารถแก้ไขข้อมูลข้ามสาขาได้ กรุณารีเฟรชหน้าแล้วเลือกสาขาปัจจุบันอีกครั้ง", 403);
     }
     if (message.startsWith("branch_scope_query_failed:")) {
       return fail("branch_scope_query_failed", message.slice("branch_scope_query_failed:".length), 500);

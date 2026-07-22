@@ -10,6 +10,26 @@ export function PwaBootstrap() {
     if (typeof window === "undefined") return;
     if (!("serviceWorker" in navigator)) return;
 
+    if (process.env.NODE_ENV !== "production") {
+      void (async () => {
+        try {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map((registration) => registration.unregister()));
+          if ("caches" in window) {
+            const keys = await window.caches.keys();
+            await Promise.all(keys.map((key) => window.caches.delete(key)));
+          }
+          if (navigator.serviceWorker.controller && !window.sessionStorage.getItem("cpipos_dev_sw_cleared_v1")) {
+            window.sessionStorage.setItem("cpipos_dev_sw_cleared_v1", "1");
+            window.location.reload();
+          }
+        } catch {
+          // Local PWA cleanup must not block development.
+        }
+      })();
+      return;
+    }
+
     let reloadedForUpdate = false;
     const handleControllerChange = () => {
       if (reloadedForUpdate) return;
