@@ -1,10 +1,12 @@
 import type { OrderType } from "@pos/shared-types";
 
 export type CheckoutCartItem = {
+  cart_line_id?: string;
   product_id: string;
   name: string;
   quantity: number;
   price: number;
+  notes?: string | null;
 };
 
 export type CheckoutActiveOrder = {
@@ -58,7 +60,7 @@ export type PendingSubmitPayload = {
   tax_total?: number;
   grand_total?: number;
   tax_lines?: Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>;
-  items: Array<{ product_id: string; quantity: number; unit_price?: number }>;
+  items: Array<{ product_id: string; quantity: number; unit_price?: number; notes?: string | null }>;
 };
 
 export type PendingSubmitShape = {
@@ -128,7 +130,7 @@ export function buildCheckoutSubmitPayload(args: {
       app_total_amount: subtotal,
       discount_amount: summaryDiscount,
       gp_amount: 0,
-      items: cart.map((item) => ({ product_id: item.product_id, quantity: item.quantity, unit_price: item.price }))
+      items: cart.map((item) => ({ product_id: item.product_id, quantity: item.quantity, unit_price: item.price, notes: item.notes ?? null }))
     }
   };
 }

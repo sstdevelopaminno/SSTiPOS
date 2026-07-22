@@ -165,10 +165,19 @@ type ShiftRow = {
 } | null;
 
 type CartItem = {
+  cart_line_id?: string;
   product_id: string;
   name: string;
   quantity: number;
   price: number;
+  notes?: string | null;
+};
+
+type ModifierDraft = {
+  product: ProductRow;
+  quantity: number;
+  notes: string;
+  extraPrice: number;
 };
 
 type ReviewItemIngredientOption = {
@@ -196,7 +205,7 @@ type PendingSubmit = {
     tax_total?: number;
     grand_total?: number;
     tax_lines?: Array<{ id: string; label: string; rate_pct: number; mode: string; amount: number }>;
-    items: Array<{ product_id: string; quantity: number; unit_price?: number }>;
+    items: Array<{ product_id: string; quantity: number; unit_price?: number; notes?: string | null }>;
   };
 };
 
@@ -1767,6 +1776,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [isHydrated, setIsHydrated] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [modifierDraft, setModifierDraft] = useState<ModifierDraft | null>(null);
   const [discountModalOpen, setDiscountModalOpen] = useState(false);
   const [discountPercentInput, setDiscountPercentInput] = useState("");
   const [discountAmountInput, setDiscountAmountInput] = useState("");
@@ -2501,20 +2511,22 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   function buildCartSignature(items: CartItem[]): string {
     return items
       .map((item) => ({
+        cart_line_id: item.cart_line_id ?? item.product_id,
         product_id: item.product_id,
         quantity: Number(item.quantity),
-        price: Number(item.price)
+        price: Number(item.price),
+        notes: item.notes ?? ""
       }))
       .sort((left, right) => {
-        if (left.product_id === right.product_id) {
+        if (left.cart_line_id === right.cart_line_id) {
           if (left.price === right.price) {
             return left.quantity - right.quantity;
           }
           return left.price - right.price;
         }
-        return left.product_id.localeCompare(right.product_id);
+        return left.cart_line_id.localeCompare(right.cart_line_id);
       })
-      .map((item) => `${item.product_id}:${item.quantity}:${item.price}`)
+      .map((item) => `${item.cart_line_id}:${item.product_id}:${item.quantity}:${item.price}:${item.notes}`)
       .join("|");
   }
 
@@ -3147,7 +3159,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           product_id: item.product_id,
           name: item.name,
           quantity: item.quantity,
-          price: item.price
+          price: item.price,
+          notes: item.notes ?? null
         })),
         updated_at: new Date().toISOString()
       };
@@ -4466,46 +4479,63 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
 
   function sendPendingDeliveryBill(heldBill: HeldBill) { queueDeliveryPendingAction(heldBill, "send", async (entry) => { await sendPendingDeliveryBillNow(entry); }); }
 
-  function addToCart(product: ProductRow) {
+  function addCartLine(product: ProductRow, input?: { quantity?: number; notes?: string | null; extraPrice?: number }) {
     const stockUnits = product.stock_on_hand_units;
-    const cartQty = cartRef.current.find((row) => row.product_id === product.id)?.quantity ?? 0;
-    if (!allowNegativeStock && stockUnits !== null && stockUnits !== undefined && cartQty + 1 > Number(stockUnits)) {
+    const quantity = Math.max(1, Math.trunc(Number(input?.quantity ?? 1)));
+    const notes = String(input?.notes ?? "").trim();
+    const hasCustomOptions = notes.length > 0 || Number(input?.extraPrice ?? 0) > 0;
+    const cartLineId = hasCustomOptions ? `${product.id}:${notes}:${Number(input?.extraPrice ?? 0).toFixed(2)}` : product.id;
+    const cartQty = cartRef.current
+      .filter((row) => row.product_id === product.id)
+      .reduce((sum, row) => sum + row.quantity, 0);
+    if (!allowNegativeStock && stockUnits !== null && stockUnits !== undefined && cartQty + quantity > Number(stockUnits)) {
       pushSubmitMessage(`${text.productOutOfStock}: ${product.name}`);
       window.alert(`${text.productOutOfStock}: ${product.name}`);
       return;
     }
-    const unitPrice = getProductPriceForCurrentMode(product);
+    const unitPrice = Number((getProductPriceForCurrentMode(product) + Math.max(0, Number(input?.extraPrice ?? 0))).toFixed(2));
     setCart((current) => {
-      const index = current.findIndex((row) => row.product_id === product.id);
+      const index = current.findIndex((row) => (row.cart_line_id ?? row.product_id) === cartLineId);
       if (index >= 0) {
         const next = [...current];
         const entry = next[index];
-        next[index] = { ...entry, quantity: entry.quantity + 1, price: unitPrice };
+        next[index] = { ...entry, quantity: entry.quantity + quantity, price: unitPrice, notes: notes || null };
         return next;
       }
-      return [...current, { product_id: product.id, name: product.name, quantity: 1, price: unitPrice }];
+      return [...current, { cart_line_id: cartLineId, product_id: product.id, name: product.name, quantity, price: unitPrice, notes: notes || null }];
     });
   }
 
-  function removeFromCart(productId: string) {
-    setCart((current) => current.filter((row) => row.product_id !== productId));
+  function addToCart(product: ProductRow) {
+    if (product.has_recipe_deduction) {
+      setModifierDraft({ product, quantity: 1, notes: "", extraPrice: 0 });
+      return;
+    }
+    addCartLine(product);
   }
 
-  function adjustQty(productId: string, delta: number) {
+  function removeFromCart(cartLineId: string) {
+    setCart((current) => current.filter((row) => (row.cart_line_id ?? row.product_id) !== cartLineId));
+  }
+
+  function adjustQty(cartLineId: string, delta: number) {
     if (delta > 0) {
-      const product = productById.get(productId);
+      const currentLine = cartRef.current.find((row) => (row.cart_line_id ?? row.product_id) === cartLineId);
+      const product = productById.get(currentLine?.product_id ?? cartLineId);
       const stockUnits = product?.stock_on_hand_units;
-      const currentQty = cartRef.current.find((row) => row.product_id === productId)?.quantity ?? 0;
+      const currentQty = cartRef.current
+        .filter((row) => row.product_id === product?.id)
+        .reduce((sum, row) => sum + row.quantity, 0);
       if (!allowNegativeStock && stockUnits !== null && stockUnits !== undefined && currentQty + delta > Number(stockUnits)) {
-        pushSubmitMessage(`${text.productOutOfStock}: ${product?.name ?? productId}`);
-        window.alert(`${text.productOutOfStock}: ${product?.name ?? productId}`);
+        pushSubmitMessage(`${text.productOutOfStock}: ${product?.name ?? cartLineId}`);
+        window.alert(`${text.productOutOfStock}: ${product?.name ?? cartLineId}`);
         return;
       }
     }
     setCart((current) =>
       current
         .map((row) =>
-          row.product_id === productId ? { ...row, quantity: Math.max(0, row.quantity + delta) } : row
+          (row.cart_line_id ?? row.product_id) === cartLineId ? { ...row, quantity: Math.max(0, row.quantity + delta) } : row
         )
         .filter((row) => row.quantity > 0)
     );
@@ -4516,6 +4546,17 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       resetDeliveryDraft();
     }
     setCart([]);
+  }
+
+  function confirmModifierDraft() {
+    if (!modifierDraft) return;
+    const canAddPrice = quickMode !== "delivery";
+    addCartLine(modifierDraft.product, {
+      quantity: modifierDraft.quantity,
+      notes: modifierDraft.notes,
+      extraPrice: canAddPrice ? modifierDraft.extraPrice : 0
+    });
+    setModifierDraft(null);
   }
 
   function openDiscountPopup() {
@@ -6340,27 +6381,30 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
 
     return (
       <div className={`posui-cart-items ${cart.length > 5 ? "posui-cart-items--capped" : ""}`}>
-        {cart.map((item) => (
-          <article key={item.product_id} className="posui-cart-item">
+        {cart.map((item) => {
+          const cartLineId = item.cart_line_id ?? item.product_id;
+          return (
+          <article key={cartLineId} className="posui-cart-item">
             <div className="posui-cart-thumb" aria-hidden>
               {item.name.slice(0, 1).toUpperCase()}
             </div>
             <div className="posui-cart-item__info">
               <p>{item.name}</p>
+              {item.notes ? <small>{item.notes}</small> : null}
               <small>{formatMoney(item.price)}</small>
               <div className="posui-qty-row">
-                <button type="button" onClick={() => adjustQty(item.product_id, -1)} aria-label={`Decrease ${item.name}`}>
+                <button type="button" onClick={() => adjustQty(cartLineId, -1)} aria-label={`Decrease ${item.name}`}>
                   -
                 </button>
                 <span>{item.quantity}</span>
-                <button type="button" onClick={() => adjustQty(item.product_id, 1)} aria-label={`Increase ${item.name}`}>
+                <button type="button" onClick={() => adjustQty(cartLineId, 1)} aria-label={`Increase ${item.name}`}>
                   +
                 </button>
               </div>
             </div>
             <div className="posui-cart-item__sum">
               <strong>{formatMoney(item.quantity * item.price)}</strong>
-              <button type="button" aria-label={`${text.remove}: ${item.name}`} onClick={() => removeFromCart(item.product_id)}>
+              <button type="button" aria-label={`${text.remove}: ${item.name}`} onClick={() => removeFromCart(cartLineId)}>
                 <svg className="posui-delete-icon" viewBox="0 0 24 24" aria-hidden="true">
                   <path
                     d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v8h-2v-8Zm4 0h2v8h-2v-8ZM8 10h2v8H8v-8Z"
@@ -6370,7 +6414,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
               </button>
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
     );
   }
@@ -7886,6 +7931,75 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         </div>
       ) : null}
       {stockAdjusting ? <LoadingState label={text.applyingStock} /> : null}
+      {modifierDraft ? (
+        <div className="posui-payment-modal-backdrop" role="dialog" aria-modal="true" aria-label={lang === "th" ? "เลือกตัวเลือกสินค้า" : "Select product options"}>
+          <section className="posui-payment-modal posui-payment-modal--review" onClick={(event) => event.stopPropagation()}>
+            <header className="posui-payment-modal__header">
+              <h3>{modifierDraft.product.name}</h3>
+              <button type="button" className="posui-btn" onClick={() => setModifierDraft(null)}>
+                {text.close}
+              </button>
+            </header>
+            <p className="posui-payment-modal__hint">
+              {lang === "th"
+                ? quickMode === "delivery"
+                  ? "สินค้าเมนูนี้ผูกวัตถุดิบอยู่ โหมดเดลิเวอรี่บันทึกตัวเลือกได้แต่ไม่เพิ่มราคา"
+                  : "สินค้าเมนูนี้ผูกวัตถุดิบอยู่ เลือก/ระบุวัตถุดิบก่อนเพิ่มลงตะกร้า"
+                : quickMode === "delivery"
+                  ? "This recipe product can save options in delivery mode, but extra price is disabled."
+                  : "This recipe product supports options before adding to cart."}
+            </p>
+            <div className="posui-payment-receipt-card">
+              <label className="posui-payment-modal__input-label">
+                {lang === "th" ? "ตัวเลือก/วัตถุดิบ" : "Options / Ingredients"}
+                <textarea
+                  value={modifierDraft.notes}
+                  onChange={(event) => setModifierDraft((current) => (current ? { ...current, notes: event.target.value } : current))}
+                  rows={3}
+                  placeholder={lang === "th" ? "เช่น เส้นเล็ก, เพิ่มลูกชิ้น, ไม่ใส่นม..." : "e.g. thin noodle, extra meatballs, no milk..."}
+                />
+              </label>
+              <label className="posui-payment-modal__input-label">
+                {lang === "th" ? "จำนวน" : "Quantity"}
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={modifierDraft.quantity}
+                  onChange={(event) =>
+                    setModifierDraft((current) => (current ? { ...current, quantity: Math.max(1, Math.trunc(Number(event.target.value || 1))) } : current))
+                  }
+                />
+              </label>
+              <label className="posui-payment-modal__input-label">
+                {lang === "th" ? "ราคาเพิ่มวัตถุดิบ" : "Extra Ingredient Price"}
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  disabled={quickMode === "delivery"}
+                  value={modifierDraft.extraPrice}
+                  onChange={(event) =>
+                    setModifierDraft((current) => (current ? { ...current, extraPrice: Math.max(0, Number(event.target.value || 0)) } : current))
+                  }
+                />
+              </label>
+              <div className="posui-payment-modal__hint">
+                {lang === "th" ? "ราคาต่อหน่วยหลังรวมตัวเลือก" : "Unit price with options"}:{" "}
+                {formatMoney(getProductPriceForCurrentMode(modifierDraft.product) + (quickMode === "delivery" ? 0 : Math.max(0, modifierDraft.extraPrice)))}
+              </div>
+            </div>
+            <div className="posui-payment-modal__actions">
+              <button type="button" className="posui-btn" onClick={() => setModifierDraft(null)}>
+                {lang === "th" ? "ยกเลิก" : "Cancel"}
+              </button>
+              <button type="button" className="posui-btn posui-btn--primary" onClick={confirmModifierDraft}>
+                {lang === "th" ? "เพิ่มลงตะกร้า" : "Add to Cart"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       <PackageLockDialog lang={lang} open={packageLockOpen} onClose={() => setPackageLockOpen(false)} />
     </section>
   );

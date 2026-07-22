@@ -13,6 +13,7 @@ type ProductCatalogItem = {
   is_active: boolean;
   stock_on_hand_units?: number | null;
   is_out_of_stock?: boolean;
+  has_recipe_deduction?: boolean;
 };
 
 type Props = {
