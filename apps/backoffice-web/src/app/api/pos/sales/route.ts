@@ -27,6 +27,11 @@ type PosCreateOrderPayload = {
   table_id?: string | null;
   external_order_code?: string | null;
   customer_name?: string | null;
+  member_name?: string | null;
+  member_phone?: string | null;
+  member_code?: string | null;
+  member_points?: number | null;
+  member_stamps?: number | null;
   notes?: string | null;
   app_total_amount: number;
   discount_amount?: number;

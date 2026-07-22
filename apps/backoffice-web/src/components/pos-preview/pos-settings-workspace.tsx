@@ -22,7 +22,7 @@ import type { ActivityAuditItem, ActivityAuditPeriod } from "@/lib/services/acti
 import type { Language } from "@/lib/i18n";
 
 type SettingsView = "menu" | "store" | "branches" | "devices" | "activity" | "payments" | "inet_nops" | "taxes" | "notifications" | "users";
-type MenuIconName = "store" | "branch" | "payment" | "tax" | "users" | "display" | "terminal" | "activity" | "bell" | "back" | "edit" | "trash" | "plus";
+type MenuIconName = "store" | "branch" | "payment" | "tax" | "users" | "display" | "terminal" | "activity" | "bell" | "tables" | "back" | "edit" | "trash" | "plus";
 const POS_TAX_SETTINGS_UPDATED_EVENT = "pos:tax-settings-updated";
 const POS_TAX_SETTINGS_UPDATED_KEY = "pos_tax_settings_updated_at_v001";
 
@@ -452,6 +452,16 @@ function Icon({ name }: { name: MenuIconName }) {
       <svg {...common}>
         <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
         <path d="M10 21h4" />
+      </svg>
+    );
+  }
+  if (name === "tables") {
+    return (
+      <svg {...common}>
+        <rect x="4" y="6" width="16" height="4" rx="1" />
+        <path d="M6 10v8" />
+        <path d="M18 10v8" />
+        <path d="M4 18h16" />
       </svg>
     );
   }
@@ -2965,6 +2975,14 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
               locked={isSettingLocked("notifications")}
             />
             <MenuButton icon="users" title={labels.users} desc={labels.usersDesc} onClick={() => openSettingsView("users")} locked={isSettingLocked("users")} />
+            <MenuLink
+              icon="tables"
+              title={lang === "en" ? "Table Management" : "จัดการโต๊ะ"}
+              desc={lang === "en" ? "Manage dine-in tables, zones, and floor layout" : "จัดการโต๊ะ โซน และผังร้านสำหรับโหมดนั่งโต๊ะ"}
+              href="/preview/pos/tables"
+              locked={Boolean(enabledFeatures !== null && enabledFeatures.table_management === false)}
+              onLocked={() => setPackageLockOpen(true)}
+            />
             <MenuLink icon="display" title={labels.display} desc={labels.displayDesc} href="/preview/pos/customer-display" locked={isSettingLocked("display")} onLocked={() => setPackageLockOpen(true)} />
           </div>
         ) : null}

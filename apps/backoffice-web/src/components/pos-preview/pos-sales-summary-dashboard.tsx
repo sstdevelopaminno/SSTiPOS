@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState, useTransition, type ReactNode } from "react";
 import type { Language } from "@/lib/i18n";
@@ -14,21 +14,23 @@ type ApiBody = {
   error?: { code: string; message: string } | null;
 };
 
+type MoreDialogTab = "payments" | "products" | "cashiers";
+
 const statusOptions = [
-  { value: "all", label: "ทุกสถานะ" },
-  { value: "completed", label: "สำเร็จ" },
-  { value: "cancelled", label: "ยกเลิก" },
-  { value: "draft", label: "ร่าง" },
-  { value: "queued", label: "รอทำ" },
-  { value: "preparing", label: "กำลังทำ" }
+  { value: "all", label: "เธ—เธธเธเธชเธ–เธฒเธเธฐ" },
+  { value: "completed", label: "เธชเธณเน€เธฃเนเธ" },
+  { value: "cancelled", label: "เธขเธเน€เธฅเธดเธ" },
+  { value: "draft", label: "เธฃเนเธฒเธ" },
+  { value: "queued", label: "เธฃเธญเธ—เธณ" },
+  { value: "preparing", label: "เธเธณเธฅเธฑเธเธ—เธณ" }
 ];
 
 const paymentOptions = [
-  { value: "all", label: "ทุกช่องทาง" },
-  { value: "cash", label: "เงินสด" },
-  { value: "bank_transfer", label: "โอน / QR" },
-  { value: "card", label: "บัตรเครดิต / เดบิต" },
-  { value: "other", label: "อื่น ๆ" }
+  { value: "all", label: "เธ—เธธเธเธเนเธญเธเธ—เธฒเธ" },
+  { value: "cash", label: "เน€เธเธดเธเธชเธ”" },
+  { value: "bank_transfer", label: "เนเธญเธ / QR" },
+  { value: "card", label: "เธเธฑเธ•เธฃเน€เธเธฃเธ”เธดเธ• / เน€เธ”เธเธดเธ•" },
+  { value: "other", label: "เธญเธทเนเธ เน" }
 ];
 
 const inputClass =
@@ -73,6 +75,7 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
   const [error, setError] = useState("");
   const [filterDialogOpen, setFilterDialogOpen] = useState(false);
   const [moreDialogOpen, setMoreDialogOpen] = useState(false);
+  const [moreDialogTab, setMoreDialogTab] = useState<MoreDialogTab>("payments");
   const [salesRowsDialogOpen, setSalesRowsDialogOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -98,7 +101,7 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
         const response = await fetch(`/api/pos/sales-summary?${buildParams().toString()}`, { cache: "no-store" });
         const body = (await response.json()) as ApiBody;
         if (!response.ok || !body.data) {
-          setError("ไม่สามารถโหลดข้อมูลสรุปยอดขายได้ กรุณาลองใหม่อีกครั้ง");
+          setError("เนเธกเนเธชเธฒเธกเธฒเธฃเธ–เนเธซเธฅเธ”เธเนเธญเธกเธนเธฅเธชเธฃเธธเธเธขเธญเธ”เธเธฒเธขเนเธ”เน เธเธฃเธธเธ“เธฒเธฅเธญเธเนเธซเธกเนเธญเธตเธเธเธฃเธฑเนเธ");
           return;
         }
         setPayload(body.data);
@@ -108,7 +111,7 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
         setPaymentMethod(body.data.filters.paymentMethod);
         setStatus(body.data.filters.status);
       } catch {
-        setError("ไม่สามารถโหลดข้อมูลสรุปยอดขายได้ กรุณาลองใหม่อีกครั้ง");
+        setError("เนเธกเนเธชเธฒเธกเธฒเธฃเธ–เนเธซเธฅเธ”เธเนเธญเธกเธนเธฅเธชเธฃเธธเธเธขเธญเธ”เธเธฒเธขเนเธ”เน เธเธฃเธธเธ“เธฒเธฅเธญเธเนเธซเธกเนเธญเธตเธเธเธฃเธฑเนเธ");
       }
     });
   }
@@ -146,14 +149,14 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
   }
 
   const kpis = [
-    { label: "ยอดขายรวม", value: money(payload.summary.grossSales, lang), tone: "text-slate-900" },
-    { label: "ยอดขายสุทธิ", value: money(payload.summary.netSales, lang), tone: "text-blue-700" },
-    { label: "จำนวนบิล", value: number(payload.summary.receiptCount, lang), tone: "text-slate-900" },
-    { label: "เงินสด", value: money(payload.summary.cashTotal, lang), tone: "text-green-700" },
-    { label: "โอน / QR", value: money(payload.summary.qrTransferTotal, lang), tone: "text-blue-700" },
-    { label: "บัตรเครดิต / เดบิต", value: money(payload.summary.cardTotal, lang), tone: "text-violet-700" },
-    { label: "ส่วนลด", value: money(payload.summary.discountTotal, lang), tone: "text-amber-700" },
-    { label: "ยกเลิก / คืนเงิน", value: `${money(payload.summary.cancelledTotal + payload.summary.refundTotal, lang)} (${payload.summary.cancelledCount})`, tone: "text-red-700" }
+    { label: "เธขเธญเธ”เธเธฒเธขเธฃเธงเธก", value: money(payload.summary.grossSales, lang), tone: "text-slate-900" },
+    { label: "เธขเธญเธ”เธเธฒเธขเธชเธธเธ—เธเธด", value: money(payload.summary.netSales, lang), tone: "text-blue-700" },
+    { label: "เธเธณเธเธงเธเธเธดเธฅ", value: number(payload.summary.receiptCount, lang), tone: "text-slate-900" },
+    { label: "เน€เธเธดเธเธชเธ”", value: money(payload.summary.cashTotal, lang), tone: "text-green-700" },
+    { label: "เนเธญเธ / QR", value: money(payload.summary.qrTransferTotal, lang), tone: "text-blue-700" },
+    { label: "เธเธฑเธ•เธฃเน€เธเธฃเธ”เธดเธ• / เน€เธ”เธเธดเธ•", value: money(payload.summary.cardTotal, lang), tone: "text-violet-700" },
+    { label: "เธชเนเธงเธเธฅเธ”", value: money(payload.summary.discountTotal, lang), tone: "text-amber-700" },
+    { label: "เธขเธเน€เธฅเธดเธ / เธเธทเธเน€เธเธดเธ", value: `${money(payload.summary.cancelledTotal + payload.summary.refundTotal, lang)} (${payload.summary.cancelledCount})`, tone: "text-red-700" }
   ];
 
   return (
@@ -162,9 +165,9 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
         <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:p-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-[260px]">
-              <h1 className="text-2xl font-black text-slate-950 lg:text-3xl">สรุปยอดขาย</h1>
+              <h1 className="text-2xl font-black text-slate-950 lg:text-3xl">เธชเธฃเธธเธเธขเธญเธ”เธเธฒเธข</h1>
               <p className="mt-1 max-w-3xl text-sm text-slate-600">
-                ดูภาพรวมยอดขายตามวัน กะ พนักงาน ช่องทางชำระเงิน และสาขา
+                เธ”เธนเธ เธฒเธเธฃเธงเธกเธขเธญเธ”เธเธฒเธขเธ•เธฒเธกเธงเธฑเธ เธเธฐ เธเธเธฑเธเธเธฒเธ เธเนเธญเธเธ—เธฒเธเธเธณเธฃเธฐเน€เธเธดเธ เนเธฅเธฐเธชเธฒเธเธฒ
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -173,21 +176,21 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
                 onClick={() => setFilterDialogOpen(true)}
                 className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
               >
-                คัดกรอง
+                เธเธฑเธ”เธเธฃเธญเธ
               </button>
               <button
                 type="button"
                 onClick={() => setMoreDialogOpen(true)}
                 className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
               >
-                ดูเพิ่มเติม
+                เธ”เธนเน€เธเธดเนเธกเน€เธ•เธดเธก
               </button>
               <button
                 type="button"
                 onClick={() => setSalesRowsDialogOpen(true)}
                 className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
               >
-                รายการขาย
+                เธฃเธฒเธขเธเธฒเธฃเธเธฒเธข
               </button>
               <button
                 type="button"
@@ -195,7 +198,7 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
                 disabled={isPending}
                 className="h-10 rounded-lg border border-blue-200 bg-blue-600 px-4 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70"
               >
-                {isPending ? "กำลังโหลด" : "รีเฟรช"}
+                {isPending ? "เธเธณเธฅเธฑเธเนเธซเธฅเธ”" : "เธฃเธตเน€เธเธฃเธ"}
               </button>
               <button
                 type="button"
@@ -208,22 +211,22 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
             </div>
           </div>
 
-          <Dialog open={filterDialogOpen} title="คัดกรองข้อมูล" onClose={() => setFilterDialogOpen(false)}>
+          <Dialog open={filterDialogOpen} title="เธเธฑเธ”เธเธฃเธญเธเธเนเธญเธกเธนเธฅ" onClose={() => setFilterDialogOpen(false)}>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <Field label="ตั้งแต่">
+            <Field label="เธ•เธฑเนเธเนเธ•เน">
               <input value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} type="date" className={inputClass} />
             </Field>
-            <Field label="ถึง">
+            <Field label="เธ–เธถเธ">
               <input value={dateTo} onChange={(event) => setDateTo(event.target.value)} type="date" className={inputClass} />
             </Field>
-            <Field label="สาขา">
+            <Field label="เธชเธฒเธเธฒ">
               <select
                 value={branchId}
                 onChange={(event) => setBranchId(event.target.value)}
                 disabled={!payload.access.canViewMultipleBranches}
                 className={inputClass}
               >
-                {payload.access.canViewMultipleBranches ? <option value="all">ทุกสาขา</option> : null}
+                {payload.access.canViewMultipleBranches ? <option value="all">เธ—เธธเธเธชเธฒเธเธฒ</option> : null}
                 {payload.branchOptions.map((branch) => (
                   <option key={branch.id} value={branch.id}>
                     {branch.name} ({branch.code})
@@ -231,9 +234,9 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
                 ))}
               </select>
             </Field>
-            <Field label="กะ">
+            <Field label="เธเธฐ">
               <select value={shiftId} onChange={(event) => setShiftId(event.target.value)} className={inputClass}>
-                <option value="all">ทุกกะ</option>
+                <option value="all">เธ—เธธเธเธเธฐ</option>
                 {payload.shiftOptions.map((shift) => (
                   <option key={shift.id} value={shift.id}>
                     {shift.label}
@@ -241,9 +244,9 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
                 ))}
               </select>
             </Field>
-            <Field label="พนักงาน">
+            <Field label="เธเธเธฑเธเธเธฒเธ">
               <select value={cashierId} onChange={(event) => setCashierId(event.target.value)} className={inputClass}>
-                <option value="all">ทุกคน</option>
+                <option value="all">เธ—เธธเธเธเธ</option>
                 {payload.cashierOptions.map((cashier) => (
                   <option key={cashier.id} value={cashier.id}>
                     {cashier.label}
@@ -251,7 +254,7 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
                 ))}
               </select>
             </Field>
-            <Field label="ชำระเงิน">
+            <Field label="เธเธณเธฃเธฐเน€เธเธดเธ">
               <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className={inputClass}>
                 {paymentOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -260,7 +263,7 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
                 ))}
               </select>
             </Field>
-            <Field label="สถานะ">
+            <Field label="เธชเธ–เธฒเธเธฐ">
               <select value={status} onChange={(event) => setStatus(event.target.value)} className={inputClass}>
                 {statusOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -272,7 +275,7 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
           </div>
           {payload.access.selfOnly ? (
             <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-              สิทธิ์ปัจจุบันดูได้เฉพาะข้อมูลกะ/ผู้ใช้งานของตัวเอง
+              เธชเธดเธ—เธเธดเนเธเธฑเธเธเธธเธเธฑเธเธ”เธนเนเธ”เนเน€เธเธเธฒเธฐเธเนเธญเธกเธนเธฅเธเธฐ/เธเธนเนเนเธเนเธเธฒเธเธเธญเธเธ•เธฑเธงเน€เธญเธ
             </p>
           ) : null}
           <div className="mt-5 flex flex-wrap justify-end gap-2">
@@ -281,7 +284,7 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
               onClick={() => setFilterDialogOpen(false)}
               className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
             >
-              ปิด
+              เธเธดเธ”
             </button>
             <button
               type="button"
@@ -289,7 +292,7 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
               disabled={isPending}
               className="h-10 rounded-lg border border-blue-200 bg-blue-600 px-4 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70"
             >
-              {isPending ? "กำลังโหลด" : "ใช้ตัวกรอง"}
+              {isPending ? "เธเธณเธฅเธฑเธเนเธซเธฅเธ”" : "เนเธเนเธ•เธฑเธงเธเธฃเธญเธ"}
             </button>
           </div>
           </Dialog>
@@ -308,28 +311,49 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
 
         <Dialog open={moreDialogOpen} title="ดูเพิ่มเติม" onClose={() => setMoreDialogOpen(false)} wide>
           <div className="grid gap-4">
-            <Panel title="ช่องทางชำระเงิน">
-              {payload.paymentMethods.length === 0 ? (
-                <EmptyState />
-              ) : (
-                <div className="grid gap-3">
-                  {payload.paymentMethods.map((method) => (
-                    <div key={method.method}>
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span className="text-sm font-bold text-slate-800">{method.label}</span>
-                        <span className="text-sm font-black text-slate-950">{money(method.amount, lang)}</span>
-                      </div>
-                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                        <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.max(5, (method.amount / maxPaymentAmount) * 100)}%` }} />
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">{method.receiptCount} บิล</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Panel>
+            <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2">
+              {[
+                { id: "payments" as const, label: "ช่องทางชำระเงิน" },
+                { id: "products" as const, label: "สินค้าขายดี" },
+                { id: "cashiers" as const, label: "ประสิทธิภาพพนักงาน" }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setMoreDialogTab(tab.id)}
+                  className={`h-10 rounded-xl px-4 text-sm font-black transition ${
+                    moreDialogTab === tab.id ? "bg-blue-600 text-white shadow-sm" : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-blue-50"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-            <div className="grid gap-4 xl:grid-cols-2">
+            {moreDialogTab === "payments" ? (
+              <Panel title="ช่องทางชำระเงิน">
+                {payload.paymentMethods.length === 0 ? (
+                  <EmptyState />
+                ) : (
+                  <div className="grid gap-3">
+                    {payload.paymentMethods.map((method) => (
+                      <div key={method.method}>
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-sm font-bold text-slate-800">{method.label}</span>
+                          <span className="text-sm font-black text-slate-950">{money(method.amount, lang)}</span>
+                        </div>
+                        <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.max(5, (method.amount / maxPaymentAmount) * 100)}%` }} />
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">{method.receiptCount} บิล</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Panel>
+            ) : null}
+
+            {moreDialogTab === "cashiers" ? (
               <Panel title="ประสิทธิภาพพนักงาน">
                 <ScrollTable minWidth="720px">
                   <thead>
@@ -360,7 +384,9 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
                   </tbody>
                 </ScrollTable>
               </Panel>
+            ) : null}
 
+            {moreDialogTab === "products" ? (
               <Panel title="สินค้าขายดี">
                 <ScrollTable minWidth="680px">
                   <thead>
@@ -394,24 +420,24 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
                   </tbody>
                 </ScrollTable>
               </Panel>
-            </div>
+            ) : null}
           </div>
         </Dialog>
 
         <div className="grid gap-4">
-          <Panel title="สรุปกะ">
+          <Panel title="เธชเธฃเธธเธเธเธฐ">
             <ScrollTable minWidth="860px">
               <thead>
                 <tr>
-                  <Th>เปิดกะ</Th>
-                  <Th>ปิดกะ</Th>
-                  <Th>สาขา</Th>
-                  <Th>พนักงาน</Th>
-                  <Th align="right">เงินต้น</Th>
-                  <Th align="right">เงินสด</Th>
-                  <Th align="right">คาดหวัง</Th>
-                  <Th align="right">เงินจริง</Th>
-                  <Th align="right">ต่าง</Th>
+                  <Th>เน€เธเธดเธ”เธเธฐ</Th>
+                  <Th>เธเธดเธ”เธเธฐ</Th>
+                  <Th>เธชเธฒเธเธฒ</Th>
+                  <Th>เธเธเธฑเธเธเธฒเธ</Th>
+                  <Th align="right">เน€เธเธดเธเธ•เนเธ</Th>
+                  <Th align="right">เน€เธเธดเธเธชเธ”</Th>
+                  <Th align="right">เธเธฒเธ”เธซเธงเธฑเธ</Th>
+                  <Th align="right">เน€เธเธดเธเธเธฃเธดเธ</Th>
+                  <Th align="right">เธ•เนเธฒเธ</Th>
                 </tr>
               </thead>
               <tbody>
@@ -439,21 +465,21 @@ export function PosSalesSummaryDashboard({ lang, initialPayload }: Props) {
           </Panel>
         </div>
 
-        <Dialog open={salesRowsDialogOpen} title="รายการขาย" onClose={() => setSalesRowsDialogOpen(false)} wide>
-        <Panel title="รายการขาย">
+        <Dialog open={salesRowsDialogOpen} title="เธฃเธฒเธขเธเธฒเธฃเธเธฒเธข" onClose={() => setSalesRowsDialogOpen(false)} wide>
+        <Panel title="เธฃเธฒเธขเธเธฒเธฃเธเธฒเธข">
           <ScrollTable minWidth="1040px">
             <thead>
               <tr>
-                <Th>เลขที่บิล</Th>
-                <Th>วันเวลา</Th>
-                <Th>สาขา</Th>
-                <Th>พนักงาน</Th>
-                <Th>ชำระเงิน</Th>
-                <Th align="right">ยอดรวม</Th>
-                <Th align="right">ส่วนลด</Th>
-                <Th align="right">ภาษี</Th>
-                <Th align="right">สุทธิ</Th>
-                <Th>สถานะ</Th>
+                <Th>เน€เธฅเธเธ—เธตเนเธเธดเธฅ</Th>
+                <Th>เธงเธฑเธเน€เธงเธฅเธฒ</Th>
+                <Th>เธชเธฒเธเธฒ</Th>
+                <Th>เธเธเธฑเธเธเธฒเธ</Th>
+                <Th>เธเธณเธฃเธฐเน€เธเธดเธ</Th>
+                <Th align="right">เธขเธญเธ”เธฃเธงเธก</Th>
+                <Th align="right">เธชเนเธงเธเธฅเธ”</Th>
+                <Th align="right">เธ เธฒเธฉเธต</Th>
+                <Th align="right">เธชเธธเธ—เธเธด</Th>
+                <Th>เธชเธ–เธฒเธเธฐ</Th>
               </tr>
             </thead>
             <tbody>
@@ -517,10 +543,10 @@ function Dialog({
           <button
             type="button"
             onClick={onClose}
-            aria-label="ปิด"
+            aria-label="เธเธดเธ”"
             className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-xl font-bold text-slate-600 transition hover:bg-slate-50"
           >
-            ×
+            ร—
           </button>
         </header>
         {children}
@@ -580,18 +606,18 @@ function EmptyRow({ colSpan }: { colSpan: number }) {
   return (
     <tr>
       <td colSpan={colSpan} className="px-3 py-10 text-center text-sm font-semibold text-slate-500">
-        ยังไม่มีข้อมูลยอดขายในช่วงเวลานี้
+        เธขเธฑเธเนเธกเนเธกเธตเธเนเธญเธกเธนเธฅเธขเธญเธ”เธเธฒเธขเนเธเธเนเธงเธเน€เธงเธฅเธฒเธเธตเน
       </td>
     </tr>
   );
 }
 
 function EmptyState() {
-  return <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">ยังไม่มีข้อมูลยอดขายในช่วงเวลานี้</div>;
+  return <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">เธขเธฑเธเนเธกเนเธกเธตเธเนเธญเธกเธนเธฅเธขเธญเธ”เธเธฒเธขเนเธเธเนเธงเธเน€เธงเธฅเธฒเธเธตเน</div>;
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const label = status === "completed" ? "สำเร็จ" : status === "cancelled" ? "ยกเลิก" : status === "draft" ? "ร่าง" : status;
+  const label = status === "completed" ? "เธชเธณเน€เธฃเนเธ" : status === "cancelled" ? "เธขเธเน€เธฅเธดเธ" : status === "draft" ? "เธฃเนเธฒเธ" : status;
   const tone =
     status === "completed"
       ? "border-green-200 bg-green-50 text-green-700"

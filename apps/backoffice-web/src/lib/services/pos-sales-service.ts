@@ -453,6 +453,11 @@ async function executeCreatePosOrderDirectFallback(args: {
     table_id?: string | null;
     external_order_code?: string | null;
     customer_name?: string | null;
+    member_name?: string | null;
+    member_phone?: string | null;
+    member_code?: string | null;
+    member_points?: number | null;
+    member_stamps?: number | null;
     notes?: string | null;
     app_total_amount: number;
     discount_amount?: number;
@@ -640,7 +645,12 @@ async function executeCreatePosOrderDirectFallback(args: {
     tax_total: taxTotal,
     grand_total: totalAmount,
     metadata: {
-      tax_lines: input.tax_lines ?? []
+      tax_lines: input.tax_lines ?? [],
+      member_name: input.member_name ?? null,
+      member_phone: input.member_phone ?? null,
+      member_code: input.member_code ?? null,
+      member_points: input.member_points ?? null,
+      member_stamps: input.member_stamps ?? null
     },
     status: "queued",
     created_by: auth.userId
@@ -664,7 +674,12 @@ async function executeCreatePosOrderDirectFallback(args: {
     tax_total: taxTotal,
     grand_total: totalAmount,
     metadata: {
-      tax_lines: input.tax_lines ?? []
+      tax_lines: input.tax_lines ?? [],
+      member_name: input.member_name ?? null,
+      member_phone: input.member_phone ?? null,
+      member_code: input.member_code ?? null,
+      member_points: input.member_points ?? null,
+      member_stamps: input.member_stamps ?? null
     },
     status: "queued",
     created_by: auth.userId
@@ -770,6 +785,11 @@ async function executeCreatePosOrderDirectFallback(args: {
       order_type: input.order_type,
       channel: input.channel,
       external_order_code: input.external_order_code ?? null,
+      member_name: input.member_name ?? null,
+      member_phone: input.member_phone ?? null,
+      member_code: input.member_code ?? null,
+      member_points: input.member_points ?? null,
+      member_stamps: input.member_stamps ?? null,
       total_amount: totalAmount,
       tax_total: taxTotal,
       tax_lines: input.tax_lines ?? [],
@@ -945,6 +965,11 @@ export async function executeCreatePosOrderTransaction(args: {
     table_id?: string | null;
     external_order_code?: string | null;
     customer_name?: string | null;
+    member_name?: string | null;
+    member_phone?: string | null;
+    member_code?: string | null;
+    member_points?: number | null;
+    member_stamps?: number | null;
     notes?: string | null;
     app_total_amount: number;
     discount_amount?: number;
@@ -1094,7 +1119,7 @@ export async function executeCreatePosOrderTransaction(args: {
   const resolvedTotalAmount = Number(
     (input.grand_total ?? (Number(input.app_total_amount ?? 0) - Number(input.discount_amount ?? 0) - Number(input.gp_amount ?? 0) + taxTotal)).toFixed(2)
   );
-  if (taxTotal !== 0 || input.tax_lines?.length) {
+  if (taxTotal !== 0 || input.tax_lines?.length || input.member_name || input.member_phone || input.member_code) {
     void getSupabaseServiceClient()
       .from("orders")
       .update({
@@ -1102,7 +1127,12 @@ export async function executeCreatePosOrderTransaction(args: {
         grand_total: resolvedTotalAmount,
         total_amount: resolvedTotalAmount,
         metadata: {
-          tax_lines: input.tax_lines ?? []
+          tax_lines: input.tax_lines ?? [],
+          member_name: input.member_name ?? null,
+          member_phone: input.member_phone ?? null,
+          member_code: input.member_code ?? null,
+          member_points: input.member_points ?? null,
+          member_stamps: input.member_stamps ?? null
         }
       })
       .eq("tenant_id", auth.tenantId)
@@ -1144,6 +1174,11 @@ export async function executeCreatePosOrderTransaction(args: {
       order_type: input.order_type,
       channel: input.channel,
       external_order_code: input.external_order_code ?? null,
+      member_name: input.member_name ?? null,
+      member_phone: input.member_phone ?? null,
+      member_code: input.member_code ?? null,
+      member_points: input.member_points ?? null,
+      member_stamps: input.member_stamps ?? null,
       total_amount: resolvedTotalAmount,
       tax_total: taxTotal,
       tax_lines: input.tax_lines ?? [],

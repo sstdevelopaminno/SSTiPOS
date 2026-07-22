@@ -195,6 +195,16 @@ type RecipeIngredientChoice = {
   quantity_on_hand: number;
 };
 
+type PosMemberChoice = {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  member_token?: string;
+  points: number;
+  stamps: number;
+};
+
 type ReviewItemIngredientOption = {
   ingredient_id: string;
   ingredient_name: string;
@@ -213,6 +223,11 @@ type PendingSubmit = {
     table_id?: string;
     customer_name?: string;
     external_order_code?: string;
+    member_name?: string;
+    member_phone?: string;
+    member_code?: string;
+    member_points?: number;
+    member_stamps?: number;
     notes?: string;
     app_total_amount: number;
     discount_amount?: number;
@@ -262,6 +277,11 @@ type ActiveOrder = {
   order_type?: OrderType;
   channel?: string | null;
   external_order_code?: string | null;
+  member_name?: string | null;
+  member_phone?: string | null;
+  member_code?: string | null;
+  member_points?: number | null;
+  member_stamps?: number | null;
   total_amount?: number;
   tax_total?: number | null;
   tax_lines?: TaxLineSnapshot[];
@@ -278,6 +298,9 @@ type CheckoutReviewOrder = {
   external_order_code?: string | null;
   member_name?: string | null;
   member_phone?: string | null;
+  member_code?: string | null;
+  member_points?: number | null;
+  member_stamps?: number | null;
   table_id?: string | null;
   created_at: string;
   items: CartItem[];
@@ -1808,6 +1831,14 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [modifierIngredients, setModifierIngredients] = useState<RecipeIngredientChoice[]>([]);
   const [modifierIngredientsLoading, setModifierIngredientsLoading] = useState(false);
   const [modifierIngredientsError, setModifierIngredientsError] = useState("");
+  const [memberPickerOpen, setMemberPickerOpen] = useState(false);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberSearchResults, setMemberSearchResults] = useState<PosMemberChoice[]>([]);
+  const [memberSearchLoading, setMemberSearchLoading] = useState(false);
+  const [memberSearchError, setMemberSearchError] = useState("");
+  const [selectedMember, setSelectedMember] = useState<PosMemberChoice | null>(null);
+  const [memberPointsInput, setMemberPointsInput] = useState("0");
+  const [memberStampsInput, setMemberStampsInput] = useState("0");
   const [discountModalOpen, setDiscountModalOpen] = useState(false);
   const [discountPercentInput, setDiscountPercentInput] = useState("");
   const [discountAmountInput, setDiscountAmountInput] = useState("");
@@ -2132,9 +2163,13 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   function getReceiptMemberLabel(session: ReceiptSession): string | null {
     const memberName = session.member_name?.trim();
     const memberPhone = session.member_phone?.trim();
-    if (!memberName && !memberPhone) return null;
-    if (memberName && memberPhone) return `${memberName} / ${memberPhone}`;
-    return memberName ?? memberPhone ?? null;
+    const memberCode = session.member_code?.trim();
+    const pointText = Number.isFinite(Number(session.member_points)) ? `${Number(session.member_points)} ${lang === "th" ? "คะแนน" : "pts"}` : "";
+    const stampText = Number.isFinite(Number(session.member_stamps)) ? `${Number(session.member_stamps)} ${lang === "th" ? "แต้ม" : "stamps"}` : "";
+    const identity = [memberName, memberCode ? `#${memberCode}` : "", memberPhone].filter(Boolean).join(" / ");
+    const balances = [pointText, stampText].filter(Boolean).join(" / ");
+    if (!identity && !balances) return null;
+    return [identity, balances].filter(Boolean).join(" | ");
   }
 
   function parseServerDurationMs(response: Response, headerName: string): number | null {
@@ -4646,6 +4681,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       resetDeliveryDraft();
     }
     setCart([]);
+    setSelectedMember(null);
   }
 
   function confirmModifierDraft() {
@@ -4706,6 +4742,50 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       const nextParts = exists ? parts.filter((item) => item.toLowerCase() !== value.toLowerCase()) : [...parts, value];
       return { ...current, notes: nextParts.join(", ") };
     });
+  }
+
+  async function searchMembers(nextQuery = memberSearch) {
+    const queryText = nextQuery.trim();
+    setMemberSearchLoading(true);
+    setMemberSearchError("");
+    try {
+      const response = await fetch(`/api/pos/members?q=${encodeURIComponent(queryText)}`, { cache: "no-store" });
+      const body = (await response.json().catch(() => null)) as { data?: { members?: PosMemberChoice[] } | null; error?: { message?: string } | null } | null;
+      if (!response.ok || body?.error) {
+        throw new Error(body?.error?.message ?? "Failed to load members.");
+      }
+      setMemberSearchResults(body?.data?.members ?? []);
+    } catch (error) {
+      setMemberSearchError(error instanceof Error ? error.message : "Failed to load members.");
+    } finally {
+      setMemberSearchLoading(false);
+    }
+  }
+
+  function openMemberPicker() {
+    setMemberPickerOpen(true);
+    setMemberSearch("");
+    setMemberSearchError("");
+    setMemberSearchResults([]);
+    setMemberPointsInput(String(selectedMember?.points ?? 0));
+    setMemberStampsInput(String(selectedMember?.stamps ?? 0));
+    void searchMembers("");
+  }
+
+  function chooseMember(member: PosMemberChoice) {
+    setSelectedMember(member);
+    setMemberPointsInput(String(member.points ?? 0));
+    setMemberStampsInput(String(member.stamps ?? 0));
+  }
+
+  function saveMemberSelection() {
+    if (!selectedMember) return;
+    setSelectedMember({
+      ...selectedMember,
+      points: Math.max(0, Math.floor(Number(memberPointsInput || 0))),
+      stamps: Math.max(0, Math.floor(Number(memberStampsInput || 0)))
+    });
+    setMemberPickerOpen(false);
   }
 
   function moveMenuProduct(productId: string, direction: -1 | 1) {
@@ -5383,7 +5463,16 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       selectedTableId: selectedTable?.id,
       subtotal,
       summaryDiscount,
-      cart
+      cart,
+      member: selectedMember
+        ? {
+            name: selectedMember.name,
+            phone: selectedMember.phone,
+            code: selectedMember.member_token ?? selectedMember.id,
+            points: selectedMember.points,
+            stamps: selectedMember.stamps
+          }
+        : null
     });
     payload.payload.tax_total = effectiveTaxBreakdown.tax_total;
     payload.payload.grand_total = effectiveTotal;
@@ -7116,10 +7205,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           onMember={
             orderType === "delivery_manual"
               ? undefined
-              : () => {
-                  pushSubmitMessage(text.memberComingSoon);
-                  window.location.href = "/preview/pos/members";
-                }
+              : openMemberPicker
           }
           onTableQrOrder={() => setTableQrModalOpen(true)}
           onPromotion={openDiscountPopup}
@@ -7354,6 +7440,88 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           </PosCartDrawer>
         }
       />
+
+      {memberPickerOpen ? (
+        <div className="posui-payment-modal-backdrop" role="dialog" aria-modal="true" aria-label={text.member} onClick={() => setMemberPickerOpen(false)}>
+          <section className="posui-payment-modal posui-payment-modal--review" onClick={(event) => event.stopPropagation()}>
+            <header className="posui-payment-modal__header">
+              <h3>{lang === "th" ? "เลือกสมาชิก" : "Select Member"}</h3>
+              <button type="button" className="posui-btn" onClick={() => setMemberPickerOpen(false)}>
+                {text.close}
+              </button>
+            </header>
+            <div className="grid gap-3">
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                <input
+                  value={memberSearch}
+                  onChange={(event) => setMemberSearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void searchMembers(memberSearch);
+                  }}
+                  placeholder={lang === "th" ? "ค้นหาชื่อ เบอร์โทร หรือรหัสสมาชิก" : "Search name, phone, or member code"}
+                  className="posui-payment-modal__input"
+                />
+                <button type="button" className="posui-btn posui-btn--primary" onClick={() => void searchMembers(memberSearch)} disabled={memberSearchLoading}>
+                  {memberSearchLoading ? "..." : lang === "th" ? "ค้นหา" : "Search"}
+                </button>
+                <button type="button" className="posui-btn" onClick={() => setMemberSearch("")}>
+                  {lang === "th" ? "สแกน QR" : "Scan QR"}
+                </button>
+              </div>
+              {memberSearchError ? <p className="posui-payment-modal__error">{memberSearchError}</p> : null}
+              <div className="grid max-h-56 gap-2 overflow-y-auto">
+                {memberSearchResults.length === 0 && !memberSearchLoading ? <p className="posui-payment-modal__hint">{lang === "th" ? "ยังไม่พบสมาชิก" : "No members found."}</p> : null}
+                {memberSearchResults.map((member) => {
+                  const active = selectedMember?.id === member.id;
+                  return (
+                    <button
+                      key={member.id}
+                      type="button"
+                      onClick={() => chooseMember(member)}
+                      className={`grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-lg border p-3 text-left ${active ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}
+                    >
+                      <span className="min-w-0">
+                        <strong className="block truncate text-sm text-slate-950">{member.name}</strong>
+                        <small className="block truncate text-xs font-bold text-slate-500">
+                          {(member.member_token ?? member.id).slice(0, 16)} / {member.phone}
+                        </small>
+                      </span>
+                      <span className="text-right text-xs font-black text-slate-700">
+                        {member.points} {lang === "th" ? "คะแนน" : "pts"} / {member.stamps} {lang === "th" ? "แต้ม" : "stamps"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedMember ? (
+                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="m-0 text-sm font-black text-slate-950">
+                    {selectedMember.name} / {(selectedMember.member_token ?? selectedMember.id).slice(0, 16)}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="posui-payment-modal__input-label">
+                      {lang === "th" ? "คะแนน" : "Points"}
+                      <input value={memberPointsInput} onChange={(event) => setMemberPointsInput(event.target.value)} inputMode="numeric" className="posui-payment-modal__input" />
+                    </label>
+                    <label className="posui-payment-modal__input-label">
+                      {lang === "th" ? "แต้ม" : "Stamps"}
+                      <input value={memberStampsInput} onChange={(event) => setMemberStampsInput(event.target.value)} inputMode="numeric" className="posui-payment-modal__input" />
+                    </label>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <div className="posui-payment-modal__actions">
+              <button type="button" className="posui-btn" onClick={() => setSelectedMember(null)}>
+                {lang === "th" ? "ล้างสมาชิก" : "Clear member"}
+              </button>
+              <button type="button" className="posui-btn posui-btn--primary" onClick={saveMemberSelection} disabled={!selectedMember}>
+                {lang === "th" ? "บันทึกสมาชิกในบิล" : "Save member to bill"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {menuManagerOpen ? (
         <div className="posui-payment-modal-backdrop" role="dialog" aria-modal="true" aria-label={text.manageMenu} onClick={() => setMenuManagerOpen(false)}>

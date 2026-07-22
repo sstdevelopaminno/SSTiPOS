@@ -157,7 +157,6 @@ const MENU_DEFS: Array<{
   { key: "pos_menu_stock", href: "/preview/pos/stock", icon: "stock", roles: ["owner", "manager", "accountant"], feature: featureForPosRoute("/preview/pos/stock") },
   { key: "pos_menu_sales_summary", href: "/preview/pos/sales-summary", icon: "summary", roles: ["owner", "manager", "accountant"], feature: featureForPosRoute("/preview/pos/sales-summary") },
   { key: "pos_menu_receipts", href: "/preview/pos/receipts", icon: "receipt", roles: ["owner", "manager", "accountant"], feature: featureForPosRoute("/preview/pos/receipts") },
-  { key: "pos_menu_tables", href: "/preview/pos/tables", icon: "tables", roles: ["owner", "manager"], feature: featureForPosRoute("/preview/pos/tables") },
   { key: "pos_menu_members", href: "/preview/pos/members", icon: "members", roles: ["owner", "manager", "staff"], feature: featureForPosRoute("/preview/pos/members") },
   { key: "pos_menu_shift", href: "/preview/pos/shift", icon: "shift", roles: ["owner", "manager", "staff"], feature: featureForPosRoute("/preview/pos/shift") }
 ];

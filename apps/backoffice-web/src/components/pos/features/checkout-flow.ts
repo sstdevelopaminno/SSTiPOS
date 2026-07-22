@@ -18,6 +18,9 @@ export type CheckoutActiveOrder = {
   external_order_code?: string | null;
   member_name?: string | null;
   member_phone?: string | null;
+  member_code?: string | null;
+  member_points?: number | null;
+  member_stamps?: number | null;
   total_amount?: number;
   table_id?: string | null;
   created_at?: string;
@@ -36,6 +39,9 @@ export type CheckoutReviewOrder = {
   external_order_code?: string | null;
   member_name?: string | null;
   member_phone?: string | null;
+  member_code?: string | null;
+  member_points?: number | null;
+  member_stamps?: number | null;
   table_id?: string | null;
   created_at: string;
   items: CheckoutCartItem[];
@@ -53,6 +59,11 @@ export type PendingSubmitPayload = {
   table_id?: string;
   customer_name?: string;
   external_order_code?: string;
+  member_name?: string;
+  member_phone?: string;
+  member_code?: string;
+  member_points?: number;
+  member_stamps?: number;
   notes?: string;
   app_total_amount: number;
   discount_amount?: number;
@@ -114,8 +125,15 @@ export function buildCheckoutSubmitPayload(args: {
   subtotal: number;
   summaryDiscount: number;
   cart: CheckoutCartItem[];
+  member?: {
+    name: string;
+    phone: string;
+    code?: string | null;
+    points?: number | null;
+    stamps?: number | null;
+  } | null;
 }): PendingSubmitShape {
-  const { idempotencyKey, activeOrder, shiftId, orderType, selectedTableId, subtotal, summaryDiscount, cart } = args;
+  const { idempotencyKey, activeOrder, shiftId, orderType, selectedTableId, subtotal, summaryDiscount, cart, member } = args;
   return {
     idempotencyKey,
     payload: {
@@ -126,6 +144,11 @@ export function buildCheckoutSubmitPayload(args: {
       table_id: orderType === "dine_in" ? selectedTableId : undefined,
       customer_name: undefined,
       external_order_code: undefined,
+      member_name: member?.name ?? undefined,
+      member_phone: member?.phone ?? undefined,
+      member_code: member?.code ?? undefined,
+      member_points: member?.points ?? undefined,
+      member_stamps: member?.stamps ?? undefined,
       notes: undefined,
       app_total_amount: subtotal,
       discount_amount: summaryDiscount,
@@ -155,6 +178,9 @@ export function buildReviewOrder(args: {
     external_order_code: order.external_order_code ?? null,
     member_name: order.member_name ?? null,
     member_phone: order.member_phone ?? null,
+    member_code: order.member_code ?? null,
+    member_points: order.member_points ?? null,
+    member_stamps: order.member_stamps ?? null,
     table_id: order.table_id ?? fallbackTableId ?? null,
     created_at: order.created_at ?? createdAt ?? new Date().toISOString(),
     items,

@@ -28,6 +28,9 @@ type CheckoutReviewOrder = {
   external_order_code?: string | null;
   member_name?: string | null;
   member_phone?: string | null;
+  member_code?: string | null;
+  member_points?: number | null;
+  member_stamps?: number | null;
   table_id?: string | null;
   created_at: string;
   items: CartItem[];
