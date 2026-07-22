@@ -34,6 +34,7 @@ type QuickMode = "home" | "dine_in" | "delivery";
 type TableViewMode = "list" | "floor";
 
 const POS_TABLE_VIEW_MODE_STORAGE_KEY = "pos_table_view_mode_v1";
+const POS_PRODUCT_ORDER_STORAGE_KEY = "pos_product_order_v1";
 
 type ProductRow = {
   id: string;
@@ -171,6 +172,11 @@ type CartItem = {
   quantity: number;
   price: number;
   notes?: string | null;
+};
+
+type ReceiptItemDetails = {
+  choices: string[];
+  note: string | null;
 };
 
 type ModifierDraft = {
@@ -1368,6 +1374,17 @@ function formatQuantity(value: number): string {
   return value.toFixed(2);
 }
 
+function parseReceiptItemDetails(notes?: string | null): ReceiptItemDetails {
+  const raw = String(notes ?? "").trim();
+  if (!raw) return { choices: [], note: null };
+  const parts = raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length > 1) return { choices: parts, note: null };
+  return { choices: [], note: raw };
+}
+
 function sanitizeCashInput(value: string): string {
   let cleaned = value.replace(/[^\d.]/g, "");
   if (!cleaned) return "";
@@ -1776,6 +1793,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [products, setProducts] = useState<ProductRow[]>([]);
+  const [productOrderByBranch, setProductOrderByBranch] = useState<Record<string, string[]>>({});
+  const [menuManagerOpen, setMenuManagerOpen] = useState(false);
   const [categories, setCategories] = useState<string[]>([]);
   const [allowNegativeStock, setAllowNegativeStock] = useState(false);
   const [shift, setShift] = useState<ShiftRow>(null);
@@ -1941,6 +1960,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const activeOrderPersistTimerRef = useRef<number | null>(null);
   const pendingQueuePersistTimerRef = useRef<number | null>(null);
   const pendingPaymentQueuePersistTimerRef = useRef<number | null>(null);
+  const productOrderLoadedRef = useRef(false);
   const customerDisplayPublishTimerRef = useRef<number | null>(null);
   const customerDisplayPublishedSignatureRef = useRef("");
   const customerDisplayPublishInFlightRef = useRef(false);
@@ -3742,6 +3762,29 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   }, [cart.length]);
 
   useEffect(() => {
+    if (!isHydrated || typeof window === "undefined") return;
+    try {
+      const saved = window.localStorage.getItem(POS_PRODUCT_ORDER_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          setProductOrderByBranch(parsed as Record<string, string[]>);
+        }
+      }
+    } catch {
+      setProductOrderByBranch({});
+    } finally {
+      productOrderLoadedRef.current = true;
+    }
+  }, [isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated || typeof window === "undefined") return;
+    if (!productOrderLoadedRef.current) return;
+    window.localStorage.setItem(POS_PRODUCT_ORDER_STORAGE_KEY, JSON.stringify(productOrderByBranch));
+  }, [isHydrated, productOrderByBranch]);
+
+  useEffect(() => {
     if (orderType !== "dine_in") return;
     if (!pendingRestoreTableId) return;
     if (posTables.length === 0) return;
@@ -3765,10 +3808,19 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderType, pendingRestoreTableId, posTables]);
 
+  const menuOrderKey = `${branchName || "branch"}:${activeCategory || "all"}`;
   const visibleProducts = useMemo(() => {
-    if (!activeCategory) return products;
-    return products.filter((product) => product.category === activeCategory);
-  }, [activeCategory, products]);
+    const filtered = activeCategory ? products.filter((product) => product.category === activeCategory) : products;
+    const order = productOrderByBranch[menuOrderKey] ?? [];
+    if (order.length === 0) return filtered;
+    const orderIndex = new Map(order.map((id, index) => [id, index]));
+    return [...filtered].sort((left, right) => {
+      const leftIndex = orderIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+      const rightIndex = orderIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+      if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+      return left.name.localeCompare(right.name, lang === "th" ? "th" : "en");
+    });
+  }, [activeCategory, lang, menuOrderKey, productOrderByBranch, products]);
 
   const visibleTables = useMemo(() => {
     const filtered = tableZoneFilter === "all" ? posTables : posTables.filter((table) => table.zone_id === tableZoneFilter);
@@ -4653,6 +4705,29 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       const exists = parts.some((item) => item.toLowerCase() === value.toLowerCase());
       const nextParts = exists ? parts.filter((item) => item.toLowerCase() !== value.toLowerCase()) : [...parts, value];
       return { ...current, notes: nextParts.join(", ") };
+    });
+  }
+
+  function moveMenuProduct(productId: string, direction: -1 | 1) {
+    setProductOrderByBranch((current) => {
+      const currentIds = visibleProducts.map((product) => product.id);
+      const existing = current[menuOrderKey] ?? [];
+      const merged = [...existing.filter((id) => currentIds.includes(id)), ...currentIds.filter((id) => !existing.includes(id))];
+      const index = merged.indexOf(productId);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= merged.length) return current;
+      const next = [...merged];
+      const [item] = next.splice(index, 1);
+      next.splice(nextIndex, 0, item);
+      return { ...current, [menuOrderKey]: next };
+    });
+  }
+
+  function resetMenuOrder() {
+    setProductOrderByBranch((current) => {
+      const next = { ...current };
+      delete next[menuOrderKey];
+      return next;
     });
   }
 
@@ -6622,11 +6697,17 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
         const qty = formatQuantity(item.quantity);
         const lineTotal = formatMoneyPlain(item.quantity * item.price);
         const unitPrice = formatMoneyPlain(item.price);
+        const details = parseReceiptItemDetails(item.notes);
+        const detailRows = [
+          ...details.choices.map((choice) => `<div class="choice">+ ${escapeHtml(choice)}</div>`),
+          details.note ? `<div class="note">${escapeHtml(text.notes)}: ${escapeHtml(details.note)}</div>` : ""
+        ].join("");
         return `
           <tr>
             <td class="col-name">
               <div class="name">${escapeHtml(item.name)}</div>
               <div class="unit">x ${escapeHtml(unitPrice)}</div>
+              ${detailRows}
             </td>
             <td class="col-qty">${escapeHtml(qty)}</td>
             <td class="col-total">${escapeHtml(lineTotal)}</td>
@@ -6682,6 +6763,8 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
     .col-total { width: 16mm; text-align: right; white-space: nowrap; }
     .name { font-weight: 700; line-height: 1.25; }
     .unit { font-size: 10px; color: #333; line-height: 1.2; }
+    .choice, .note { margin-top: 0.4mm; padding-left: 1.5mm; color: #111; font-size: 9.4px; line-height: 1.18; }
+    .note { color: #333; font-style: italic; }
     .summary-line { display: flex; justify-content: space-between; align-items: baseline; gap: 1mm; margin: 0.72mm 0; font-size: 10px; }
     .summary-line span { font-weight: 600; }
     .summary-line strong { font-weight: 700; white-space: nowrap; }
@@ -7233,6 +7316,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
               activeId={activeCategory}
               onSelect={setActiveCategory}
               trailingActionLabel={text.manageMenu}
+              onTrailingAction={() => setMenuManagerOpen(true)}
             />
           )
         }
@@ -7270,6 +7354,47 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
           </PosCartDrawer>
         }
       />
+
+      {menuManagerOpen ? (
+        <div className="posui-payment-modal-backdrop" role="dialog" aria-modal="true" aria-label={text.manageMenu} onClick={() => setMenuManagerOpen(false)}>
+          <section className="posui-menu-manager" onClick={(event) => event.stopPropagation()}>
+            <header className="posui-menu-manager__header">
+              <div>
+                <h3>{text.manageMenu}</h3>
+                <p>{lang === "th" ? "จัดลำดับสินค้าบนหน้าขายเท่านั้น ไม่กระทบสต๊อกหรือสูตรวัตถุดิบ" : "Sort POS menu display only. Stock and recipes are unchanged."}</p>
+              </div>
+              <button type="button" className="posui-btn" onClick={() => setMenuManagerOpen(false)}>
+                {text.close}
+              </button>
+            </header>
+            <div className="posui-menu-manager__tools">
+              <strong>{activeCategory || (lang === "th" ? "ทุกหมวดหมู่" : "All categories")}</strong>
+              <button type="button" className="posui-btn" onClick={resetMenuOrder}>
+                {lang === "th" ? "รีเซ็ตลำดับ" : "Reset order"}
+              </button>
+            </div>
+            <div className="posui-menu-manager__list">
+              {visibleProducts.map((product, index) => (
+                <article key={`menu-sort-${product.id}`} className="posui-menu-manager__item">
+                  <span className="posui-menu-manager__rank">{index + 1}</span>
+                  <div>
+                    <strong>{product.name}</strong>
+                    <small>{product.sku}</small>
+                  </div>
+                  <div className="posui-menu-manager__actions">
+                    <button type="button" className="posui-icon-btn" disabled={index === 0} onClick={() => moveMenuProduct(product.id, -1)} aria-label={lang === "th" ? "เลื่อนขึ้น" : "Move up"}>
+                      ↑
+                    </button>
+                    <button type="button" className="posui-icon-btn" disabled={index === visibleProducts.length - 1} onClick={() => moveMenuProduct(product.id, 1)} aria-label={lang === "th" ? "เลื่อนลง" : "Move down"}>
+                      ↓
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {modeSelectorOpen ? (
         <div
@@ -7906,16 +8031,23 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
             <div className="posui-print-receipt58__divider" />
             <table className="posui-print-receipt58__table">
               <tbody>
-                {receiptSession.items.map((item) => (
-                  <tr key={`print-${receiptSession.order_id}-${item.product_id}`}>
-                    <td>
-                      <div className="name">{item.name}</div>
-                      <div className="unit">x {formatMoney(item.price)}</div>
-                    </td>
-                    <td>{formatQuantity(item.quantity)}</td>
-                    <td>{formatMoney(item.quantity * item.price)}</td>
-                  </tr>
-                ))}
+                {receiptSession.items.map((item) => {
+                  const details = parseReceiptItemDetails(item.notes);
+                  return (
+                    <tr key={`print-${receiptSession.order_id}-${item.product_id}-${item.notes ?? ""}`}>
+                      <td>
+                        <div className="name">{item.name}</div>
+                        <div className="unit">x {formatMoney(item.price)}</div>
+                        {details.choices.map((choice) => (
+                          <div key={`print-choice-${item.product_id}-${choice}`} className="choice">+ {choice}</div>
+                        ))}
+                        {details.note ? <div className="note">{text.notes}: {details.note}</div> : null}
+                      </td>
+                      <td>{formatQuantity(item.quantity)}</td>
+                      <td>{formatMoney(item.quantity * item.price)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             <div className="posui-print-receipt58__divider" />

@@ -11,6 +11,7 @@ type CartItem = {
   name: string;
   quantity: number;
   price: number;
+  notes?: string | null;
 };
 
 type TaxLineSnapshot = {
@@ -98,6 +99,14 @@ function ReceiptLogoImage({ src, alt, className }: { src: string; alt: string; c
       }}
     />
   );
+}
+
+function parseReceiptItemNotes(notes?: string | null) {
+  const raw = String(notes ?? "").trim();
+  if (!raw) return { choices: [] as string[], note: null as string | null };
+  const parts = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length > 1) return { choices: parts, note: null };
+  return { choices: [] as string[], note: raw };
 }
 
 type Props = {
@@ -641,16 +650,23 @@ export function PosPaymentModals({
                   <span>{text.reviewQtyHeader ?? "Qty"}</span>
                   <span>{lang === "th" ? "ราคารวม" : "Total"}</span>
                 </div>
-                {receiptSession.items.map((item) => (
-                  <div key={`receipt-${receiptSession.order_id}-${item.product_id}`} className="posui-receipt-card-preview__item">
-                    <div className="posui-receipt-card-preview__item-main">
-                      <strong>{item.name}</strong>
-                      <small>x {formatMoney(item.price)}</small>
+                {receiptSession.items.map((item) => {
+                  const details = parseReceiptItemNotes(item.notes);
+                  return (
+                    <div key={`receipt-${receiptSession.order_id}-${item.product_id}-${item.notes ?? ""}`} className="posui-receipt-card-preview__item">
+                      <div className="posui-receipt-card-preview__item-main">
+                        <strong>{item.name}</strong>
+                        <small>x {formatMoney(item.price)}</small>
+                        {details.choices.map((choice) => (
+                          <small key={`receipt-choice-${item.product_id}-${choice}`} className="posui-receipt-card-preview__detail">+ {choice}</small>
+                        ))}
+                        {details.note ? <small className="posui-receipt-card-preview__detail">{text.notes}: {details.note}</small> : null}
+                      </div>
+                      <span className="posui-receipt-card-preview__qty">{formatQuantity(item.quantity)}</span>
+                      <strong className="posui-receipt-card-preview__item-total">{formatMoney(item.quantity * item.price)}</strong>
                     </div>
-                    <span className="posui-receipt-card-preview__qty">{formatQuantity(item.quantity)}</span>
-                    <strong className="posui-receipt-card-preview__item-total">{formatMoney(item.quantity * item.price)}</strong>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div className="posui-receipt-card-preview__divider" />
               <footer className="posui-receipt-card-preview__summary">
