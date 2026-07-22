@@ -17,6 +17,14 @@ function digitsOnly(value: string): string {
   return value.replace(/\D/g, "");
 }
 
+function sanitizeSearch(value: string): string {
+  return value.replace(/[%(),]/g, "").slice(0, 80);
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error ?? "");
+}
+
 function normalizeMember(row: MemberRow) {
   const token = row.member_token ?? row.id;
   return {
@@ -33,17 +41,36 @@ function normalizeMember(row: MemberRow) {
 }
 
 function isMissingMemberTable(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error ?? "");
+  const message = getErrorMessage(error);
   return message.includes("mobile_members") && (message.includes("schema cache") || message.includes("does not exist") || message.includes("Could not find"));
 }
 
 function isMissingMemberColumn(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error ?? "");
+  const message = getErrorMessage(error);
   return message.includes("mobile_members") && (message.includes("schema cache") || message.includes("Could not find")) && /email|member_token|deleted_at/i.test(message);
 }
 
 function newMemberToken(): string {
   return `mem_${crypto.randomUUID().replace(/-/g, "")}`;
+}
+
+function applySearch<T>(query: T, q: string): T {
+  if (!q || typeof (query as { or?: unknown }).or !== "function") return query;
+  const safeName = sanitizeSearch(q);
+  const safePhone = digitsOnly(q);
+  const safeToken = sanitizeSearch(q);
+  const filters = [`name.ilike.%${safeName}%`, `email.ilike.%${safeName}%`, `member_token.ilike.%${safeToken}%`];
+  if (safePhone) filters.unshift(`phone.ilike.${safePhone}%`);
+  return (query as { or: (filters: string) => T }).or(filters.join(","));
+}
+
+function applyFallbackSearch<T>(query: T, q: string): T {
+  if (!q || typeof (query as { or?: unknown }).or !== "function") return query;
+  const safeName = sanitizeSearch(q);
+  const safePhone = digitsOnly(q);
+  const filters = [`name.ilike.%${safeName}%`];
+  if (safePhone) filters.unshift(`phone.ilike.${safePhone}%`);
+  return (query as { or: (filters: string) => T }).or(filters.join(","));
 }
 
 export async function GET(request: Request) {
@@ -53,67 +80,53 @@ export async function GET(request: Request) {
     const supabase = getSupabaseServiceClient();
     const selectFull = "id,name,phone,email,member_token,points_balance,stamp_balance,updated_at";
     const selectFallback = "id,name,phone,points_balance,stamp_balance,updated_at";
-    let query = supabase
+
+    const baseQuery = supabase
       .from("mobile_members")
       .select(selectFull)
       .eq("tenant_id", auth.tenantId!)
       .eq("branch_id", auth.branchId!)
       .is("deleted_at", null)
       .order("updated_at", { ascending: false })
-      .limit(50);
-
-    if (q) {
-      const safeName = q.replace(/[%(),]/g, "");
-      const safePhone = digitsOnly(q);
-      const safeToken = q.replace(/[%(),]/g, "");
-      query = query.or(`name.ilike.%${safeName}%,phone.ilike.%${safePhone}%,email.ilike.%${safeName}%,member_token.ilike.%${safeToken}%`);
-    }
+      .limit(q ? 25 : 30);
 
     let data: MemberRow[] | null = null;
     let error: { message: string } | null = null;
-    const result = await query;
+    const result = await applySearch(baseQuery, q);
     data = result.data as MemberRow[] | null;
     error = result.error;
+
     if (error && isMissingMemberColumn(error)) {
-      let fallbackQuery = supabase
+      const fallbackQuery = supabase
         .from("mobile_members")
         .select(selectFallback)
         .eq("tenant_id", auth.tenantId!)
         .eq("branch_id", auth.branchId!)
         .order("updated_at", { ascending: false })
-        .limit(50);
-      if (q) {
-        const safeName = q.replace(/[%(),]/g, "");
-        const safePhone = digitsOnly(q);
-        fallbackQuery = fallbackQuery.or(`name.ilike.%${safeName}%,phone.ilike.%${safePhone}%`);
-      }
-      const fallback = await fallbackQuery;
+        .limit(q ? 25 : 30);
+      const fallback = await applyFallbackSearch(fallbackQuery, q);
       data = fallback.data as MemberRow[] | null;
       error = fallback.error;
     }
+
     if (error) throw new Error(error.message);
     return ok({ members: ((data ?? []) as MemberRow[]).map(normalizeMember) });
   } catch (error) {
     if (isMissingMemberTable(error)) return fail("members_schema_missing", "ยังไม่พบตารางสมาชิกใน Supabase กรุณารัน migration ล่าสุดก่อนใช้งานสมาชิก", 501);
-    return fail("members_load_failed", error instanceof Error ? error.message : "ไม่สามารถโหลดสมาชิกได้", 503);
+    return fail("members_load_failed", getErrorMessage(error) || "ไม่สามารถโหลดสมาชิกได้", 503);
   }
 }
 
 export async function POST(request: Request) {
   try {
     const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "sales:enter" });
-    const body = (await request.json().catch(() => ({}))) as {
-      name?: string;
-      phone?: string;
-      email?: string;
-      points?: number;
-      stamps?: number;
-    };
+    const body = (await request.json().catch(() => ({}))) as { name?: string; phone?: string; email?: string; points?: number; stamps?: number };
     const name = String(body.name ?? "").trim();
     const phone = digitsOnly(String(body.phone ?? ""));
     const email = String(body.email ?? "").trim().toLowerCase();
     const points = Math.max(0, Math.floor(Number(body.points ?? 0)));
     const stamps = Math.max(0, Math.floor(Number(body.stamps ?? 0)));
+
     if (!name || !/^\d{9,10}$/.test(phone)) {
       return fail("invalid_member_input", "กรุณากรอกชื่อสมาชิกและเบอร์โทร 9-10 หลัก", 422);
     }
@@ -122,7 +135,6 @@ export async function POST(request: Request) {
     }
 
     const nowIso = new Date().toISOString();
-    let existingToken: string | null = null;
     const existingTokenResult = await getSupabaseServiceClient()
       .from("mobile_members")
       .select("member_token")
@@ -130,41 +142,36 @@ export async function POST(request: Request) {
       .eq("branch_id", auth.branchId!)
       .eq("phone", phone)
       .maybeSingle<{ member_token: string | null }>();
-    if (!existingTokenResult.error) {
-      existingToken = existingTokenResult.data?.member_token ?? null;
-    }
-    const payload = {
-      tenant_id: auth.tenantId!,
-      branch_id: auth.branchId!,
-      name,
-      phone,
-      email: email || null,
-      member_token: existingToken || newMemberToken(),
-      points_balance: points,
-      stamp_balance: stamps,
-      status: "active",
-      deleted_at: null,
-      updated_at: nowIso
-    };
+    const existingToken = existingTokenResult.error ? null : existingTokenResult.data?.member_token ?? null;
+
     let { data, error } = await getSupabaseServiceClient()
       .from("mobile_members")
-      .upsert(payload, { onConflict: "tenant_id,branch_id,phone" })
+      .upsert(
+        {
+          tenant_id: auth.tenantId!,
+          branch_id: auth.branchId!,
+          name,
+          phone,
+          email: email || null,
+          member_token: existingToken || newMemberToken(),
+          points_balance: points,
+          stamp_balance: stamps,
+          status: "active",
+          deleted_at: null,
+          updated_at: nowIso
+        },
+        { onConflict: "tenant_id,branch_id,phone" }
+      )
       .select("id,name,phone,email,member_token,points_balance,stamp_balance,updated_at")
       .single<MemberRow>();
+
     if (error && isMissingMemberColumn(error)) {
-      const fallbackPayload = {
-        tenant_id: auth.tenantId!,
-        branch_id: auth.branchId!,
-        name,
-        phone,
-        points_balance: points,
-        stamp_balance: stamps,
-        status: "active",
-        updated_at: nowIso
-      };
       const fallback = await getSupabaseServiceClient()
         .from("mobile_members")
-        .upsert(fallbackPayload, { onConflict: "tenant_id,branch_id,phone" })
+        .upsert(
+          { tenant_id: auth.tenantId!, branch_id: auth.branchId!, name, phone, points_balance: points, stamp_balance: stamps, status: "active", updated_at: nowIso },
+          { onConflict: "tenant_id,branch_id,phone" }
+        )
         .select("id,name,phone,points_balance,stamp_balance,updated_at")
         .single<MemberRow>();
       data = fallback.data as MemberRow | null;
@@ -176,7 +183,7 @@ export async function POST(request: Request) {
     return ok({ member: normalizeMember(data) });
   } catch (error) {
     if (isMissingMemberTable(error)) return fail("members_schema_missing", "ยังไม่พบตารางสมาชิกใน Supabase กรุณารัน migration ล่าสุดก่อนบันทึกสมาชิก", 501);
-    return fail("member_save_failed", error instanceof Error ? error.message : "ไม่สามารถบันทึกสมาชิกได้", 503);
+    return fail("member_save_failed", getErrorMessage(error) || "ไม่สามารถบันทึกสมาชิกได้", 503);
   }
 }
 
@@ -185,26 +192,23 @@ export async function DELETE(request: Request) {
     const auth = await getPosApiAuthContext({ requireBranchScope: true, requiredPermission: "sales:enter" });
     const id = new URL(request.url).searchParams.get("id")?.trim() ?? "";
     if (!id) return fail("invalid_member_id", "ไม่พบรหัสสมาชิกที่ต้องการลบ", 422);
-    const nowIso = new Date().toISOString();
+
     let { error } = await getSupabaseServiceClient()
       .from("mobile_members")
-      .update({ deleted_at: nowIso, updated_at: nowIso })
+      .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq("tenant_id", auth.tenantId!)
       .eq("branch_id", auth.branchId!)
       .eq("id", id);
+
     if (error && isMissingMemberColumn(error)) {
-      const hardDelete = await getSupabaseServiceClient()
-        .from("mobile_members")
-        .delete()
-        .eq("tenant_id", auth.tenantId!)
-        .eq("branch_id", auth.branchId!)
-        .eq("id", id);
+      const hardDelete = await getSupabaseServiceClient().from("mobile_members").delete().eq("tenant_id", auth.tenantId!).eq("branch_id", auth.branchId!).eq("id", id);
       error = hardDelete.error;
     }
+
     if (error) throw new Error(error.message);
     return ok({ deleted: true });
   } catch (error) {
     if (isMissingMemberTable(error)) return fail("members_schema_missing", "ยังไม่พบตารางสมาชิกใน Supabase กรุณารัน migration ล่าสุดก่อนลบสมาชิก", 501);
-    return fail("member_delete_failed", error instanceof Error ? error.message : "ไม่สามารถลบสมาชิกได้", 503);
+    return fail("member_delete_failed", getErrorMessage(error) || "ไม่สามารถลบสมาชิกได้", 503);
   }
 }
