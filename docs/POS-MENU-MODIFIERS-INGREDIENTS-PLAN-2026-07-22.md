@@ -217,7 +217,8 @@ This must run in the same order creation transaction or in a guarded all-or-noth
 2026-07-22 implementation start:
 
 - Products returned by POS sales with `has_recipe_deduction` now open a modifier popup before adding to cart.
-- The popup supports free-form option/ingredient notes, quantity, and extra ingredient price.
+- The popup loads linked recipe ingredients lazily from `/api/pos/recipe-products` and shows them as selectable chips.
+- The popup also supports free-form option/ingredient notes, quantity steppers, and extra ingredient price steppers.
 - Extra price is disabled in delivery mode.
 - Cart lines now support `cart_line_id` and `notes`, so the same product with different options can remain separate.
 - This is the safe UI/cart foundation. Structured modifier tables and ingredient delta deduction still belong to Phase 1/3/4 before full stock-accurate option deduction.

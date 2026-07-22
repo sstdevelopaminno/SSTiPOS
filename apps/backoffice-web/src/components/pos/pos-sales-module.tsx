@@ -180,6 +180,14 @@ type ModifierDraft = {
   extraPrice: number;
 };
 
+type RecipeIngredientChoice = {
+  ingredient_id: string;
+  name: string;
+  base_unit: string;
+  quantity_per_item: number;
+  quantity_on_hand: number;
+};
+
 type ReviewItemIngredientOption = {
   ingredient_id: string;
   ingredient_name: string;
@@ -1777,6 +1785,9 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [modifierDraft, setModifierDraft] = useState<ModifierDraft | null>(null);
+  const [modifierIngredients, setModifierIngredients] = useState<RecipeIngredientChoice[]>([]);
+  const [modifierIngredientsLoading, setModifierIngredientsLoading] = useState(false);
+  const [modifierIngredientsError, setModifierIngredientsError] = useState("");
   const [discountModalOpen, setDiscountModalOpen] = useState(false);
   const [discountPercentInput, setDiscountPercentInput] = useState("");
   const [discountAmountInput, setDiscountAmountInput] = useState("");
@@ -3229,6 +3240,42 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   }, [cartDrawerOpen]);
 
   useEffect(() => {
+    if (!modifierDraft?.product.id) {
+      setModifierIngredients([]);
+      setModifierIngredientsError("");
+      setModifierIngredientsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setModifierIngredientsLoading(true);
+    setModifierIngredientsError("");
+    fetch(`/api/pos/recipe-products?product_ids=${encodeURIComponent(modifierDraft.product.id)}`, { cache: "no-store" })
+      .then(async (response) => {
+        const body = (await response.json().catch(() => null)) as
+          | { data?: { ingredients_by_product?: Record<string, RecipeIngredientChoice[]> } | null; error?: { message?: string } | null }
+          | null;
+        if (!response.ok || body?.error) {
+          throw new Error(body?.error?.message ?? "Failed to load recipe ingredients.");
+        }
+        if (!cancelled) {
+          setModifierIngredients(body?.data?.ingredients_by_product?.[modifierDraft.product.id] ?? []);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setModifierIngredients([]);
+          setModifierIngredientsError(error instanceof Error ? error.message : "Failed to load recipe ingredients.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setModifierIngredientsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [modifierDraft?.product.id]);
+
+  useEffect(() => {
     return () => {
       if (cartPersistTimerRef.current !== null) {
         window.clearTimeout(cartPersistTimerRef.current);
@@ -4557,6 +4604,21 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
       extraPrice: canAddPrice ? modifierDraft.extraPrice : 0
     });
     setModifierDraft(null);
+  }
+
+  function toggleModifierIngredient(name: string) {
+    const value = name.trim();
+    if (!value) return;
+    setModifierDraft((current) => {
+      if (!current) return current;
+      const parts = current.notes
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const exists = parts.some((item) => item.toLowerCase() === value.toLowerCase());
+      const nextParts = exists ? parts.filter((item) => item.toLowerCase() !== value.toLowerCase()) : [...parts, value];
+      return { ...current, notes: nextParts.join(", ") };
+    });
   }
 
   function openDiscountPopup() {
@@ -7950,41 +8012,81 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
                   : "This recipe product supports options before adding to cart."}
             </p>
             <div className="posui-payment-receipt-card">
+              <div className="posui-payment-modal__input-label">
+                <span>{lang === "th" ? "วัตถุดิบที่ผูกไว้" : "Linked Ingredients"}</span>
+                {modifierIngredientsLoading ? <small>{lang === "th" ? "กำลังโหลดวัตถุดิบ..." : "Loading ingredients..."}</small> : null}
+                {modifierIngredientsError ? <small className="text-red-600">{modifierIngredientsError}</small> : null}
+                <div className="flex flex-wrap gap-2">
+                  {modifierIngredients.length === 0 && !modifierIngredientsLoading ? (
+                    <small>{lang === "th" ? "ยังไม่มีรายการวัตถุดิบให้เลือก" : "No linked ingredients available."}</small>
+                  ) : null}
+                  {modifierIngredients.map((ingredient) => {
+                    const selected = modifierDraft.notes
+                      .split(",")
+                      .map((item) => item.trim().toLowerCase())
+                      .includes(ingredient.name.toLowerCase());
+                    return (
+                      <button
+                        key={ingredient.ingredient_id}
+                        type="button"
+                        onClick={() => toggleModifierIngredient(ingredient.name)}
+                        className={`rounded-full border px-3 py-2 text-xs font-bold transition ${
+                          selected ? "border-orange-500 bg-orange-500 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        {ingredient.name}
+                        <span className="ml-1 font-semibold opacity-75">
+                          {Number(ingredient.quantity_per_item).toLocaleString(lang === "th" ? "th-TH" : "en-US")} {ingredient.base_unit}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <label className="posui-payment-modal__input-label">
-                {lang === "th" ? "ตัวเลือก/วัตถุดิบ" : "Options / Ingredients"}
+                {lang === "th" ? "ตัวเลือกเพิ่มเติม" : "Additional Options"}
                 <textarea
                   value={modifierDraft.notes}
                   onChange={(event) => setModifierDraft((current) => (current ? { ...current, notes: event.target.value } : current))}
-                  rows={3}
-                  placeholder={lang === "th" ? "เช่น เส้นเล็ก, เพิ่มลูกชิ้น, ไม่ใส่นม..." : "e.g. thin noodle, extra meatballs, no milk..."}
+                  rows={2}
+                  placeholder={lang === "th" ? "เช่น เพิ่มลูกชิ้น, ไม่ใส่นม..." : "e.g. extra meatballs, no milk..."}
                 />
               </label>
-              <label className="posui-payment-modal__input-label">
-                {lang === "th" ? "จำนวน" : "Quantity"}
-                <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={modifierDraft.quantity}
-                  onChange={(event) =>
-                    setModifierDraft((current) => (current ? { ...current, quantity: Math.max(1, Math.trunc(Number(event.target.value || 1))) } : current))
-                  }
-                />
-              </label>
-              <label className="posui-payment-modal__input-label">
-                {lang === "th" ? "ราคาเพิ่มวัตถุดิบ" : "Extra Ingredient Price"}
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  disabled={quickMode === "delivery"}
-                  value={modifierDraft.extraPrice}
-                  onChange={(event) =>
-                    setModifierDraft((current) => (current ? { ...current, extraPrice: Math.max(0, Number(event.target.value || 0)) } : current))
-                  }
-                />
-              </label>
-              <div className="posui-payment-modal__hint">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <span className="text-xs font-bold text-slate-600">{lang === "th" ? "จำนวน" : "Quantity"}</span>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <button type="button" className="posui-btn" onClick={() => setModifierDraft((current) => (current ? { ...current, quantity: Math.max(1, current.quantity - 1) } : current))}>
+                      -
+                    </button>
+                    <strong className="text-xl text-slate-900">{modifierDraft.quantity}</strong>
+                    <button type="button" className="posui-btn" onClick={() => setModifierDraft((current) => (current ? { ...current, quantity: current.quantity + 1 } : current))}>
+                      +
+                    </button>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <span className="text-xs font-bold text-slate-600">{lang === "th" ? "ราคาเพิ่มวัตถุดิบ" : "Extra Ingredient Price"}</span>
+                  <div className="mt-2 flex items-center gap-2">
+                    <button type="button" className="posui-btn" disabled={quickMode === "delivery"} onClick={() => setModifierDraft((current) => (current ? { ...current, extraPrice: Math.max(0, Number((current.extraPrice - 5).toFixed(2))) } : current))}>
+                      -5
+                    </button>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      disabled={quickMode === "delivery"}
+                      value={modifierDraft.extraPrice}
+                      onChange={(event) => setModifierDraft((current) => (current ? { ...current, extraPrice: Math.max(0, Number(event.target.value || 0)) } : current))}
+                      className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-center text-sm font-bold text-slate-900"
+                    />
+                    <button type="button" className="posui-btn" disabled={quickMode === "delivery"} onClick={() => setModifierDraft((current) => (current ? { ...current, extraPrice: Number((current.extraPrice + 5).toFixed(2)) } : current))}>
+                      +5
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 rounded-xl border border-orange-100 bg-orange-50 px-3 py-2 text-sm font-bold text-orange-700">
                 {lang === "th" ? "ราคาต่อหน่วยหลังรวมตัวเลือก" : "Unit price with options"}:{" "}
                 {formatMoney(getProductPriceForCurrentMode(modifierDraft.product) + (quickMode === "delivery" ? 0 : Math.max(0, modifierDraft.extraPrice)))}
               </div>
