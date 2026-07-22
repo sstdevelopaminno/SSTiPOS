@@ -213,6 +213,9 @@ export function StockProductsTable({
   const [bulkDeleteScope, setBulkDeleteScope] = useState<"all" | "selected">("all");
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState("");
+  const [bulkUnlinkScope, setBulkUnlinkScope] = useState<"all" | "selected" | null>(null);
+  const [bulkUnlinkBusy, setBulkUnlinkBusy] = useState(false);
+  const [bulkUnlinkError, setBulkUnlinkError] = useState("");
 
   const baseProductsByMode = useMemo(() => {
     if (modeFilter === "ingredients" || modeFilter === "all") return products;
@@ -378,6 +381,69 @@ export function StockProductsTable({
     if (bulkDeleteBusy) return;
     setBulkDeletePopupMode(null);
     setBulkDeleteError("");
+  }
+
+  function openBulkUnlinkPopup(scope: "all" | "selected") {
+    const ids = scope === "all" ? filteredProducts.map((item) => item.id) : selectedFilteredProductIds;
+    if (ids.length === 0) {
+      setNotice(th ? "ไม่มีสินค้าตามตัวกรองให้ยกเลิกผูกวัตถุดิบ" : "No filtered products available to unlink recipes.");
+      return;
+    }
+    setBulkUnlinkScope(scope);
+    setBulkUnlinkError("");
+  }
+
+  function closeBulkUnlinkPopup() {
+    if (bulkUnlinkBusy) return;
+    setBulkUnlinkScope(null);
+    setBulkUnlinkError("");
+  }
+
+  async function submitBulkUnlinkRecipes() {
+    if (!canManageCatalog) {
+      setBulkUnlinkError(th ? "สิทธิ์ไม่เพียงพอสำหรับแก้ไขสูตรวัตถุดิบ" : "You do not have permission to update recipes.");
+      return;
+    }
+    if (!bulkUnlinkScope) return;
+    const ids = bulkUnlinkScope === "all" ? filteredProducts.map((item) => item.id) : selectedFilteredProductIds;
+    if (ids.length === 0) {
+      setBulkUnlinkError(th ? "ไม่มีรายการให้บันทึก" : "No rows to save.");
+      return;
+    }
+
+    setBulkUnlinkBusy(true);
+    setBulkUnlinkError("");
+    try {
+      const response = await fetch("/api/backoffice/catalog", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "bulk_unlink_product_recipes",
+          branch_id: branchId,
+          product_ids: ids,
+          stock_quantity: 0
+        })
+      });
+      const body = (await response.json()) as ApiEnvelope<{ updated_count?: number; failed_count?: number }>;
+      if (!response.ok || body.error) {
+        throw new Error(body.error?.message ?? "Bulk unlink failed.");
+      }
+
+      const updatedCount = Number(body.data?.updated_count ?? 0);
+      const failedCount = Number(body.data?.failed_count ?? 0);
+      setNotice(
+        th
+          ? `ยกเลิกผูกวัตถุดิบแล้ว ${updatedCount} รายการ${failedCount > 0 ? `, ไม่สำเร็จ ${failedCount}` : ""}`
+          : `Unlinked recipes for ${updatedCount} products${failedCount > 0 ? `, ${failedCount} failed` : ""}.`
+      );
+      setSelectedProductIds((prev) => prev.filter((id) => !ids.includes(id)));
+      closeBulkUnlinkPopup();
+      router.refresh();
+    } catch (error) {
+      setBulkUnlinkError(error instanceof Error ? error.message : th ? "ยกเลิกผูกวัตถุดิบไม่สำเร็จ" : "Bulk unlink failed.");
+    } finally {
+      setBulkUnlinkBusy(false);
+    }
   }
 
   async function submitBulkDelete() {
@@ -995,6 +1061,22 @@ export function StockProductsTable({
 
             <div className="mt-4 flex flex-wrap justify-between gap-2 border-t border-slate-100 pt-3">
               <div className="flex flex-wrap gap-2">
+                {modeFilter !== "ingredients" ? (
+                  <button
+                    type="button"
+                    onClick={() => openBulkUnlinkPopup(selectedFilteredProductIds.length > 0 ? "selected" : "all")}
+                    disabled={filteredProducts.length === 0}
+                    className="inline-flex min-h-9 items-center rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-bold text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {th
+                      ? selectedFilteredProductIds.length > 0
+                        ? `ยกเลิกผูกวัตถุดิบที่เลือก (${selectedFilteredProductIds.length})`
+                        : `ยกเลิกผูกวัตถุดิบทั้งหมด (${filteredProducts.length})`
+                      : selectedFilteredProductIds.length > 0
+                        ? `Unlink Selected Recipes (${selectedFilteredProductIds.length})`
+                        : `Unlink All Recipes (${filteredProducts.length})`}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => openBulkDeletePopup("selected")}
@@ -1514,6 +1596,35 @@ export function StockProductsTable({
                       : bulkDeleteScope === "selected"
                         ? "Deactivate Selected"
                         : "Deactivate All"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {bulkUnlinkScope ? (
+        <div className="fixed inset-0 z-[155] grid place-items-center bg-slate-900/55 p-4" onClick={closeBulkUnlinkPopup}>
+          <div className="w-full max-w-lg rounded-2xl border border-sky-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <h4 className="text-base font-extrabold text-slate-900">{th ? "ยืนยันยกเลิกผูกวัตถุดิบ" : "Confirm Recipe Unlink"}</h4>
+            <p className="mt-2 text-sm text-slate-600">
+              {th
+                ? bulkUnlinkScope === "selected"
+                  ? `ระบบจะยกเลิกสูตรวัตถุดิบของสินค้าที่เลือก ${selectedFilteredProductIds.length} รายการ แล้วเปลี่ยนกลับเป็นสต๊อกแบบชิ้น`
+                  : `ระบบจะยกเลิกสูตรวัตถุดิบของสินค้าตามตัวกรองทั้งหมด ${filteredProducts.length} รายการ แล้วเปลี่ยนกลับเป็นสต๊อกแบบชิ้น`
+                : bulkUnlinkScope === "selected"
+                  ? `Unlink ingredient recipes for ${selectedFilteredProductIds.length} selected products and switch them back to unit stock.`
+                  : `Unlink ingredient recipes for all ${filteredProducts.length} filtered products and switch them back to unit stock.`}
+            </p>
+            <p className="mt-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800">
+              {th ? "ระบบจะไม่ลบประวัติการขาย ใบเสร็จ หรือรายการปิดกะเดิม" : "Sales history, receipts, and shift reports will not be deleted."}
+            </p>
+            {bulkUnlinkError ? <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{bulkUnlinkError}</p> : null}
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={closeBulkUnlinkPopup} disabled={bulkUnlinkBusy} className="inline-flex min-h-10 items-center rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                {th ? "ยกเลิก" : "Cancel"}
+              </button>
+              <button type="button" onClick={() => void submitBulkUnlinkRecipes()} disabled={bulkUnlinkBusy} className="inline-flex min-h-10 items-center rounded-lg border border-sky-600 bg-sky-600 px-4 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-60">
+                {bulkUnlinkBusy ? (th ? "กำลังบันทึก..." : "Saving...") : th ? "บันทึกการเปลี่ยนแปลง" : "Save Changes"}
               </button>
             </div>
           </div>

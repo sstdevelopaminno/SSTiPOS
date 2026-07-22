@@ -15,6 +15,12 @@ This document records the next required design for product catalog cleanup, tras
 
 Product deletion must become soft delete before adding "delete all" at scale.
 
+2026-07-22 implementation start:
+
+- Added migration `supabase/migrations/202607220001_product_trash_soft_delete.sql`.
+- Existing `deactivate_product` and `bulk_deactivate_products` now attempt to write trash metadata and fall back to `is_active = false` if the database has not been migrated yet.
+- Product history must still be preserved for order, receipt, shift close, and accounting audit.
+
 Required behavior:
 
 - Delete/deactivate actions should move products to a trash state, not immediately hard-delete rows.
@@ -38,6 +44,12 @@ Current list APIs should exclude trashed products by default and expose a separa
 ## Bulk Unlink Ingredient Recipe
 
 The search/filter popup can add a checkbox/action for "ยกเลิกผูกวัตถุดิบทั้งหมด", but the save must call a dedicated server action.
+
+2026-07-22 implementation start:
+
+- Added API action `bulk_unlink_product_recipes`.
+- Added stock popup button and confirmation popup for bulk recipe unlink.
+- The action converts affected products back to `unit_only` and creates a fallback `STOCK:` ingredient recipe bridge.
 
 Rules:
 

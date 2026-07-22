@@ -113,6 +113,12 @@ type BulkDeactivateProductsPayload = {
   product_ids: string[];
 };
 
+type BulkUnlinkProductRecipesPayload = {
+  action: "bulk_unlink_product_recipes";
+  product_ids: string[];
+  stock_quantity?: number;
+};
+
 type BulkDeleteIngredientsPayload = {
   action: "bulk_delete_ingredients";
   ingredient_ids: string[];
@@ -149,6 +155,7 @@ type CatalogActionPayload =
   | UpdateProductWithStockSetupPayload
   | DeactivateProductPayload
   | BulkDeactivateProductsPayload
+  | BulkUnlinkProductRecipesPayload
   | BulkDeleteIngredientsPayload
   | CreateCategoryPayload
   | RenameCategoryPayload
@@ -264,6 +271,12 @@ function isForeignKeyReferenceError(error: PostgrestLikeError | null | undefined
   return code === "23503" || text.includes("foreign key") || text.includes("violates");
 }
 
+function isMissingProductTrashColumnsError(error: PostgrestLikeError | null | undefined): boolean {
+  if (!error) return false;
+  const text = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`.toLowerCase();
+  return text.includes("deleted_at") || text.includes("deleted_by") || text.includes("delete_reason") || text.includes("restore_until");
+}
+
 function normalizeSku(raw: string | undefined, name: string) {
   const value = String(raw ?? "").trim();
   if (value) return value.slice(0, 40).toUpperCase();
@@ -275,6 +288,40 @@ function normalizeSku(raw: string | undefined, name: string) {
     .toUpperCase();
   const suffix = Date.now().toString().slice(-6);
   return `PRD-${compactName || "ITEM"}-${suffix}`;
+}
+
+async function softDeleteProducts(input: {
+  supabase: ReturnType<typeof getSupabaseServiceClient>;
+  tenantId: string;
+  branchId: string;
+  productIds: string[];
+  userId: string;
+  reason: string;
+}) {
+  const now = new Date();
+  const restoreUntil = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const trashPatch = {
+    is_active: false,
+    deleted_at: now.toISOString(),
+    deleted_by: input.userId,
+    delete_reason: input.reason,
+    restore_until: restoreUntil
+  };
+
+  const run = (patch: Record<string, unknown>) =>
+    input.supabase
+      .from("products")
+      .update(patch)
+      .eq("tenant_id", input.tenantId)
+      .eq("branch_id", input.branchId)
+      .in("id", input.productIds)
+      .select("id");
+
+  let result = await run(trashPatch);
+  if (result.error && isMissingProductTrashColumnsError(result.error)) {
+    result = await run({ is_active: false });
+  }
+  return result;
 }
 
 async function ensureProductCategory(input: {
@@ -1714,21 +1761,21 @@ export async function POST(req: Request) {
         return fail("invalid_product_id", "product_id is required.", 422);
       }
 
-      const { data, error } = await supabase
-        .from("products")
-        .update({ is_active: false })
-        .eq("tenant_id", auth.tenantId!)
-        .eq("branch_id", scopedBranchId)
-        .eq("id", productId)
-        .select("id,sku,name,category,price,is_active,updated_at")
-        .maybeSingle();
+      const { data, error } = await softDeleteProducts({
+        supabase,
+        tenantId: auth.tenantId!,
+        branchId: scopedBranchId,
+        productIds: [productId],
+        userId: auth.userId,
+        reason: "single_product_deactivate"
+      });
       if (error) {
         return fail("product_deactivate_failed", error.message, 500);
       }
-      if (!data) {
+      if (!data || data.length === 0) {
         return fail("product_not_found", "Product not found in this branch.", 404);
       }
-      return ok(data);
+      return ok({ id: productId, trashed: true });
     }
 
     if (body.action === "bulk_deactivate_products") {
@@ -1739,19 +1786,140 @@ export async function POST(req: Request) {
         return fail("invalid_product_ids", "product_ids must include at least one product id.", 422);
       }
 
-      const { data, error } = await supabase
-        .from("products")
-        .update({ is_active: false })
-        .eq("tenant_id", auth.tenantId!)
-        .eq("branch_id", scopedBranchId)
-        .in("id", productIds)
-        .select("id");
+      const { data, error } = await softDeleteProducts({
+        supabase,
+        tenantId: auth.tenantId!,
+        branchId: scopedBranchId,
+        productIds,
+        userId: auth.userId,
+        reason: "bulk_product_deactivate"
+      });
       if (error) {
         return fail("product_bulk_deactivate_failed", error.message, 500);
       }
 
       return ok({
-        updated_count: data?.length ?? 0
+        updated_count: data?.length ?? 0,
+        trashed_count: data?.length ?? 0
+      });
+    }
+
+    if (body.action === "bulk_unlink_product_recipes") {
+      const productIds = Array.from(
+        new Set((Array.isArray(body.product_ids) ? body.product_ids : []).map((id) => String(id ?? "").trim()).filter(Boolean))
+      );
+      if (productIds.length === 0) {
+        return fail("invalid_product_ids", "product_ids must include at least one product id.", 422);
+      }
+
+      const stockQuantityRaw = Number(body.stock_quantity ?? 0);
+      const stockQuantity = Number.isFinite(stockQuantityRaw) ? Math.max(0, Math.trunc(stockQuantityRaw)) : 0;
+
+      const { data: productRows, error: productRowsError } = await supabase
+        .from("products")
+        .select("id,sku,name")
+        .eq("tenant_id", auth.tenantId!)
+        .eq("branch_id", scopedBranchId)
+        .in("id", productIds);
+      if (productRowsError) {
+        return fail("products_query_failed", productRowsError.message, 500);
+      }
+
+      const foundProducts = (productRows ?? []).map((row) => ({
+        id: String(row.id),
+        sku: String(row.sku ?? ""),
+        name: String(row.name ?? "")
+      }));
+      if (foundProducts.length === 0) {
+        return fail("product_not_found", "Product not found in this branch.", 404);
+      }
+
+      let updatedCount = 0;
+      const failed: Array<{ product_id: string; message: string }> = [];
+
+      for (const product of foundProducts) {
+        try {
+          const fallbackIngredientName = `STOCK:${product.sku}:${product.name}`.slice(0, 120);
+
+          const { data: existingFallback, error: existingFallbackError } = await supabase
+            .from("ingredients")
+            .select("id")
+            .eq("tenant_id", auth.tenantId!)
+            .eq("branch_id", scopedBranchId)
+            .eq("name", fallbackIngredientName)
+            .maybeSingle();
+          if (existingFallbackError) throw existingFallbackError;
+
+          let fallbackIngredientId = existingFallback?.id ? String(existingFallback.id) : "";
+          if (!fallbackIngredientId) {
+            const { data: fallbackIngredient, error: fallbackIngredientError } = await supabase
+              .from("ingredients")
+              .insert({
+                tenant_id: auth.tenantId!,
+                branch_id: scopedBranchId,
+                name: fallbackIngredientName,
+                base_unit: "piece",
+                quantity_on_hand: stockQuantity,
+                reorder_level: 0
+              })
+              .select("id")
+              .single();
+            if (fallbackIngredientError) throw fallbackIngredientError;
+            fallbackIngredientId = String(fallbackIngredient.id);
+          } else {
+            const { error: fallbackUpdateError } = await supabase
+              .from("ingredients")
+              .update({
+                quantity_on_hand: stockQuantity,
+                base_unit: "piece",
+                updated_at: new Date().toISOString()
+              })
+              .eq("tenant_id", auth.tenantId!)
+              .eq("branch_id", scopedBranchId)
+              .eq("id", fallbackIngredientId);
+            if (fallbackUpdateError) throw fallbackUpdateError;
+          }
+
+          const { error: deleteRecipesError } = await supabase
+            .from("recipes")
+            .delete()
+            .eq("tenant_id", auth.tenantId!)
+            .eq("branch_id", scopedBranchId)
+            .eq("product_id", product.id);
+          if (deleteRecipesError) throw deleteRecipesError;
+
+          const { error: fallbackRecipeError } = await supabase.from("recipes").upsert(
+            {
+              tenant_id: auth.tenantId!,
+              branch_id: scopedBranchId,
+              product_id: product.id,
+              ingredient_id: fallbackIngredientId,
+              quantity_per_item: 1,
+              applies_when_takeaway_only: false
+            },
+            { onConflict: "product_id,ingredient_id,applies_when_takeaway_only" }
+          );
+          if (fallbackRecipeError) throw fallbackRecipeError;
+
+          const { error: productUpdateError } = await supabase
+            .from("products")
+            .update({ stock_deduction_mode: "unit_only", updated_at: new Date().toISOString() })
+            .eq("tenant_id", auth.tenantId!)
+            .eq("branch_id", scopedBranchId)
+            .eq("id", product.id);
+          if (productUpdateError && !isMissingStockDeductionModeColumnError(productUpdateError)) throw productUpdateError;
+
+          updatedCount += 1;
+        } catch (error) {
+          failed.push({ product_id: product.id, message: error instanceof Error ? error.message : "Unknown error" });
+        }
+      }
+
+      return ok({
+        updated_count: updatedCount,
+        skipped_count: productIds.length - foundProducts.length,
+        failed_count: failed.length,
+        failed
       });
     }
 
