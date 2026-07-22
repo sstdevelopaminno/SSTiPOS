@@ -2770,10 +2770,10 @@ a {
   font-weight: 900;
 }
 
-.posui-cart-item__sum button {
-  width: 24px;
-  min-width: 24px;
-  min-height: 24px;
+.posui-cart-item__sum .posui-cart-action {
+  width: 30px;
+  min-width: 30px;
+  min-height: 30px;
   border: 0;
   border-radius: 10px;
   background: #ffffff;
@@ -2782,9 +2782,29 @@ a {
   place-items: center;
 }
 
+.posui-cart-item__sum .posui-cart-action--edit {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.posui-cart-item__sum .posui-cart-action--delete {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.posui-cart-item__sum .posui-cart-action--delete:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
 .posui-delete-icon {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
+}
+
+.posui-edit-icon {
+  width: 17px;
+  height: 17px;
 }
 
 .posui-payment-panel {

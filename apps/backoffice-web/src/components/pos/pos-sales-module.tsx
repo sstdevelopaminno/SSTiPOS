@@ -178,6 +178,7 @@ type ModifierDraft = {
   quantity: number;
   notes: string;
   extraPrice: number;
+  editingCartLineId?: string | null;
 };
 
 type RecipeIngredientChoice = {
@@ -4598,12 +4599,46 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
   function confirmModifierDraft() {
     if (!modifierDraft) return;
     const canAddPrice = quickMode !== "delivery";
-    addCartLine(modifierDraft.product, {
-      quantity: modifierDraft.quantity,
-      notes: modifierDraft.notes,
-      extraPrice: canAddPrice ? modifierDraft.extraPrice : 0
-    });
+    if (modifierDraft.editingCartLineId) {
+      const notes = modifierDraft.notes.trim();
+      const extraPrice = canAddPrice ? Math.max(0, modifierDraft.extraPrice) : 0;
+      const unitPrice = Number((getProductPriceForCurrentMode(modifierDraft.product) + extraPrice).toFixed(2));
+      const nextLineId = notes.length > 0 || extraPrice > 0 ? `${modifierDraft.product.id}:${notes}:${extraPrice.toFixed(2)}` : modifierDraft.product.id;
+      setCart((current) =>
+        current.map((row) =>
+          (row.cart_line_id ?? row.product_id) === modifierDraft.editingCartLineId
+            ? {
+                ...row,
+                cart_line_id: nextLineId,
+                quantity: modifierDraft.quantity,
+                price: unitPrice,
+                notes: notes || null
+              }
+            : row
+        )
+      );
+    } else {
+      addCartLine(modifierDraft.product, {
+        quantity: modifierDraft.quantity,
+        notes: modifierDraft.notes,
+        extraPrice: canAddPrice ? modifierDraft.extraPrice : 0
+      });
+    }
     setModifierDraft(null);
+  }
+
+  function openCartLineEditor(item: CartItem) {
+    const product = productById.get(item.product_id);
+    if (!product) return;
+    const basePrice = getProductPriceForCurrentMode(product);
+    const extraPrice = quickMode === "delivery" ? 0 : Math.max(0, Number((Number(item.price ?? 0) - basePrice).toFixed(2)));
+    setModifierDraft({
+      product,
+      quantity: item.quantity,
+      notes: item.notes ?? "",
+      extraPrice,
+      editingCartLineId: item.cart_line_id ?? item.product_id
+    });
   }
 
   function toggleModifierIngredient(name: string) {
@@ -6466,7 +6501,14 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
             </div>
             <div className="posui-cart-item__sum">
               <strong>{formatMoney(item.quantity * item.price)}</strong>
-              <button type="button" aria-label={`${text.remove}: ${item.name}`} onClick={() => removeFromCart(cartLineId)}>
+              {productById.get(item.product_id)?.has_recipe_deduction ? (
+                <button type="button" className="posui-cart-action posui-cart-action--edit" aria-label={`${lang === "th" ? "แก้ไข" : "Edit"}: ${item.name}`} onClick={() => openCartLineEditor(item)}>
+                  <svg className="posui-edit-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 17.5V20h2.5L17.8 8.7l-2.5-2.5L4 17.5Zm15.7-11.6c.4-.4.4-1 0-1.4l-1.2-1.2c-.4-.4-1-.4-1.4 0l-1 1 2.5 2.5 1.1-.9Z" fill="currentColor" />
+                  </svg>
+                </button>
+              ) : null}
+              <button type="button" className="posui-cart-action posui-cart-action--delete" aria-label={`${text.remove}: ${item.name}`} onClick={() => removeFromCart(cartLineId)}>
                 <svg className="posui-delete-icon" viewBox="0 0 24 24" aria-hidden="true">
                   <path
                     d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v8h-2v-8Zm4 0h2v8h-2v-8ZM8 10h2v8H8v-8Z"
@@ -8096,7 +8138,7 @@ export function PosSalesModule({ lang = "th" }: { lang?: Lang }) {
                 {lang === "th" ? "ยกเลิก" : "Cancel"}
               </button>
               <button type="button" className="posui-btn posui-btn--primary" onClick={confirmModifierDraft}>
-                {lang === "th" ? "เพิ่มลงตะกร้า" : "Add to Cart"}
+                {modifierDraft.editingCartLineId ? (lang === "th" ? "บันทึกการแก้ไข" : "Save Changes") : lang === "th" ? "เพิ่มลงตะกร้า" : "Add to Cart"}
               </button>
             </div>
           </section>
