@@ -2828,9 +2828,6 @@ function PaymentPanel({
                 <ActionButton variant="plain" disabled={!canManage || isBusy || !form.qr_image_url || isQrBusy} onClick={() => setForm((current) => ({ ...current, qr_image_url: "" }))}>
                   {labels.removeQr}
                 </ActionButton>
-                <p className="break-all rounded-lg border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-600">
-                  {labels.promptpayLinkPreview}: {promptpayPayload || "-"}
-                </p>
               </div>
             </div>
           </div>
