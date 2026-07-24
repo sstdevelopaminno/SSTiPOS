@@ -235,3 +235,53 @@ Several services intentionally fall back when RPCs/columns are unavailable. This
 | Supabase schema | `supabase/migrations/*`, `supabase/seeds/*` |
 | Integration tests | `apps/backoffice-web/tests/integration/*` |
 
+
+
+<!-- CPIPOS-HANDOFF-2026-07-24 -->
+## Audit Addendum — 2026-07-24
+
+### Requested scope
+
+1. Replace remaining user-visible `SST iPOS` branding with **CpIPOS**.
+2. Review the supplied production login URL: `https://sstipos-ten.vercel.app/login/store`.
+3. Fix recipe ingredient stock not decreasing after sale without changing Login.
+4. Update `README.md`, `context.md`, and this audit handoff.
+
+### Current branch and deployment state
+
+- Working branch: `hotfix/p0-security-pricing`.
+- Draft Pull Request: `#5` into `main`.
+- Production remains on `main`; no production merge has been performed in this work package.
+- The production login page still reports legacy `SST iPOS` logo metadata as of 2026-07-24, confirming that the CpIPOS SVG update has not reached Production yet.
+- Vercel Preview must pass before the PR is marked ready or merged.
+
+### Changes in the active branch
+
+- Legacy SVG logo text changed from `SST iPOS` to `CpIPOS`.
+- POS runtime defaults changed to fail safe:
+  - disable negative-stock fallback;
+  - disable direct non-transaction order creation;
+  - disable insufficient-stock bypass.
+- These defaults force normal dine-in/takeaway order creation through the existing atomic transaction RPC, where order creation, order items, ingredient deduction, and stock movement logging are intended to succeed or roll back together.
+
+### Explicit exclusions
+
+- No Login route, Login API, Login session, device selection, or authentication implementation is changed.
+- No SQL migration is added or applied.
+- No production Supabase data is mutated by this documentation/branch update.
+- The previously supplied screenshot was not actionable because it contained only a narrow white/gray strip with no identifiable page, URL, control, or error state. UI changes must wait for a complete screenshot.
+
+### Required verification evidence
+
+- GitHub CI: typecheck, lint, tests, and production build.
+- Vercel Preview deployment succeeds.
+- `/login/store` renders and store-code submission behavior is unchanged.
+- Create a sale containing a product configured with `stock_deduction_mode = recipe_deduction`.
+- Capture ingredient quantity before and after the sale.
+- Confirm one or more `stock_movements` rows with `movement_type = sale_deduction` and the created order reference.
+- Confirm insufficient stock returns a controlled error and does not leave a partial order or partial stock deduction.
+- Confirm a non-recipe (`unit_only`) product does not deduct recipe ingredients.
+
+### Merge decision
+
+Keep PR `#5` as Draft until all required evidence is attached. Merge to `main` only after Preview verification. Production branding will remain legacy until that merge and the subsequent Vercel Production deployment complete.
