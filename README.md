@@ -1,6 +1,20 @@
-﻿# POS Platform (Multi-tenant)
+# CpIPOS — Multi-tenant POS Platform
 
 Production-oriented monorepo for a noodle shop and small restaurant POS platform.
+
+<!-- CPIPOS-HANDOFF-2026-07-24 -->
+## Current development handoff — 2026-07-24
+
+- Active product brand: **CpIPOS**. The GitHub repository and some legacy technical identifiers remain `SSTiPOS` for compatibility and must not be renamed casually.
+- Active development branch: `hotfix/p0-security-pricing`.
+- Review surface: Draft Pull Request `#5` into `main`.
+- Production login URL: `https://sstipos-ten.vercel.app/login/store`.
+- Production check on 2026-07-24: the live login page still exposes legacy `SST iPOS` logo metadata. This is expected until the branding branch is verified and merged to `main`.
+- The remaining legacy SVG logo text in `apps/backoffice-web/public/brand/sst-ipos-logo.svg` is updated to **CpIPOS** on the active branch.
+- POS stock safety defaults now require the existing atomic database RPC for normal dine-in/takeaway order creation. Direct multi-step creation, insufficient-stock bypass, and negative-stock fallback are disabled by default.
+- This change does **not** modify Login code and does **not** apply a database migration.
+- Required Preview verification before merge: Vercel build, typecheck, lint, tests, production build, login page smoke test, and a recipe-item sale confirming both `ingredients.quantity_on_hand` reduction and a `stock_movements` `sale_deduction` row.
+- Do not merge to `main` until Preview and stock evidence pass.
 
 ## Stack
 - Monorepo: pnpm workspaces + Turbo

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -203,8 +203,8 @@ const TEXT = {
     qrMode: "รูปแบบ QR",
     qrModePromptPay: "QR ล็อกยอดจากพร้อมเพย์",
     qrModeImage: "ใช้ภาพ QR ที่อัปโหลด",
-    qrModePromptPayHint: "หน้าขายจะใช้ลิงก์ promptpay.io แล้วเปลี่ยนยอดตามบิลอัตโนมัติ",
-    qrModeImageHint: "หน้าขายจะดึงภาพ QR นี้ไปแสดงแทนการสร้างลิงก์",
+    qrModePromptPayHint: "ระบบจะสร้าง QR พร้อมยอดชำระตามบิลอัตโนมัติ",
+    qrModeImageHint: "หน้าขายจะแสดงภาพ QR ที่อัปโหลดไว้",
     promptpayLinkPreview: "ลิงก์ที่จะใช้บนหน้าขาย",
     uploadQr: "อัปโหลด QR",
     removeQr: "ลบ QR",
@@ -323,8 +323,8 @@ const TEXT = {
     qrMode: "QR mode",
     qrModePromptPay: "Amount-locked PromptPay QR",
     qrModeImage: "Uploaded QR image",
-    qrModePromptPayHint: "The sales screen uses promptpay.io and changes only the bill amount.",
-    qrModeImageHint: "The sales screen shows this uploaded QR image instead of generating a link.",
+    qrModePromptPayHint: "The system automatically generates a QR code for the bill amount.",
+    qrModeImageHint: "The sales screen displays the uploaded QR image.",
     promptpayLinkPreview: "Sales screen link",
     uploadQr: "Upload QR",
     removeQr: "Remove QR",
@@ -2828,9 +2828,6 @@ function PaymentPanel({
                 <ActionButton variant="plain" disabled={!canManage || isBusy || !form.qr_image_url || isQrBusy} onClick={() => setForm((current) => ({ ...current, qr_image_url: "" }))}>
                   {labels.removeQr}
                 </ActionButton>
-                <p className="break-all rounded-lg border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-600">
-                  {labels.promptpayLinkPreview}: {promptpayPayload || "-"}
-                </p>
               </div>
             </div>
           </div>
@@ -3061,3 +3058,4 @@ export function PosSettingsWorkspace({ lang, initialData }: { lang: Language; in
     </main>
   );
 }
+

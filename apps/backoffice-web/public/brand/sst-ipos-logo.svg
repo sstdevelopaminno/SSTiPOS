@@ -13,8 +13,8 @@
     <path d="M103 202l70-50c10-7 23 2 20 14l-11 54a17 17 0 0 1-7 11l-58 41c-11 8-25-2-22-15z" fill="url(#g)"/>
 
     <g transform="translate(200,115)">
-      <text x="0" y="0" font-family="Segoe UI,Arial,sans-serif" font-size="78" font-weight="800" fill="#121C33">SST</text>
-      <text x="170" y="0" font-family="Segoe UI,Arial,sans-serif" font-size="86" font-style="italic" font-weight="900" fill="#1890FF">iPOS</text>
+      <text x="0" y="0" font-family="Segoe UI,Arial,sans-serif" font-size="76" font-weight="800" fill="#121C33">Cp</text>
+      <text x="92" y="0" font-family="Segoe UI,Arial,sans-serif" font-size="86" font-style="italic" font-weight="900" fill="#1890FF">IPOS</text>
     </g>
   </g>
 </svg>

@@ -1,6 +1,6 @@
-# SST iPOS Project Context (Authoritative Handoff)
+# CpIPOS Project Context (Authoritative Handoff)
 
-Last updated: 2026-07-12
+Last updated: 2026-07-24
 Workspace: `e:\SSTiPOS`
 
 Local folder rename note (2026-07-12): this checkout was renamed from `e:\POS Preview` to `e:\SSTiPOS` to match the GitHub repository name. Use `e:\SSTiPOS` for future local work.
@@ -8,9 +8,29 @@ Local folder rename note (2026-07-12): this checkout was renamed from `e:\POS Pr
 This file is the primary context handoff for future GPT/Codex runs.
 Read this file before making any code changes.
 
+<!-- CPIPOS-HANDOFF-2026-07-24 -->
+## Current active work — 2026-07-24
+
+- Repository: `sstdevelopaminno/SSTiPOS` (legacy repository name retained).
+- Active branch: `hotfix/p0-security-pricing`.
+- Draft PR: `#5`, base `main`.
+- Production login: `https://sstipos-ten.vercel.app/login/store`.
+- Live production still reports legacy `SST iPOS` logo metadata as of 2026-07-24. The CpIPOS branding update is branch-only until Preview verification and merge.
+- Branding scope: change user-visible product branding to **CpIPOS**; keep technical identifiers such as repository names, historical URLs, cookie keys, migration history, and compatibility paths unless a dedicated migration plan exists.
+- Stock issue scope: after a recipe-based sale, ingredient stock must decrease and a `sale_deduction` movement must be written.
+- Runtime safety policy on this branch:
+  - `POS_ALLOW_NEGATIVE_STOCK=false`
+  - `POS_FORCE_DIRECT_CREATE_NON_DELIVERY=false`
+  - `POS_SOFT_BYPASS_INSUFFICIENT_STOCK=false`
+- Normal POS sales must use the atomic `create_pos_order_tx` database transaction path.
+- No Login implementation file is changed in this work package.
+- No Supabase migration is included or applied in this work package.
+- Required evidence before merge: CI checks, Vercel Preview success, login smoke test, recipe sale, before/after ingredient quantity, stock movement row, and safe failure when stock is insufficient.
+- If Preview fails, fix only files related to the failure; do not broaden into Login or unrelated database work.
+
 ## 1) Product and System Scope
 
-SST iPOS is a multi-owner, multi-branch POS platform with 4 logical surfaces:
+CpIPOS is a multi-owner, multi-branch POS platform with 4 logical surfaces:
 1. `id.<domain>`: identity/login gateway (`backoffice-web` `/login/*`)
 2. `pos.<domain>`: POS operations and sales flow (`backoffice-web` POS APIs/UI)
 3. `admin.<domain>`: backoffice + IT admin operations (`backoffice-web`)
