@@ -1,0 +1,84 @@
+name: Update handoff docs once
+
+on:
+  push:
+    branches:
+      - hotfix/p0-security-pricing
+    paths:
+      - .github/workflows/update-handoff-docs-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: hotfix/p0-security-pricing
+          fetch-depth: 0
+
+      - name: Update README, context, and audit handoff
+        shell: python
+        run: |
+          from pathlib import Path
+
+          marker = "<!-- CPIPOS-HANDOFF-2026-07-24 -->"
+
+          readme = Path("README.md")
+          readme_text = readme.read_text(encoding="utf-8-sig")
+          readme_text = readme_text.replace(
+              "# POS Platform (Multi-tenant)",
+              "# CpIPOS — Multi-tenant POS Platform",
+              1,
+          )
+          readme_block = f'''\n{marker}\n## Current development handoff — 2026-07-24\n\n- Active product brand: **CpIPOS**. The GitHub repository and some legacy technical identifiers remain `SSTiPOS` for compatibility and must not be renamed casually.\n- Active development branch: `hotfix/p0-security-pricing`.\n- Review surface: Draft Pull Request `#5` into `main`.\n- Production login URL: `https://sstipos-ten.vercel.app/login/store`.\n- Production check on 2026-07-24: the live login page still exposes legacy `SST iPOS` logo metadata. This is expected until the branding branch is verified and merged to `main`.\n- The remaining legacy SVG logo text in `apps/backoffice-web/public/brand/sst-ipos-logo.svg` is updated to **CpIPOS** on the active branch.\n- POS stock safety defaults now require the existing atomic database RPC for normal dine-in/takeaway order creation. Direct multi-step creation, insufficient-stock bypass, and negative-stock fallback are disabled by default.\n- This change does **not** modify Login code and does **not** apply a database migration.\n- Required Preview verification before merge: Vercel build, typecheck, lint, tests, production build, login page smoke test, and a recipe-item sale confirming both `ingredients.quantity_on_hand` reduction and a `stock_movements` `sale_deduction` row.\n- Do not merge to `main` until Preview and stock evidence pass.\n'''
+          if marker not in readme_text:
+              insert_at = readme_text.find("\n## Stack")
+              if insert_at == -1:
+                  readme_text += readme_block
+              else:
+                  readme_text = readme_text[:insert_at] + readme_block + readme_text[insert_at:]
+          readme.write_text(readme_text, encoding="utf-8")
+
+          context = Path("context.md")
+          context_text = context.read_text(encoding="utf-8-sig")
+          context_text = context_text.replace(
+              "# SST iPOS Project Context (Authoritative Handoff)",
+              "# CpIPOS Project Context (Authoritative Handoff)",
+              1,
+          )
+          context_text = context_text.replace("Last updated: 2026-07-12", "Last updated: 2026-07-24", 1)
+          context_text = context_text.replace(
+              "SST iPOS is a multi-owner, multi-branch POS platform",
+              "CpIPOS is a multi-owner, multi-branch POS platform",
+              1,
+          )
+          context_block = f'''\n{marker}\n## Current active work — 2026-07-24\n\n- Repository: `sstdevelopaminno/SSTiPOS` (legacy repository name retained).\n- Active branch: `hotfix/p0-security-pricing`.\n- Draft PR: `#5`, base `main`.\n- Production login: `https://sstipos-ten.vercel.app/login/store`.\n- Live production still reports legacy `SST iPOS` logo metadata as of 2026-07-24. The CpIPOS branding update is branch-only until Preview verification and merge.\n- Branding scope: change user-visible product branding to **CpIPOS**; keep technical identifiers such as repository names, historical URLs, cookie keys, migration history, and compatibility paths unless a dedicated migration plan exists.\n- Stock issue scope: after a recipe-based sale, ingredient stock must decrease and a `sale_deduction` movement must be written.\n- Runtime safety policy on this branch:\n  - `POS_ALLOW_NEGATIVE_STOCK=false`\n  - `POS_FORCE_DIRECT_CREATE_NON_DELIVERY=false`\n  - `POS_SOFT_BYPASS_INSUFFICIENT_STOCK=false`\n- Normal POS sales must use the atomic `create_pos_order_tx` database transaction path.\n- No Login implementation file is changed in this work package.\n- No Supabase migration is included or applied in this work package.\n- Required evidence before merge: CI checks, Vercel Preview success, login smoke test, recipe sale, before/after ingredient quantity, stock movement row, and safe failure when stock is insufficient.\n- If Preview fails, fix only files related to the failure; do not broaden into Login or unrelated database work.\n'''
+          if marker not in context_text:
+              insert_at = context_text.find("\n## 1) Product and System Scope")
+              if insert_at == -1:
+                  context_text += context_block
+              else:
+                  context_text = context_text[:insert_at] + context_block + context_text[insert_at:]
+          context.write_text(context_text, encoding="utf-8")
+
+          audit = Path("docs/PROJECT-AUDIT-HANDOFF-2026-06-02.md")
+          audit_text = audit.read_text(encoding="utf-8-sig")
+          audit_block = f'''\n\n{marker}\n## Audit Addendum — 2026-07-24\n\n### Requested scope\n\n1. Replace remaining user-visible `SST iPOS` branding with **CpIPOS**.\n2. Review the supplied production login URL: `https://sstipos-ten.vercel.app/login/store`.\n3. Fix recipe ingredient stock not decreasing after sale without changing Login.\n4. Update `README.md`, `context.md`, and this audit handoff.\n\n### Current branch and deployment state\n\n- Working branch: `hotfix/p0-security-pricing`.\n- Draft Pull Request: `#5` into `main`.\n- Production remains on `main`; no production merge has been performed in this work package.\n- The production login page still reports legacy `SST iPOS` logo metadata as of 2026-07-24, confirming that the CpIPOS SVG update has not reached Production yet.\n- Vercel Preview must pass before the PR is marked ready or merged.\n\n### Changes in the active branch\n\n- Legacy SVG logo text changed from `SST iPOS` to `CpIPOS`.\n- POS runtime defaults changed to fail safe:\n  - disable negative-stock fallback;\n  - disable direct non-transaction order creation;\n  - disable insufficient-stock bypass.\n- These defaults force normal dine-in/takeaway order creation through the existing atomic transaction RPC, where order creation, order items, ingredient deduction, and stock movement logging are intended to succeed or roll back together.\n\n### Explicit exclusions\n\n- No Login route, Login API, Login session, device selection, or authentication implementation is changed.\n- No SQL migration is added or applied.\n- No production Supabase data is mutated by this documentation/branch update.\n- The previously supplied screenshot was not actionable because it contained only a narrow white/gray strip with no identifiable page, URL, control, or error state. UI changes must wait for a complete screenshot.\n\n### Required verification evidence\n\n- GitHub CI: typecheck, lint, tests, and production build.\n- Vercel Preview deployment succeeds.\n- `/login/store` renders and store-code submission behavior is unchanged.\n- Create a sale containing a product configured with `stock_deduction_mode = recipe_deduction`.\n- Capture ingredient quantity before and after the sale.\n- Confirm one or more `stock_movements` rows with `movement_type = sale_deduction` and the created order reference.\n- Confirm insufficient stock returns a controlled error and does not leave a partial order or partial stock deduction.\n- Confirm a non-recipe (`unit_only`) product does not deduct recipe ingredients.\n\n### Merge decision\n\nKeep PR `#5` as Draft until all required evidence is attached. Merge to `main` only after Preview verification. Production branding will remain legacy until that merge and the subsequent Vercel Production deployment complete.\n'''
+          if marker not in audit_text:
+              audit_text += audit_block
+          audit.write_text(audit_text, encoding="utf-8")
+
+          # Remove this one-time workflow so it cannot run again.
+          Path(".github/workflows/update-handoff-docs-once.yml").unlink(missing_ok=True)
+
+      - name: Commit documentation updates
+        run: |
+          git config user.name "cpipos-doc-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add README.md context.md docs/PROJECT-AUDIT-HANDOFF-2026-06-02.md .github/workflows/update-handoff-docs-once.yml
+          git commit -m "Update CpIPOS handoff and audit documentation"
+          git push origin HEAD:hotfix/p0-security-pricing
